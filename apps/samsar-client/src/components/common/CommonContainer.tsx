@@ -31,6 +31,7 @@ export default function CommonContainer(props) {
     renderCompletedThisSession,
     sessionId,
     openAdvancedVideoEditDialog,
+    openExpressPostProcessingDialog,
     isReadOnlyShareView,
     isEditableShareView,
     isImportedSession,
@@ -51,14 +52,14 @@ export default function CommonContainer(props) {
       }
 
       const interactiveAncestor = target.closest(
-        'input, textarea, select, button, [contenteditable="true"], [role="textbox"]'
+        'input, textarea, select, button, [contenteditable="true"], [role="textbox"], [role="dialog"]'
       );
 
       return Boolean(interactiveAncestor);
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.code !== 'Space') {
+      if (event.code !== 'Space' || event.defaultPrevented || event.isComposing) {
         return;
       }
 
@@ -71,6 +72,10 @@ export default function CommonContainer(props) {
       }
 
       event.preventDefault();
+      // Holding Space should not repeatedly start and stop the preview.
+      if (event.repeat) {
+        return;
+      }
       setIsVideoPreviewPlaying((previousValue: boolean) => !previousValue);
     };
 
@@ -118,6 +123,7 @@ export default function CommonContainer(props) {
         renderCompletedThisSession={renderCompletedThisSession}
         sessionId={sessionId}
         openAdvancedVideoEditDialog={openAdvancedVideoEditDialog}
+        openExpressPostProcessingDialog={openExpressPostProcessingDialog}
         isReadOnlyShareView={isReadOnlyShareView}
         isEditableShareView={isEditableShareView}
         isImportedSession={isImportedSession}

@@ -1,11 +1,48 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import mongoose from 'mongoose';
+import VideoSession from './schema/VideoSession.js';
+import User from './schema/User.js';
+import Ledger from './schema/GenerationCreditTransaction.js';
 
 import {
   buildExternalRequestIdentityFields,
   buildExternalSettlementResponsePayload,
   normalizeBranchDeliveryFieldsForTerminalStatus,
+  processSessionCompletionSuccess,
+  processSessionCompletionFailure,
 } from './ExpressSessionStateUpdater.js';
+
+for (const [status, complete] of [['COMPLETED', processSessionCompletionSuccess], ['FAILED', processSessionCompletionFailure]]) {
+  for (const mode of ['fixed', 'adapter', 'external', 'free']) {
+    test(`${mode} post-processing ${status} reports only its own charges without agent wallet settlement`, async t => {
+      const ready = mongoose.connection.readyState; mongoose.connection.readyState = 1;
+      t.after(() => { mongoose.connection.readyState = ready; });
+      const session = { _id: 'destination', userId: 'owner',
+        postProcessingBilling: { version: 1, sessionId: 'destination', mode, operation: 'edit',
+          priceCredits: 75, creditsCharged: mode === 'fixed' ? 75 : 0, creditsRefunded: 0 },
+        // Defense in depth for a previously copied quota/receipt.
+        hostedAgentBilling: { version: 2, state: 'ACTIVE', netFunded: 3600 },
+        sessionReceipt: { totalCharged: 3600, refunded: 3600 },
+        expressGenerationCreditCharges: { totalCharged: 3600 },
+      };
+      t.mock.method(VideoSession, 'findOne', async () => structuredClone(session));
+      t.mock.method(VideoSession, 'findById', () => ({ lean: async () => structuredClone(session) }));
+      t.mock.method(VideoSession, 'findByIdAndUpdate', async (_id, update) => { Object.assign(session, update.$set); });
+      t.mock.method(User, 'findOneAndUpdate', async () => assert.fail('Post-processing cannot refund the source wallet'));
+      t.mock.method(Ledger, 'find', filter => {
+        assert.equal(filter['metadata.sessionId'], 'destination'); assert.equal(filter.userId, 'owner');
+        return { select: () => ({ lean: async () => [{ amount: 2 }, { amount: 5 }] }) };
+      });
+      await complete('destination');
+      assert.equal(session.sessionReceipt.status, status);
+      assert.equal(session.sessionReceipt.totalCharged, mode === 'fixed' ? 75 : mode === 'adapter' ? 7 : 0);
+      assert.equal(session.sessionReceipt.refunded, 0);
+      assert.equal(session.sessionReceipt.stageBilling, false);
+      assert.equal(session.postProcessingBilling.status, status);
+    });
+  }
+}
 
 test('external completion identities use the public request id and retain upstream correlation', () => {
   assert.deepEqual(

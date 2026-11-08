@@ -63,7 +63,8 @@ export function getSourceSceneCatalog(session = {}) {
   }
   const movieScenes = Array.isArray(source.scenes) ? source.scenes : [];
   const rawScenes = !branched && Array.isArray(narrative.scenes) ? narrative.scenes : [];
-  const alignedRaw = rawScenes.length > 0 && (!movieScenes.length || movieScenes.length === rawScenes.length);
+  const alignedRaw = !movieScenes.some((scene) => scene?.timelineLayerId) &&
+    rawScenes.length > 0 && (!movieScenes.length || movieScenes.length === rawScenes.length);
   const baseScenes = movieScenes.length ? movieScenes : rawScenes;
   const scenes = baseScenes.map((scene, index) => ({
     ...(scene || {}),
@@ -157,6 +158,23 @@ export function resolveLayerSourceSceneReference(session = {}, layer = {}, layer
       return missing('conflicting_audio_scene_references');
     }
     return resolved(integer(audioRefs[0].sceneIndex), 'connectedAudioLayer.sourceSceneRef', audioRefs[0]);
+  }
+  // A finalized current plan can be compacted or reordered. Its explicit layer binding
+  // identifies the original scene without treating the new array position as provenance.
+  const currentMatches = catalog.scenes.flatMap((scene, index) =>
+    id(layer._id) && id(scene?.timelineLayerId) === id(layer._id) ? [index] : []);
+  if (currentMatches.length > 1) return missing('conflicting_current_scene_bindings');
+  if (currentMatches.length === 1) {
+    const currentIndex = currentMatches[0];
+    const scene = catalog.scenes[currentIndex];
+    const originalIndex = integer(scene.sourceSceneIndex) ?? currentIndex;
+    const reference = buildSourceSceneFields({ sourceSessionId: scene.sourceSessionId || session._id,
+      sceneIndex: currentIndex, scene, sounds: catalog.sounds,
+      themeJson: session.themeJson || session.parentJsonTheme || session.derivedJsonTheme || {},
+    }).sourceSceneRef;
+    reference.sceneIndex = originalIndex;
+    reference.sounds.forEach((sound) => { sound.sceneIndex = originalIndex; });
+    return resolved(originalIndex, 'movieResourceList.timelineLayerId', reference);
   }
   const joined = isJoinedSession(session);
   if (joined) return missing('joined_scene_provenance_missing');

@@ -1,117 +1,68 @@
+import { VIDGENIE_PAGE_CLASS, VIDGENIE_EDITOR_CLASS, VIDGENIE_CARD_CLASS, getVidgeniePreviewFrameStyle } from './vidgenieLayout.js';
+import { useInRouterContext, useLocation } from 'react-router-dom';
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { translateText as uiText } from '../../utils/localization.js';
-
 import { useColorMode } from '../../contexts/ColorMode.jsx';
+import { getSessionLoadingLayout, readSessionLoadingLayout } from '../../utils/sessionLoadingLayout.js';
+import { SkeletonBlock, SkeletonFields, SkeletonPage, SkeletonStatus } from '../common/LoadingSkeleton.jsx';
+import './mobileStyles.css';
 
-export default function VidgenieSkeletonLoader() {
+export function VidgenieSkeleton({ variant = 'unknown', aspectRatio = '16:9', embedded = false }) {
   useUiLanguage();
   const { colorMode } = useColorMode();
-  const isDark = colorMode === 'dark';
-
-  const shellBg = isDark
-    ? 'bg-[linear-gradient(180deg,#15171f_0%,#12141c_44%,#0c0d12_100%)]'
-    : 'bg-gradient-to-br from-[#e9edf7] via-[#eef3fb] to-white';
-
-  const surface = isDark
-    ? 'bg-[#181b24]/95 border border-[#3a4050] shadow-[0_18px_48px_rgba(0,0,0,0.34)] backdrop-blur-xl'
-    : 'bg-white border border-slate-200 shadow-[0_16px_40px_rgba(15,23,42,0.08)]';
-
-  const mutedSurface = isDark ? 'bg-[#273247]' : 'bg-slate-100';
-  const subtleSurface = isDark ? 'bg-[#3b4862]' : 'bg-slate-200';
-
-  return (
-    <div
-      className={`${shellBg} fixed inset-0 z-40 min-h-screen w-full overflow-x-hidden overflow-y-auto ${
-        isDark ? 'text-slate-100' : 'text-slate-900'
-      }`}
-      role="status"
-      aria-busy="true"
-      aria-label={uiText("Loading VidGenie")}
-    >
-      <span className="sr-only">{uiText("Loading VidGenie")}</span>
-      <div className="mx-auto max-w-screen-xl min-w-0 space-y-5 px-4 py-6 sm:px-6">
-        <div className={`${surface} theme-skeleton-pulse flex min-w-0 flex-col gap-3 rounded-2xl px-5 py-4 sm:flex-row sm:items-center sm:justify-between`}>
-          <div className="flex min-w-0 items-center gap-3">
-            <div className={`${subtleSurface} h-10 w-10 rounded-xl`} />
-            <div className="min-w-0 flex-1 space-y-2">
-              <div className={`${mutedSurface} h-3 w-full max-w-28 rounded-full`} />
-              <div className={`${mutedSurface} h-3 w-full max-w-16 rounded-full`} />
-            </div>
-          </div>
-          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_2.5rem_2.5rem] items-center gap-3 sm:flex sm:w-auto">
-            <div className={`${mutedSurface} h-10 w-full max-w-28 rounded-full`} />
-            <div className={`${mutedSurface} h-10 w-10 rounded-full`} />
-            <div className={`${mutedSurface} h-10 w-10 rounded-full`} />
-          </div>
+  const surface = `border border-line ${colorMode === 'dark' ? 'bg-[#181b24]/96 shadow-[0_20px_56px_rgba(0,0,0,0.32)]' : 'bg-white shadow-sm'}`;
+  const completed = variant === 'completed';
+  const showForm = variant === 'init' || variant === 'pending';
+  const content = (
+    <SkeletonStatus label={uiText('Loading VidGenie')} data-loading-layout={variant} className={VIDGENIE_EDITOR_CLASS}>
+      <div className={`${VIDGENIE_CARD_CLASS} ${surface}`}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
+          <SkeletonBlock className="h-7 w-44 max-w-full" />
+          <SkeletonBlock className="h-9 w-full rounded-full sm:w-28" />
+          <SkeletonBlock className="h-8 w-36 max-w-full self-center rounded-full sm:ml-auto" />
         </div>
-
-        <div className={`${surface} theme-skeleton-pulse min-w-0 space-y-5 rounded-2xl p-5`}>
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-            <div className="min-w-0 flex-1 space-y-3">
-              <div className={`${mutedSurface} h-4 w-full max-w-44 rounded-full`} />
-              <div className={`${mutedSurface} h-3 w-full max-w-72 rounded-full`} />
-            </div>
-            <div className="flex min-w-0 items-center gap-2">
-              <div className={`${mutedSurface} h-10 min-w-0 flex-1 rounded-full sm:w-28 sm:flex-none`} />
-              <div className={`${mutedSurface} h-10 w-10 rounded-full`} />
-            </div>
+        {completed && <>
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
+            {[0, 1, 2].map(index => <SkeletonBlock key={index} className="h-9 w-28 max-w-full" />)}
           </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {[...Array(7)].map((_, idx) => (
-              <div
-                key={`option-${idx}`}
-                className={`${mutedSurface} h-12 rounded-xl border border-white/5`}
-              />
-            ))}
+          <div className="mt-4 rounded-xl bg-surface-sunken p-3 ring-1 ring-line">
+            <SkeletonBlock className="h-4 w-28" /><SkeletonBlock className="mt-2 h-3 w-44 max-w-full" />
           </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-[3fr_2fr] gap-4 items-start">
-            <div className={`${mutedSurface} rounded-2xl relative overflow-hidden`}>
-              <div className="absolute inset-4 border-2 border-dashed border-white/10 rounded-2xl" />
-              <div className="absolute top-4 left-4 h-4 w-24 rounded-full bg-white/10" />
-              <div className="absolute bottom-4 left-4 h-3 w-40 rounded-full bg-white/10" />
-              <div className="absolute bottom-4 right-4 flex gap-2">
-                <div className="h-9 w-9 rounded-full bg-white/10" />
-                <div className="h-9 w-20 rounded-full bg-white/10" />
-              </div>
-              <div className="aspect-video" />
-            </div>
-
-            <div className="space-y-3">
-              <div className={`${mutedSurface} h-6 rounded-lg w-32`} />
-              {[...Array(3)].map((_, idx) => (
-                <div
-                  key={`status-${idx}`}
-                  className={`${mutedSurface} h-10 rounded-xl border border-white/5`}
-                />
-              ))}
-              <div className={`${mutedSurface} h-16 rounded-xl`} />
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className={`${mutedSurface} h-4 w-28 rounded-full`} />
-              <div className="flex gap-2">
-                <div className={`${mutedSurface} h-10 w-10 rounded-full`} />
-                <div className={`${mutedSurface} h-10 w-24 rounded-full`} />
-              </div>
-            </div>
-            <div className={`${mutedSurface} h-32 rounded-2xl`} />
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex gap-2">
-                <div className={`${mutedSurface} h-10 w-28 rounded-full`} />
-                <div className={`${mutedSurface} h-10 w-10 rounded-full`} />
-              </div>
-              <div className="flex gap-2">
-                <div className={`${mutedSurface} h-10 w-10 rounded-full`} />
-                <div className={`${mutedSurface} h-10 w-10 rounded-full`} />
-              </div>
-            </div>
-          </div>
-        </div>
+        </>}
+        {showForm && <div className="mt-4" data-skeleton-request>
+          <SkeletonFields count={6} />
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3"><SkeletonBlock className="h-9 w-56 max-w-full" /><SkeletonBlock className="h-9 w-24" /></div>
+        </div>}
+        {variant === 'unknown' && <div className="mt-4 space-y-3"><SkeletonBlock className="h-4 w-1/3" /><SkeletonBlock className="h-16 w-full" /></div>}
       </div>
-    </div>
+      {(completed || variant === 'pending') && <div data-skeleton-result className={`vidgenie-progress-panel mt-5 rounded-xl p-3 sm:rounded-2xl sm:p-4 ${surface}`}>
+        {variant === 'pending' && <SkeletonBlock className="h-3 w-full rounded-full" />}
+        <SkeletonBlock className={`vidgenie-preview-frame ${aspectRatio === '9:16' ? 'vidgenie-preview-frame-portrait' : 'vidgenie-preview-frame-landscape'} mx-auto mt-5 rounded-xl`} style={getVidgeniePreviewFrameStyle(aspectRatio)} />
+      </div>}
+      {completed && <div className={`mt-3 rounded-2xl p-4 ${surface}`}><SkeletonBlock className="h-4 w-36" /><div className="mt-3 flex flex-wrap gap-2">{[0, 1, 2, 3].map(index => <SkeletonBlock key={index} className="h-9 w-28" />)}</div></div>}
+      {showForm && <div className="mt-4 space-y-3" data-skeleton-prompt>
+        <SkeletonBlock className="h-4 w-44" /><SkeletonBlock className="h-32 w-full" />
+        <div className="flex justify-between gap-3"><SkeletonBlock className="h-3 w-36" /><SkeletonBlock className="h-3 w-16" /></div>
+        <div className="flex flex-wrap justify-between gap-3 pt-2"><SkeletonBlock className="h-10 w-44" /><SkeletonBlock className="h-10 w-28" /></div>
+        <SkeletonBlock className="h-11 w-full" />
+      </div>}
+    </SkeletonStatus>
   );
+  if (embedded) return content;
+  return <SkeletonPage className="pb-8"><div className={VIDGENIE_PAGE_CLASS}>{content}</div></SkeletonPage>;
+}
+
+function RouteVidgenieSkeleton(props) {
+  const location = useLocation();
+  const id = location.pathname.match(/^\/(?:vidgenie|vidgpt|videogpt|vidgemie|video|quick_video)\/([^/]+)\/?$/)?.[1];
+  const guest = location.state?.guestSession;
+  const guestId = String(guest?._id?.$oid || guest?._id || guest?.id || '');
+  const layout = id && guestId === id && guest?.isGuestSession === true
+    ? getSessionLoadingLayout(guest) : readSessionLoadingLayout(id);
+  return <VidgenieSkeleton {...layout} {...props} />;
+}
+
+export default function VidgenieSkeletonLoader(props) {
+  const inRouter = useInRouterContext();
+  return inRouter ? <RouteVidgenieSkeleton {...props} /> : <VidgenieSkeleton {...props} />;
 }

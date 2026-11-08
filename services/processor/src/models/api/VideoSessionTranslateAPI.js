@@ -6,10 +6,13 @@ import { fileURLToPath } from 'url';
 import { Types } from 'mongoose';
 
 import { getDBConnectionString } from '../DBString.js';
-import { deductGenerationCredits } from '../GenerationCredits.js';
+import { admitPostProcessing } from './PostProcessingBilling.js';
+import { stripInheritedBilling } from '../../billing/PostProcessingBilling.js';
 import { upsertGlobalSessionMapping } from '../GlobalSession.js';
 import VideoSession from '../../schema/VideoSession.js';
 import { captureSessionSceneReferences } from '../video/SceneIdentity.js';
+import { captureMovieResourceTimeline, synchronizeMovieResourceTimeline, resolveMovieResourceScene,
+  resolveMovieResourceSound, isNonNarrativeTimelineLayer } from '../../utils/MovieResourceTimeline.js';
 import AudioGeneration from '../../schema/AudioGeneration.js';
 import User from '../../schema/User.js';
 import { normalizeSupportedLanguage, SUPPORTED_LANGUAGES } from '../../consts/SupportedLanguages.js';
@@ -20,6 +23,8 @@ import { translateTextContent } from '../OpenAI.js';
 import { translateSpeech } from '../agent/AudioCreatorAgent.js';
 import { resolveEffectiveInferenceSettings } from './RequestModelOverrides.js';
 import { validateTranslatedSpeech } from '../movie_session/TranslatedSpeechValidation.js';
+import { uploadFileToMediaBucket } from '../AWS.js';
+import { publishClonedAiVideoMedia } from './ClonedAiVideoMedia.js';
 import {
   applySubtitleLanguageSelectionForRerun,
   backfillTranslatedSubtitleMetadataForRerun,
@@ -63,7 +68,9 @@ async function createNewBlankVideoSession(userId, sessionOverrides = {}) {
   const userData = await User.findById(userId).select('videoFramesPerSecond').lean();
   const framesPerSecond = resolveFramesPerSecond(userData?.videoFramesPerSecond);
   const overrides = sessionOverrides && typeof sessionOverrides === 'object' ? sessionOverrides : {};
-  const newSession = await VideoSession.create({ userId, framesPerSecond, ...overrides });
+  const newSession = await VideoSession.create({
+    userId, framesPerSecond, expressGenerationPending: false, ...overrides,
+  });
   return newSession._id.toString();
 }
 
@@ -486,6 +493,7 @@ function createNewObjectId() {
 
 function regenerateLayerAndAudioLayerIds(sessionData = {}) {
   captureSessionSceneReferences(sessionData);
+  captureMovieResourceTimeline(sessionData);
   const layerIdMap = new Map();
   const layerIdByIndex = new Map();
   const audioLayerIdMap = new Map();
@@ -567,6 +575,13 @@ function regenerateLayerAndAudioLayerIds(sessionData = {}) {
 
   sessionData.layers = layers;
   sessionData.audioLayers = audioLayers;
+  // Current-plan bindings move with the copied objects; immutable source references do not.
+  for (const scene of sessionData.movieResourceList?.scenes || []) {
+    if (layerIdMap.has(String(scene.timelineLayerId))) scene.timelineLayerId = layerIdMap.get(String(scene.timelineLayerId));
+  }
+  for (const sound of sessionData.movieResourceList?.sounds || []) {
+    if (audioLayerIdMap.has(String(sound.timelineAudioId))) sound.timelineAudioId = audioLayerIdMap.get(String(sound.timelineAudioId));
+  }
 
   return {
     layerIdMap,
@@ -606,6 +621,7 @@ function resetTimelineDurationsFromMovieResourceList(sessionData = {}) {
   let durationOffset = 0;
   const layerIndexById = new Map();
   const previousLayerOffsets = layers.map((layer) => Number(layer?.durationOffset) || 0);
+  const sceneByLayer = layers.map((layer, idx) => resolveMovieResourceScene(sessionData, layer, idx));
   layers.forEach((layer, idx) => {
     const layerId = layer?._id?.toString?.() ?? layer?._id ?? null;
     if (layerId) {
@@ -618,13 +634,18 @@ function resetTimelineDurationsFromMovieResourceList(sessionData = {}) {
       return;
     }
 
-    const scene = idx < scenes.length ? scenes[idx] : null;
+    const scene = sceneByLayer[idx]?.scene;
     const sceneDuration = normalizePositiveNumber(scene?.duration) ?? defaultSceneDuration;
-
-    if (idx < scenes.length) {
+    const existingDuration = normalizePositiveNumber(layer.duration);
+    const hasReusableVideo = Boolean(layer.aiVideoLayer || layer.aiVideoRemoteLink || layer.hasAiVideoLayer ||
+      layer.videoLayer || layer.videoRemoteLink || layer.userVideoLayer || layer.userVideoRemoteLink || layer.hasUserVideoLayer);
+    // Reused clips retain their actual edited frame budget, including fractional final frames.
+    // Older sessions may still carry the pre-deletion/pre-generation narrative durations.
+    if ((hasReusableVideo || isNonNarrativeTimelineLayer(layer)) && existingDuration) {
+      layer.duration = existingDuration;
+    } else if (scene) {
       layer.duration = sceneDuration;
     } else {
-      const existingDuration = normalizePositiveNumber(layer.duration);
       layer.duration = existingDuration ?? defaultSceneDuration;
     }
 
@@ -636,7 +657,7 @@ function resetTimelineDurationsFromMovieResourceList(sessionData = {}) {
   const speechSounds = sounds.filter((sound) => sound && typeof sound === 'object' && sound.type !== 'sound_effect');
 
   const audioLayers = Array.isArray(sessionData.audioLayers) ? sessionData.audioLayers : [];
-  const speechOrdinalByLayer = new Map();
+  const usedSoundsByLayer = new Map();
   let speechLayerFallbackIndex = 0;
   audioLayers.forEach((audioLayer) => {
     if (!audioLayer || typeof audioLayer !== 'object') {
@@ -661,20 +682,23 @@ function resetTimelineDurationsFromMovieResourceList(sessionData = {}) {
     }
 
     const sourceSceneIndex = Number(connectedLayer.sourceSceneRef?.sceneIndex ?? resolvedLayerIndex);
-    const sourceSounds = connectedLayer.sourceSceneRef?.sounds;
+    const currentScene = sceneByLayer[resolvedLayerIndex];
+    const sourceSounds = currentScene?.scene?.timelineLayerId ? currentScene.sounds
+      : connectedLayer.sourceSceneRef?.sounds ?? currentScene?.sounds;
     const sceneSounds = Array.isArray(sourceSounds)
       ? sourceSounds.filter((sound) => sound && sound.type !== 'sound_effect')
       : speechSounds.filter((sound) => Number(sound.sceneIndex) === sourceSceneIndex);
-    const ordinal = speechOrdinalByLayer.get(resolvedLayerIndex) || 0;
-    speechOrdinalByLayer.set(resolvedLayerIndex, ordinal + 1);
-    const originalText = getSpeechTextFromAudioLayer(audioLayer);
-    const textMatches = sceneSounds.filter((sound) => typeof sound.audio === 'string' && sound.audio.trim() === originalText);
-    const sound = textMatches.length === 1 ? textMatches[0] : sceneSounds[ordinal];
+    const usedSounds = usedSoundsByLayer.get(resolvedLayerIndex) || new Set();
+    usedSoundsByLayer.set(resolvedLayerIndex, usedSounds);
+    const matched = resolveMovieResourceSound(sceneSounds, audioLayer, usedSounds);
+    if (matched) usedSounds.add(matched.index);
+    const sound = matched?.sound;
     const sourceStart = Number(audioLayer.startTime);
-    const offset = audioLayer.startTime != null && Number.isFinite(sourceStart)
+    const sourceOffset = audioLayer.startTime != null && Number.isFinite(sourceStart)
       ? Math.max(0, sourceStart - previousLayerOffsets[resolvedLayerIndex])
       : Math.max(0, Number(audioLayer.connectedLayerStartTimeOffset) || 0);
-    const availableDuration = connectedLayer.duration - offset;
+    const offset = Math.min(connectedLayer.duration, sourceOffset);
+    const availableDuration = Math.max(0, connectedLayer.duration - offset);
     const duration = Math.min(availableDuration, normalizePositiveNumber(sound?.duration) ?? availableDuration);
 
     audioLayer.duration = duration;
@@ -690,6 +714,7 @@ function resetTimelineDurationsFromMovieResourceList(sessionData = {}) {
   sessionData.layers = layers;
   sessionData.audioLayers = audioLayers;
   sessionData.totalDuration = durationOffset;
+  synchronizeMovieResourceTimeline(sessionData);
 }
 
 function getSpeechTextFromAudioLayer(audioLayer = {}) {
@@ -1021,10 +1046,13 @@ async function copyTranslateSessionAssets({
     ? assetsRoots
     : resolveV2AssetsRoots();
 
+  // These jobs render fresh frames; copying decoded caches duplicates large
+  // intermediates, including trees indexed by the source session's layer IDs.
   await copyV2SessionAssetDirectories({
     assetsRoots: resolvedAssetsRoots,
     oldSessionId,
     newSessionId,
+    includeFrameCaches: false,
   });
 
   return copyReferencedSessionAssets({
@@ -1032,6 +1060,7 @@ async function copyTranslateSessionAssets({
     assetsRoots: resolvedAssetsRoots,
     oldSessionId,
     newSessionId,
+    includeFrameCaches: false,
   });
 }
 
@@ -1041,20 +1070,28 @@ async function clonePostProcessingSessionAssets({
   oldSessionId,
   newSessionId,
   assetsRoots = null,
+  userId = clonedSession?.userId,
+  publishFile = uploadFileToMediaBucket,
 }) {
+  const resolvedAssetsRoots = Array.isArray(assetsRoots) && assetsRoots.length
+    ? assetsRoots
+    : resolveV2AssetsRoots();
   const copyResult = await copyTranslateSessionAssets({
     originalSessionData,
     oldSessionId,
     newSessionId,
-    assetsRoots,
+    assetsRoots: resolvedAssetsRoots,
   });
   const rewriteResult = rewriteV2SessionAssetReferences(
     clonedSession,
     oldSessionId,
     newSessionId,
   );
+  const publicationResult = await publishClonedAiVideoMedia({
+    clonedSession, newSessionId, userId, assetsRoots: resolvedAssetsRoots, publishFile,
+  });
 
-  return { copyResult, rewriteResult };
+  return { copyResult, rewriteResult, publicationResult };
 }
 
 async function applyOutroImageOverrideToSession({ clonedSession, outroImageUrl, newSessionId, assetsRoot }) {
@@ -1589,6 +1626,7 @@ async function processTranslateVideoSessionJob({
 }, {
   translateTextContent: translateTextImpl = translateTextContent,
   copyTranslateSessionAssets: copyAssets = copyTranslateSessionAssets,
+  publishClonedAiVideoMedia: publishCopiedMedia = publishClonedAiVideoMedia,
   rewriteSpeechItem,
 } = {}) {
   await getDBConnectionString();
@@ -1642,6 +1680,7 @@ async function processTranslateVideoSessionJob({
   delete clonedSession.__v;
   delete clonedSession.createdAt;
   delete clonedSession.updatedAt;
+  stripInheritedBilling(clonedSession);
 
   regenerateLayerAndAudioLayerIds(clonedSession);
   resetTimelineDurationsFromMovieResourceList(clonedSession);
@@ -1692,6 +1731,17 @@ async function processTranslateVideoSessionJob({
     clonedSession,
     normalizedLanguageCode,
     enableSubtitles,
+  });
+  synchronizeMovieResourceTimeline(clonedSession);
+
+  // Clear obsolete source lip-sync outputs first, then publish only clips the
+  // translated session will reuse. Workers cannot see this state until ready.
+  await publishCopiedMedia({
+    clonedSession,
+    newSessionId,
+    userId,
+    assetsRoots: resolveV2AssetsRoots(),
+    publishFile: uploadFileToMediaBucket,
   });
 
   try {
@@ -1776,22 +1826,6 @@ export async function translateVideoSessionAndQueueGeneration(userId, payload = 
     : null;
   const skipCreditDeduction = payload.skipCreditDeduction === true;
 
-  const creditResult = skipCreditDeduction
-    ? { creditsCharged: creditsToCharge, remainingCredits: null }
-    : await deductGenerationCredits(userId, creditsToCharge, {
-        source: 'translate_video',
-        metadata: {
-          originalSessionId: oldSessionId,
-          language: normalizedLanguageCode,
-          enableSubtitles,
-          translateOutro,
-          translateFooter,
-          durationSeconds,
-          billableSeconds,
-          requestType: 'API',
-        },
-      });
-
   const newSessionId = await createNewBlankVideoSession(userId, {
     aspectRatio: originalSessionData?.aspectRatio || '16:9',
     inferenceModel,
@@ -1804,8 +1838,23 @@ export async function translateVideoSessionAndQueueGeneration(userId, payload = 
     language: normalizedLanguageCode,
     sessionLanguage: normalizedLanguageCode,
     languageString: getLanguageStringFromLanguageCode(normalizedLanguageCode),
-    transcriptGenerationPending: enableSubtitles,
+    transcriptGenerationPending: false,
   });
+  const creditResult = await admitPostProcessing({
+    sessionId: newSessionId, userId, external: skipCreditDeduction, priceCredits: creditsToCharge,
+    operation: 'translate_video',
+    metadata: {
+      originalSessionId: oldSessionId,
+      language: normalizedLanguageCode,
+      enableSubtitles,
+      translateOutro,
+      translateFooter,
+      durationSeconds,
+      billableSeconds,
+      requestType: 'API',
+    },
+  });
+
   await upsertGlobalSessionMapping({
     sessionId: newSessionId,
     sessionType: 'video',
@@ -2038,6 +2087,8 @@ export async function removeSubtitlesAndQueueGeneration(userId, payload = {}) {
     expressGenerationStatus: buildRemoveSubtitlesExpressGenerationStatus(),
   });
 
+  await admitPostProcessing({ sessionId: newSessionId, userId, operation: 'remove_subtitles', mode: 'free' });
+
   await upsertGlobalSessionMapping({
     sessionId: newSessionId,
     sessionType: 'video',
@@ -2137,6 +2188,8 @@ export async function addSubtitlesAndQueueGeneration(userId, payload = {}) {
       : {}),
     expressGenerationStatus: buildAddSubtitlesExpressGenerationStatus(),
   });
+
+  await admitPostProcessing({ sessionId: newSessionId, userId, operation: 'add_subtitles', mode: 'free' });
 
   await upsertGlobalSessionMapping({
     sessionId: newSessionId,
@@ -2287,12 +2340,14 @@ async function processRemoveSubtitlesSessionJob({ userId, oldSessionId, newSessi
   delete clonedSession.__v;
   delete clonedSession.createdAt;
   delete clonedSession.updatedAt;
+  stripInheritedBilling(clonedSession);
 
   await clonePostProcessingSessionAssets({
     originalSessionData,
     clonedSession,
     oldSessionId,
     newSessionId,
+    userId,
   });
   stripTextItemsFromActiveItemLists(clonedSession);
   prepareSessionForSubtitleRemoval({
@@ -2338,12 +2393,14 @@ async function processAddSubtitlesSessionJob({
   delete clonedSession.__v;
   delete clonedSession.createdAt;
   delete clonedSession.updatedAt;
+  stripInheritedBilling(clonedSession);
 
   await clonePostProcessingSessionAssets({
     originalSessionData,
     clonedSession,
     oldSessionId,
     newSessionId,
+    userId,
   });
   stripTextItemsFromActiveItemLists(clonedSession);
   prepareSessionForSubtitleAddition({

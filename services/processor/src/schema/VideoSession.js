@@ -431,6 +431,10 @@ const videoSessionSchema = new Schema({
   expressGenerationBillingDurationSeconds: { type: Number, default: 0 },
   expressGenerationBillingStageDurations: { type: Object, default: {} },
   expressGenerationCreditCharges: { type: Object, default: {} },
+  hostedAgentBilling: { type: Schema.Types.Mixed, default: undefined },
+  postProcessingBilling: { type: Schema.Types.Mixed, default: undefined },
+  legacyProvisionalRefund: { type: Schema.Types.Mixed, default: undefined },
+  finalVideoDurationSeconds: { type: Number, default: undefined },
   expressGenerationPricingRateClass: { type: String, default: 'studio' },
   isStepVideoGeneration: { type: Boolean, default: false },
   expressStepGeneration: { type: Object, default: {} },
@@ -528,6 +532,8 @@ videoSessionSchema.index({ shareToken: 1 }, { unique: true, sparse: true });
 videoSessionSchema.index({ editableShareToken: 1 }, { unique: true, sparse: true });
 
 // Create a Model
+videoSessionSchema.index({ 'legacyProvisionalRefund.status': 1 });
+
 const VideoSession = model('VideoSession', videoSessionSchema);
 
 export default VideoSession;

@@ -163,7 +163,7 @@ function ProviderAdapterPriorityEditor({ enabled = false }) {
         {[0, 1, 2].map((item) => (
           <div
             key={item}
-            className={`animate-pulse rounded-xl border ${borderColor} ${stageSurface} p-4`}
+            className={`theme-skeleton-pulse rounded-xl border ${borderColor} ${stageSurface} p-4`}
           >
             <div
               className={`h-4 w-32 rounded ${

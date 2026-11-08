@@ -1,9 +1,7 @@
 
 import 'dotenv/config';
 
-import * as mongoose from 'mongoose';
-
-let db;
+import mongoose from 'mongoose';
 
 const CONTAINER_RUNTIMES = new Set(['docker', 'container', 'compose', 'kubernetes', 'k8s']);
 const DEPLOYED_ENVIRONMENTS = new Set(['staging', 'docker', 'standalone', 'community']);
@@ -68,25 +66,41 @@ export function resolveMongoConnectionString(env = process.env) {
   return 'mongodb://localhost:27017/SamsarGG';
 }
 
-export async function getDBConnectionString() {
-  if (db) {
-    return db;
-  }
-  const connectionString = resolveMongoConnectionString();
-
-
-  
-  mongoose.connect(`${connectionString}`, { useNewUrlParser: true, useUnifiedTopology: true });
-
-
-  db = mongoose;
-
-  return db;
+// Do not cache a mongoose namespace before its connection is ready: after a
+// database outage the maintenance scheduler must be able to retry connecting.
+export function createMongoConnectionManager({
+  mongooseImpl = mongoose,
+  connectionString = resolveMongoConnectionString,
+} = {}) {
+  let connecting = null;
+  return async function ensureConnected() {
+    if (mongooseImpl.connection.readyState === 1) return mongooseImpl;
+    if (!connecting) {
+      connecting = Promise.resolve().then(async () => {
+        await mongooseImpl.connect(connectionString(), {
+          serverSelectionTimeoutMS: 10000,
+          connectTimeoutMS: 10000,
+          socketTimeoutMS: 30000,
+          maxPoolSize: 4,
+          minPoolSize: 0,
+        });
+        return mongooseImpl;
+      });
+    }
+    const attempt = connecting;
+    try {
+      return await attempt;
+    } finally {
+      if (connecting === attempt) connecting = null;
+    }
+  };
 }
 
+const ensureDatabaseConnected = createMongoConnectionManager();
 
-
-
+export async function getDBConnectionString() {
+  return ensureDatabaseConnected();
+}
 
 export async function getDatabase() {
   const dbConnection = await getDBConnectionString();

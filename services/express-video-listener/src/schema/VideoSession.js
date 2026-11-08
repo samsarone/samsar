@@ -382,7 +382,12 @@ const videoSessionSchema = new Schema({
 
   provisionalCredits: { type: Number, default: 0 },
   expressGenerationBillingDurationSeconds: { type: Number, default: 0 },
+  expressGenerationPricingRateClass: { type: String, default: 'studio' },
   expressGenerationCreditCharges: { type: Object, default: {} },
+  hostedAgentBilling: { type: Schema.Types.Mixed, default: undefined },
+  postProcessingBilling: { type: Schema.Types.Mixed, default: undefined },
+  legacyProvisionalRefund: { type: Schema.Types.Mixed, default: undefined },
+  finalVideoDurationSeconds: { type: Number, default: undefined },
   isStepVideoGeneration: { type: Boolean, default: false },
   expressStepGeneration: { type: Object, default: {} },
 

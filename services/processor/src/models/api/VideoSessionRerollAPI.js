@@ -903,6 +903,8 @@ export async function rerollVideoSessionLayersAndQueueGeneration(userId, {
   }
   markAllLayersForFrameRegeneration(sessionData);
 
+  sessionData.postProcessingBilling = { version: 1, sessionId: String(rerollSessionId), userId: String(userId),
+    operation: 'reroll_layers', mode: 'adapter', priceCredits: 0, creditsCharged: 0, creditsRefunded: 0, refundLimit: 0 };
   sessionData.videoBillingPolicy = 'adapter';
   sessionData.videoBillingAPIKeyUsage = apiKeyId ? { apiKeyId } : null;
   sessionData.videoBillingDebits = {};

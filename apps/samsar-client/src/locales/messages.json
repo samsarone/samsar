@@ -1,4 +1,24 @@
 {
+  "Express edits": {
+    "en": "Express edits",
+    "th": "แก้ไขวิดีโอ Express",
+    "ja": "Express 編集"
+  },
+  "More controls": {
+    "en": "More controls",
+    "th": "ตัวควบคุมเพิ่มเติม",
+    "ja": "その他の操作"
+  },
+  "Assistant connection interrupted.": {
+    "en": "Assistant connection interrupted.",
+    "th": "การเชื่อมต่อกับผู้ช่วยถูกขัดจังหวะ",
+    "ja": "アシスタントとの接続が中断されました。"
+  },
+  "Assistant connection timed out.": {
+    "en": "Assistant connection timed out.",
+    "th": "การเชื่อมต่อกับผู้ช่วยหมดเวลา",
+    "ja": "アシスタントとの接続がタイムアウトしました。"
+  },
   " Existing credentials remain unchanged when the value is left blank.": {
     "en": " Existing credentials remain unchanged when the value is left blank.",
     "th": "เว้นว่างเพื่อใช้ข้อมูลรับรองเดิม",

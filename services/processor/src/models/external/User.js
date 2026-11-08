@@ -1,3 +1,4 @@
+import { createExternalRequestRefund } from './ExternalRequestRefund.js';
 import { randomUUID } from 'crypto';
 import jwt from 'jsonwebtoken';
 
@@ -471,30 +472,6 @@ async function debitInternalAndCustomerSubAccountCredits({
     }
     throw error;
   }
-}
-
-async function creditInternalAndCustomerSubAccountCredits({
-  externalUser,
-  credits,
-  source,
-  metadata = {},
-}) {
-  const internalCredit = await creditGenerationCredits(externalUser.internalUserId, credits, {
-    source,
-    metadata,
-  });
-  const customerSubAccountRef = getExternalUserCustomerSubAccountRef(externalUser);
-  const subAccountCredit = customerSubAccountRef
-    ? await creditCustomerSubAccountCredits(customerSubAccountRef, credits)
-    : { enforced: false, remainingCredits: null };
-
-  return {
-    internalCredit,
-    subAccountCredit,
-    remainingCredits: subAccountCredit.enforced
-      ? subAccountCredit.remainingCredits
-      : internalCredit?.remainingCredits,
-  };
 }
 
 async function recordExternalUserCreditTransaction({
@@ -1410,6 +1387,8 @@ function normalizeCreditAmount(value) {
   return Math.floor(numericValue);
 }
 
+const settleExternalRefund = createExternalRequestRefund(isInternalBillingExternalUser);
+
 async function applyExternalChargeTargetByRequest({
   requestRecord,
   targetCreditsCharged,
@@ -1426,9 +1405,25 @@ async function applyExternalChargeTargetByRequest({
     };
   }
 
+  requestRecord = await ExternalUserRequest.findById(requestRecord._id).lean();
+  if (requestRecord.refundSettlement?.pendingOperation) {
+    requestRecord = await settleExternalRefund(requestRecord._id, requestRecord.refundSettlement.pendingOperation.target);
+  }
   const normalizedTarget = normalizeCreditAmount(targetCreditsCharged);
   const currentCreditsCharged = normalizeCreditAmount(requestRecord.creditsCharged);
   const creditsDelta = normalizedTarget - currentCreditsCharged;
+  // An acceptance retry must not write an old charge receipt over a concurrent
+  // refund. There is no wallet or charge-record work for an unchanged target.
+  if (creditsDelta === 0) return { requestRecord,
+    externalUser: await ExternalUser.findById(requestRecord.externalUserId) };
+  if (creditsDelta < 0) {
+    const ceiling = requestRecord.refundSettlement?.ceiling ?? requestRecord.refundCeilingCredits ?? currentCreditsCharged;
+    const updated = await settleExternalRefund(requestRecord._id, Math.max(0, ceiling - normalizedTarget));
+    return { requestRecord: updated, externalUser: await ExternalUser.findById(requestRecord.externalUserId) };
+  }
+  if (creditsDelta > 0 && (requestRecord.refundSettlement || ['FAILED', 'CANCELLED'].includes(requestRecord.status))) {
+    throw Object.assign(new Error('A refunded or failed request cannot be charged again.'), { code: 'EXTERNAL_BILLING_TERMINAL', status: 409 });
+  }
   const now = new Date();
   const auditSourceBase =
     normalizeString(auditSource) ||
@@ -1449,6 +1444,11 @@ async function applyExternalChargeTargetByRequest({
   const scopedExternalUser = await ExternalUser.findById(requestRecord.externalUserId);
   const usesInternalCredits = isInternalBillingExternalUser(scopedExternalUser);
 
+  const billingAccount = requestRecord.billingAccount || {
+    type: usesInternalCredits ? 'internal' : 'external', userId: String(scopedExternalUser.internalUserId),
+    externalUserId: String(scopedExternalUser._id),
+    subAccountId: scopedExternalUser.customerSubAccountId ? String(scopedExternalUser.customerSubAccountId) : null,
+  };
   let updatedExternalUser = scopedExternalUser;
 
   if (creditsDelta > 0) {
@@ -1459,6 +1459,8 @@ async function applyExternalChargeTargetByRequest({
         source: `${auditSourceBase}_charge`,
         metadata: baseAuditMetadata,
       });
+      billingAccount.subAccountRefundLimit = (Number(billingAccount.subAccountRefundLimit) || 0) +
+        (deduction.subAccountDebit?.enforced ? creditsDelta : 0);
       updatedExternalUser = await syncInternalExternalUserBalance(
         scopedExternalUser,
         deduction?.remainingCredits,
@@ -1497,39 +1499,6 @@ async function applyExternalChargeTargetByRequest({
         throw error;
       }
     }
-  } else if (creditsDelta < 0) {
-    const refundDelta = Math.abs(creditsDelta);
-    if (usesInternalCredits && scopedExternalUser?.internalUserId) {
-      const credit = await creditInternalAndCustomerSubAccountCredits({
-        externalUser: scopedExternalUser,
-        credits: refundDelta,
-        source: `${auditSourceBase}_refund`,
-        metadata: baseAuditMetadata,
-      });
-      updatedExternalUser = await syncInternalExternalUserBalance(
-        scopedExternalUser,
-        credit?.remainingCredits,
-        {
-          increment: {
-            totalCreditsRefunded: refundDelta,
-          },
-        },
-      );
-    } else {
-      updatedExternalUser = await ExternalUser.findByIdAndUpdate(
-        requestRecord.externalUserId,
-        {
-          $inc: {
-            generationCredits: refundDelta,
-            totalCreditsRefunded: refundDelta,
-          },
-          $set: {
-            lastActivityAt: now,
-          },
-        },
-        { new: true },
-      );
-    }
   } else {
     updatedExternalUser = await ExternalUser.findByIdAndUpdate(
       requestRecord.externalUserId,
@@ -1552,6 +1521,8 @@ async function applyExternalChargeTargetByRequest({
     {
       $set: {
         creditsCharged: normalizedTarget,
+        ...(creditsDelta > 0 ? { billingAccount, refundCeilingCredits:
+          (Number(requestRecord.refundCeilingCredits) || currentCreditsCharged) + creditsDelta } : {}),
         remainingCreditsSnapshot: resolvedRemainingCredits,
       },
     },
@@ -1627,30 +1598,13 @@ export async function refundExternalRequestCredits({
     return null;
   }
 
-  const currentCreditsCharged = normalizeCreditAmount(requestRecord.creditsCharged);
-  const requestedRefund = normalizeCreditAmount(creditsToRefund);
-  const refundAmount = requestedRefund > 0 ? Math.min(currentCreditsCharged, requestedRefund) : currentCreditsCharged;
-  const nextCreditsCharged = Math.max(0, currentCreditsCharged - refundAmount);
+  const requested = normalizeCreditAmount(creditsToRefund);
   const sanitizedResponsePayload = sanitizeExternalFacingPayload(responsePayload);
-
-  const { requestRecord: updatedRequestRecord } = await applyExternalChargeTargetByRequest({
-    requestRecord,
-    targetCreditsCharged: nextCreditsCharged,
-    enforceAvailableBalance: false,
+  const updated = await settleExternalRefund(requestRecord._id, requested > 0 ? requested : null, {
+    status: normalizeString(status) || 'FAILED', errorMessage: normalizeString(reason) || 'Credits refunded.',
+    ...(sanitizedResponsePayload ? { responsePayload: sanitizedResponsePayload } : {}),
   });
-
-  return ExternalUserRequest.findByIdAndUpdate(
-    updatedRequestRecord?._id || requestRecord._id,
-    {
-      $set: {
-        status: normalizeString(status) || requestRecord.status || 'FAILED',
-        errorMessage: normalizeString(reason) || requestRecord.errorMessage || 'Credits refunded.',
-        creditsRefunded: Math.max(Number(requestRecord.creditsRefunded) || 0, refundAmount),
-        ...(sanitizedResponsePayload ? { responsePayload: sanitizedResponsePayload } : {}),
-      },
-    },
-    { new: true },
-  );
+  return updated;
 }
 
 export async function linkExternalRequestToSession({
@@ -1694,6 +1648,8 @@ export async function markExternalRequestAccepted({
   if (!record) {
     return null;
   }
+
+  if (['FAILED', 'CANCELLED'].includes(record.status)) return record;
 
   const now = new Date();
   const shouldCountAsRequest = record.routeKey !== 'upload_image_data';
@@ -1743,8 +1699,12 @@ export async function markExternalRequestAccepted({
       )
       : Number(updatedExternalUser.generationCredits);
 
+  const settledRefund = chargeUpdate.requestRecord?.refundSettlement;
+  const billingFence = settledRefund
+    ? { 'refundSettlement.revision': settledRefund.revision, 'refundSettlement.pendingOperation': null }
+    : { refundSettlement: { $exists: false } };
   const updatedRecord = await ExternalUserRequest.findOneAndUpdate(
-    { externalRequestId },
+    { externalRequestId, status: { $nin: ['FAILED', 'CANCELLED'] }, ...billingFence },
     {
       $set: {
         upstreamRequestId: normalizeString(upstreamRequestId),
@@ -1754,7 +1714,6 @@ export async function markExternalRequestAccepted({
           ...sanitizedResponsePayloadObject,
         },
         status: 'PENDING',
-        creditsCharged: normalizedCreditsCharged,
         remainingCreditsSnapshot: resolvedRemainingCredits,
         resultUrl: normalizeString(resultUrl) || record.resultUrl || null,
       },
@@ -1762,7 +1721,7 @@ export async function markExternalRequestAccepted({
     { new: true },
   );
 
-  return updatedRecord;
+  return updatedRecord || ExternalUserRequest.findById(record._id);
 }
 
 export async function syncExternalRequestChargeBySessionId({
@@ -1917,6 +1876,7 @@ export async function applyExternalRequestRefundBySessionId({
   creditsRefunded,
   reason,
   externalUserId = null,
+  status = 'FAILED',
 }) {
   await getDBConnectionString();
 
@@ -1936,94 +1896,9 @@ export async function applyExternalRequestRefundBySessionId({
     return null;
   }
 
-  const currentRefund = Number(requestRecord.creditsRefunded) || 0;
-  const refundDelta = Math.max(0, normalizedRefund - currentRefund);
-  if (refundDelta <= 0) {
-    return requestRecord;
-  }
-
-  const now = new Date();
-  const scopedExternalUser = await ExternalUser.findById(requestRecord.externalUserId);
-  const updatedExternalUser =
-    isInternalBillingExternalUser(scopedExternalUser) && scopedExternalUser?.internalUserId
-      ? await (async () => {
-        const creditResult = await creditGenerationCredits(
-          scopedExternalUser.internalUserId,
-          refundDelta,
-          {
-            source: `external_request_${normalizeString(requestRecord.routeKey) || 'unknown'}_refund`,
-            metadata: {
-              routeKey: requestRecord.routeKey || null,
-              externalRequestId: requestRecord.externalRequestId || null,
-              upstreamRequestId: requestRecord.upstreamRequestId || null,
-              upstreamSessionId: requestRecord.upstreamSessionId || null,
-              reason: normalizeString(reason) || null,
-              creditsRefunded: normalizedRefund,
-              refundDelta,
-            },
-          },
-        );
-        return syncInternalExternalUserBalance(
-          scopedExternalUser,
-          creditResult?.remainingCredits,
-          {
-            increment: {
-              totalCreditsRefunded: refundDelta,
-            },
-            set: { lastActivityAt: now },
-          },
-        );
-      })()
-      : await ExternalUser.findByIdAndUpdate(
-        requestRecord.externalUserId,
-        {
-          $inc: {
-            generationCredits: refundDelta,
-            totalCreditsRefunded: refundDelta,
-          },
-          $set: { lastActivityAt: now },
-        },
-        { new: true },
-      );
-
-  await recordExternalUserCreditTransaction({
-    externalUser: updatedExternalUser || {
-      _id: requestRecord.externalUserId,
-      internalUserId: requestRecord.internalUserId,
-      externalIdentityKey: requestRecord.externalIdentityKey,
-    },
-    amount: refundDelta,
-    direction: 'credit',
-    source: `external_request_${normalizeString(requestRecord.routeKey) || 'unknown'}_refund`,
-    metadata: {
-      routeKey: requestRecord.routeKey || null,
-      externalRequestId: requestRecord.externalRequestId || null,
-      upstreamRequestId: requestRecord.upstreamRequestId || null,
-      upstreamSessionId: requestRecord.upstreamSessionId || null,
-      reason: normalizeString(reason) || null,
-      creditsRefunded: normalizedRefund,
-      refundDelta,
-    },
-    balanceAfter: Number(updatedExternalUser?.generationCredits) || 0,
+  return settleExternalRefund(requestRecord._id, normalizedRefund, {
+    status, errorMessage: normalizeString(reason) || 'Credits refunded.',
   });
-
-  const updatedRecord = await ExternalUserRequest.findByIdAndUpdate(
-    requestRecord._id,
-    {
-      $set: {
-        creditsRefunded: normalizedRefund,
-        status: 'FAILED',
-        errorMessage: normalizeString(reason) || requestRecord.errorMessage || 'Credits refunded.',
-        remainingCreditsSnapshot:
-          updatedExternalUser?.generationCredits === undefined || updatedExternalUser?.generationCredits === null
-            ? requestRecord.remainingCreditsSnapshot ?? null
-            : Number(updatedExternalUser.generationCredits),
-      },
-    },
-    { new: true },
-  );
-
-  return updatedRecord;
 }
 
 export async function syncExternalRequestWithUpstreamStatus({
@@ -2064,7 +1939,7 @@ export async function syncExternalRequestWithUpstreamStatus({
   }
 
   let latestExternalRequest = requestRecord;
-  const usesExpressStageBilling = Boolean(
+  const usesExpressStageBilling = !['translate_video', 'join_videos', 'add_outro_image', 'update_outro_image', 'update_footer_image'].includes(requestPayload.routeKey) && Boolean(
     upstreamStatus.expressGenerationCreditCharges ||
     upstreamStatus.express_generation_credit_charges,
   );
@@ -2086,15 +1961,17 @@ export async function syncExternalRequestWithUpstreamStatus({
   } else if (
     (upstreamStatus.status === 'FAILED' || upstreamStatus.status === 'CANCELLED') &&
     !usesExpressStageBilling &&
-    (Number(requestPayload.creditsCharged) || 0) > (Number(requestPayload.creditsRefunded) || 0)
+    (requestPayload.refundSettlement?.pendingOperation ||
+      (Number(requestPayload.creditsCharged) || 0) > (requestPayload.refundSettlement ? 0 : (Number(requestPayload.creditsRefunded) || 0)))
   ) {
     const updatedRequest = await applyExternalRequestRefundBySessionId({
       internalUserId: requestPayload.internalUserId,
       sessionId,
-      creditsRefunded: Number(requestPayload.creditsCharged) || 0,
+      creditsRefunded: requestPayload.refundSettlement?.ceiling ?? requestPayload.refundCeilingCredits ?? (Number(requestPayload.creditsCharged) || 0),
       reason:
         upstreamStatus.message || upstreamStatus.expressGenerationError || upstreamStatus.status,
       externalUserId: getRequestExternalUserId(requestRecord),
+      status: upstreamStatus.status,
     });
     latestExternalRequest = mergeExternalRequestRecords(requestRecord, updatedRequest);
   } else if (

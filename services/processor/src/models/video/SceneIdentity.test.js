@@ -37,6 +37,25 @@ test('P2P source snapshots clone only the selected scene sounds and preserve ind
   assert.deepEqual(buildSourceSceneFields({ sceneIndex: '0oops', scene }), {});
 });
 
+test('a compacted current plan restores original identity without merging the old narrative by position', () => {
+  const data = {
+    _id: 'current-session',
+    movieResourceList: { scenes: [
+      { visual: 'Current second shot', duration: 121 / 24, timelineLayerId: 'second', sourceSessionId: 'origin', sourceSceneIndex: 7 },
+      { visual: 'Current first shot', duration: 3, timelineLayerId: 'first', sourceSessionId: 'origin', sourceSceneIndex: 2 },
+    ], sounds: [{ type: 'speech', sceneIndex: 0, audio: 'Second line', duration: 2 }] },
+    narrativeJson: { scenes: [{ visual: 'Old first shot', duration: 10 }, { visual: 'Old second shot', duration: 10 }] },
+    layers: [{ _id: 'second' }, { _id: 'first' }], audioLayers: [],
+  };
+  captureSessionSceneReferences(data);
+  assert.equal(data.layers[0].sourceSceneRef.sourceSessionId, 'origin');
+  assert.equal(data.layers[0].sourceSceneRef.sceneIndex, 7);
+  assert.equal(data.layers[0].sourceSceneRef.scene.visual, 'Current second shot');
+  assert.equal(data.layers[0].sourceSceneRef.scene.duration, 121 / 24);
+  assert.equal(data.layers[0].sourceSceneRef.sounds[0].sceneIndex, 7);
+  assert.equal(data.layers[1].sourceSceneRef.sceneIndex, 2);
+});
+
 test('F2P the production-shaped thirteen-scene SFX session resolves despite its separate outro', () => {
   const data = session(Array.from({ length: 13 }, (_, index) => `Expanded scene ${index}`));
   data.layers[0].layerBaseAiImageType = 'sound_effect';

@@ -24,14 +24,16 @@ import {
 import {
   assessSoundEffectStage,
   getSoundEffectFailureMessage,
+  isSoundEffectLayer,
 } from './ai_video/SoundEffectStage.js';
 
 
 
-import { generateSoundEffectsForSession } from './ai_video/SoundEffects.js';
+import { buildActiveSoundEffectRequestQuery, generateSoundEffectsForSession } from './ai_video/SoundEffects.js';
 import { ensureNarratorAvatarVideoForSession } from './ai_video/NarratorAvatar.js';
 
 import { processSessionCompletionFailure, processSessionCompletionSuccess } from "./ExpressSessionStateUpdater.js";
+import { recoverHostedAgentSettlements } from './HostedAgentBilling.js';
 import { ensureGeneratedOutroTilesForSession } from './utils/GeneratedOutroTiles.js';
 import {
   EXPRESS_VIDEO_BILLING_STAGES,
@@ -58,6 +60,7 @@ import {
   buildBranchingTimeline,
   normalizeBranchRenderPathTimings,
 } from './utils/BranchRenderTiming.js';
+import { captureMovieResourceTimeline, synchronizeMovieResourceTimeline } from './utils/MovieResourceTimeline.js';
 
 installStructuredLogger({
   serviceName: process.env.SERVICE_NAME || 'samsar_express_video_listener',
@@ -136,6 +139,7 @@ async function completeExpressStageForBillingAndStep(
   const chargeResult = skipBilling
     ? { ok: true, skipped: true }
     : await chargeExpressVideoStageCredits({ sessionId, stageKey: normalizedStageKey });
+  if (chargeResult?.paused) return chargeResult;
   if (chargeResult?.ok) {
     if (isStepSession) {
       const stepResult = await pauseExpressStepAfterCompletedStage(sessionId, stepStageKey);
@@ -1121,6 +1125,8 @@ export async function listenToPendingGenerations() {
     try {
       await getDBConnectionString();
 
+      await recoverHostedAgentSettlements();
+
       // isExpressGeneration true and expressGenerationPending true
       const pendingSessions = await VideoSession.find({
         isExpressGeneration: true,
@@ -1166,7 +1172,21 @@ export async function listenToPendingGenerations() {
   }
 }
 
-async function checkVideoRenderStatus(session) {
+async function checkVideoRenderStatus(session, operationOverrides = {}) {
+  const operations = {
+    createGenerativeVideoAnimationsForFrames,
+    generateSoundEffectsForSession,
+    ensureNarratorAvatarVideoForSession,
+    generateTranscriptsForSessionAudioLayers,
+    generateFramesForSession,
+    generateVideoForSession,
+    ensureGeneratedOutroTilesForSession,
+    completeExpressStageForBillingAndStep,
+    processSessionCompletionFailure,
+    processSessionCompletionSuccess,
+    generateLipSyncForSession,
+    ...operationOverrides,
+  };
 
   await getDBConnectionString();
 
@@ -1185,6 +1205,13 @@ async function checkVideoRenderStatus(session) {
     return;
   }
 
+  if (latestSession.postProcessingBilling?.status === 'PENDING') return;
+
+  if (!latestSession.postProcessingBilling && latestSession.hostedAgentBilling?.version === 2 &&
+    (latestSession.hostedAgentBilling.state !== 'ACTIVE' || latestSession.hostedAgentBilling.pendingOperation)) {
+    return;
+  }
+
   if (!latestSession.expressGenerationPending) {
     await forceEjectSession(latestSession);
     return;
@@ -1194,6 +1221,11 @@ async function checkVideoRenderStatus(session) {
     return;
   }
 
+  // Step sessions retain their explicit stage/billing boundaries. Automatic
+  // sessions may overlap independent provider waits, never timeline mutations.
+  const allowParallelStages = !latestSession.isStepVideoGeneration &&
+    !latestSession.expressStepGeneration?.enabled &&
+    !['false', '0', 'off'].includes(String(process.env.EXPRESS_PIPELINE_PARALLEL_STAGES || '').trim().toLowerCase());
   const sessionId = latestSession._id.toString();
   const quickSessionCreatedAt = latestSession.createdAt;
   const expressGenerationStatus = latestSession.expressGenerationStatus || {};
@@ -1213,7 +1245,7 @@ async function checkVideoRenderStatus(session) {
       expressGenerationFailed: true,
       expressGenerationError: 'Video generation timed out'
     }, { new: true });
-    await processSessionCompletionFailure(sessionId);
+    await operations.processSessionCompletionFailure(sessionId);
     return;
   }
 
@@ -1283,7 +1315,7 @@ async function checkVideoRenderStatus(session) {
       expressGenerationError: 'Image generation failed'
     }, { new: true });
 
-    await processSessionCompletionFailure(sessionId);
+    await operations.processSessionCompletionFailure(sessionId);
 
     return;
   }
@@ -1294,7 +1326,7 @@ async function checkVideoRenderStatus(session) {
   }, { new: true });
 
   if (!isImageGenerationPending) {
-    const imageStageResult = await completeExpressStageForBillingAndStep(
+    const imageStageResult = await operations.completeExpressStageForBillingAndStep(
       sessionId,
       EXPRESS_VIDEO_BILLING_STAGES.IMAGE_GENERATION,
     );
@@ -1302,7 +1334,7 @@ async function checkVideoRenderStatus(session) {
       return;
     }
 
-    const generatedOutroTilesResult = await ensureGeneratedOutroTilesForSession(latestSession);
+    const generatedOutroTilesResult = await operations.ensureGeneratedOutroTilesForSession(latestSession);
     if (generatedOutroTilesResult?.updated) {
       return;
     }
@@ -1380,7 +1412,7 @@ async function checkVideoRenderStatus(session) {
   }
 
   if (!isSpeechGenerationPending && !isSpeechGenerationFailed) {
-    const speechStageResult = await completeExpressStageForBillingAndStep(
+    const speechStageResult = await operations.completeExpressStageForBillingAndStep(
       sessionId,
       EXPRESS_VIDEO_BILLING_STAGES.SPEECH_GENERATION,
     );
@@ -1390,7 +1422,7 @@ async function checkVideoRenderStatus(session) {
   }
 
   if (!isMusicGenerationPending && !isMusicGenerationFailed) {
-    const musicStageResult = await completeExpressStageForBillingAndStep(
+    const musicStageResult = await operations.completeExpressStageForBillingAndStep(
       sessionId,
       EXPRESS_VIDEO_BILLING_STAGES.MUSIC_GENERATION,
     );
@@ -1431,7 +1463,7 @@ async function checkVideoRenderStatus(session) {
       expressGenerationError: resolveAudioGenerationFailureMessage(latestSession)
     }, { new: true });
 
-    await processSessionCompletionFailure(sessionId);
+    await operations.processSessionCompletionFailure(sessionId);
     return;
   }
 
@@ -1493,7 +1525,7 @@ async function checkVideoRenderStatus(session) {
             aiVideoGenerationPending: true
           }, { new: true });
 
-          await createGenerativeVideoAnimationsForFrames(sessionId);
+          await operations.createGenerativeVideoAnimationsForFrames(sessionId);
         }
       }
 
@@ -1512,7 +1544,7 @@ async function checkVideoRenderStatus(session) {
   const latestSessionLayers = latestSessionData.layers || [];
 
   if (currentGenerationStatus.ai_video_generation === 'COMPLETED') {
-    const aiVideoStageResult = await completeExpressStageForBillingAndStep(
+    const aiVideoStageResult = await operations.completeExpressStageForBillingAndStep(
       sessionId,
       EXPRESS_VIDEO_BILLING_STAGES.AI_VIDEO_GENERATION,
     );
@@ -1578,6 +1610,11 @@ async function checkVideoRenderStatus(session) {
     const lipSyncAssessment = assessLipSyncStage(
       lipSyncSessionData.layers,
       lipSyncSessionData.audioLayers,
+    );
+    // Legacy/edited layers may qualify for both operations. In that case retain
+    // their existing serial source selection rather than racing two derivatives.
+    const allowParallelDerivatives = allowParallelStages && !lipSyncAssessment.required.some(
+      ({ layer }) => isSoundEffectLayer(layer) && !layer.isAudioVideoLayer,
     );
     let lipSyncStageStatus = normalizeStatusValue(
       currentGenerationStatus.lip_sync_generation,
@@ -1655,8 +1692,9 @@ async function checkVideoRenderStatus(session) {
         latestSessionId,
         currentGenerationStatus,
         lipSyncFallback.state,
+        { generateForSession: operations.generateLipSyncForSession },
       );
-      if (lipSyncStageStatus === 'PENDING') {
+      if (lipSyncStageStatus === 'PENDING' && !allowParallelDerivatives) {
         return;
       }
     } else if (lipSyncStageStatus === 'PENDING' || lipSyncStageStatus === 'FAILED') {
@@ -1669,15 +1707,18 @@ async function checkVideoRenderStatus(session) {
             lipSyncGenerationPending: false,
           },
         }, { new: true });
-      } else {
+      } else if (!allowParallelDerivatives) {
         return;
       }
-    } else if (lipSyncStageStatus === 'COMPLETED' && lipSyncFallback.state === 'WAIT' && !lipSyncStageSkipped) {
+    } else if (lipSyncStageStatus === 'COMPLETED' && lipSyncFallback.state === 'WAIT' && !lipSyncStageSkipped && !allowParallelDerivatives) {
       return;
     }
 
-    if (lipSyncStageStatus === 'COMPLETED') {
+    const lipSyncReadyToAdvance = lipSyncStageStatus === 'COMPLETED' &&
+      (lipSyncFallback.state !== 'WAIT' || lipSyncStageSkipped);
+    if (lipSyncReadyToAdvance) {
       const lipSyncStageResult = await completeLipSyncStage(sessionId, {
+        completeStage: operations.completeExpressStageForBillingAndStep,
         skipped: lipSyncStageSkipped,
         requiredCount: lipSyncAssessment.required.length,
       });
@@ -1698,6 +1739,20 @@ async function checkVideoRenderStatus(session) {
       currentGenerationStatus.sound_effect_generation,
     ) || 'INIT';
     let soundEffectStageSkipped = Boolean(soundEffectSessionData.soundEffectGenerationSkipped);
+
+    // Media completion still replaces layer arrays in the worker. If that
+    // restores an older layer flag during enqueue, the queue remains the source
+    // of truth: never fall back or render while its derivative is still active.
+    if (soundEffectGenerationStatus !== 'INIT' && soundEffectAssessment.state === 'FALLBACK') {
+      const unfinishedLayerIds = [...soundEffectAssessment.incomplete, ...soundEffectAssessment.skipped]
+        .map(item => item.layerId).filter(Boolean);
+      if (unfinishedLayerIds.length && await AIVideoLayerGeneration.exists({
+        ...buildActiveSoundEffectRequestQuery(sessionId, unfinishedLayerIds[0]),
+        layerId: { $in: unfinishedLayerIds },
+      })) {
+        return;
+      }
+    }
 
     if (soundEffectAssessment.state === 'NO_BASE_VIDEO') {
       await markSoundEffectFallbackUnavailable(
@@ -1732,7 +1787,7 @@ async function checkVideoRenderStatus(session) {
           },
         }, { new: true });
 
-        await generateSoundEffectsForSession(latestSessionId);
+        await operations.generateSoundEffectsForSession(latestSessionId);
         return;
       }
     } else if (soundEffectGenerationStatus === 'PENDING') {
@@ -1789,8 +1844,14 @@ async function checkVideoRenderStatus(session) {
       }
     }
 
+    // Sound-effect provider work may run while lip sync is pending. Keep stage
+    // settlement, narrator audio, subtitles and frames behind the original join.
+    if (!lipSyncReadyToAdvance) {
+      return;
+    }
+
     if (soundEffectGenerationStatus === 'COMPLETED') {
-      const soundEffectStageResult = await completeExpressStageForBillingAndStep(
+      const soundEffectStageResult = await operations.completeExpressStageForBillingAndStep(
         sessionId,
         EXPRESS_VIDEO_BILLING_STAGES.SOUND_EFFECT_GENERATION,
         { skipBilling: soundEffectStageSkipped },
@@ -1814,7 +1875,7 @@ async function checkVideoRenderStatus(session) {
           expressGenerationFailed: true,
           expressGenerationError: latestSessionData.narratorAvatarError || 'Narrator avatar generation failed',
         }, { new: true });
-        await processSessionCompletionFailure(sessionId);
+        await operations.processSessionCompletionFailure(sessionId);
         return;
       }
 
@@ -1824,7 +1885,7 @@ async function checkVideoRenderStatus(session) {
           expressGenerationStatus: currentGenerationStatus,
         }, { new: true });
 
-        const avatarResult = await ensureNarratorAvatarVideoForSession(sessionId);
+        const avatarResult = await operations.ensureNarratorAvatarVideoForSession(sessionId);
         if (avatarResult.status === 'FAILED') {
           currentGenerationStatus.narrator_avatar_generation = 'FAILED';
           currentGenerationStatus.status = 'FAILED';
@@ -1834,7 +1895,7 @@ async function checkVideoRenderStatus(session) {
             expressGenerationFailed: true,
             expressGenerationError: avatarResult.error || 'Narrator avatar generation failed',
           }, { new: true });
-          await processSessionCompletionFailure(sessionId);
+          await operations.processSessionCompletionFailure(sessionId);
           return;
         }
         if (avatarResult.status === 'COMPLETED' || avatarResult.status === 'SKIPPED') {
@@ -1843,7 +1904,7 @@ async function checkVideoRenderStatus(session) {
             expressGenerationStatus: currentGenerationStatus,
             ...(avatarResult.status === 'SKIPPED' ? { narratorAvatarGenerationSkipped: true } : {}),
           }, { new: true });
-        } else {
+        } else if (!allowParallelStages) {
           return;
         }
       }
@@ -1860,6 +1921,7 @@ async function checkVideoRenderStatus(session) {
         .select('narratorAvatarGenerationSkipped')
         .lean();
       const narratorAvatarStageResult = await completeNarratorAvatarStage(sessionId, {
+        completeStage: operations.completeExpressStageForBillingAndStep,
         required: requiresNarratorAvatarGeneration,
         skipped: refreshedAvatarSession?.narratorAvatarGenerationSkipped === true,
       });
@@ -1875,10 +1937,9 @@ async function checkVideoRenderStatus(session) {
   const isSoundEffectLipSyncAndGenerativeVideCompleted = 
     currentGenerationStatus.sound_effect_generation === 'COMPLETED' &&
     currentGenerationStatus.lip_sync_generation === 'COMPLETED' &&
-    (currentGenerationStatus.ai_video_generation === 'COMPLETED') &&
-    narratorAvatarCompleted;
+    (currentGenerationStatus.ai_video_generation === 'COMPLETED');
 
-  if (!isSoundEffectLipSyncAndGenerativeVideCompleted) {
+  if (!isSoundEffectLipSyncAndGenerativeVideCompleted || (!narratorAvatarCompleted && !allowParallelStages)) {
     return;
   }
 
@@ -1924,7 +1985,7 @@ async function checkVideoRenderStatus(session) {
       if (speechLayerCount === 0) {
         transcriptGenerationSucceeded = true;
       } else {
-        await generateTranscriptsForSessionAudioLayers(sessionId);
+        await operations.generateTranscriptsForSessionAudioLayers(sessionId);
         transcriptGenerationSucceeded = true;
       }
     } catch (err) {
@@ -1962,6 +2023,12 @@ async function checkVideoRenderStatus(session) {
 
   }
 
+  // Alignment uses the settled speech/timeline, independently of the avatar
+  // provider. Composited frames still require the finished avatar overlay.
+  if (!narratorAvatarCompleted) {
+    return;
+  }
+
   if (currentGenerationStatus.frame_generation === 'INIT') {
 
 
@@ -1971,7 +2038,7 @@ async function checkVideoRenderStatus(session) {
       frameGenerationPending: true
     }, { new: true });
 
-    await generateFramesForSession(sessionId);
+    await operations.generateFramesForSession(sessionId);
     return;
   } else {
     currentGenerationStatus.frame_generation = 'COMPLETED';
@@ -2003,7 +2070,7 @@ async function checkVideoRenderStatus(session) {
           generationError: failureMessage,
         },
       });
-      await processSessionCompletionFailure(sessionId);
+      await operations.processSessionCompletionFailure(sessionId);
       return;
     }
   }
@@ -2023,7 +2090,7 @@ async function checkVideoRenderStatus(session) {
       videoGenerationPending: true
     }, { new: true });
 
-    await generateVideoForSession(sessionId, isPremiumUser);
+    await operations.generateVideoForSession(sessionId, isPremiumUser);
     return;
   }
 
@@ -2046,7 +2113,7 @@ async function checkVideoRenderStatus(session) {
         },
       }, { new: true });
 
-      await processSessionCompletionFailure(sessionId);
+      await operations.processSessionCompletionFailure(sessionId);
       return;
     }
 
@@ -2055,7 +2122,7 @@ async function checkVideoRenderStatus(session) {
       expressGenerationStatus: currentGenerationStatus,
     }, { new: true });
 
-    const pipelineStageResult = await completeExpressStageForBillingAndStep(
+    const pipelineStageResult = await operations.completeExpressStageForBillingAndStep(
       sessionId,
       EXPRESS_VIDEO_BILLING_STAGES.PIPELINE,
     );
@@ -2063,7 +2130,7 @@ async function checkVideoRenderStatus(session) {
       return;
     }
 
-    const completionDelivery = await processSessionCompletionSuccess(sessionId);
+    const completionDelivery = await operations.processSessionCompletionSuccess(sessionId);
     if (completionDelivery?.ok !== true) {
       return;
     }
@@ -2191,8 +2258,11 @@ async function generateFramesForSession(sessionId) {
 
 
 
-async function deleteEmptyLayersAndReflowTimeLine(sessionId) {
-  const session = await VideoSession.findById(sessionId);
+async function deleteEmptyLayersAndReflowTimeLine(sessionId, {
+  VideoSessionModel = VideoSession,
+  connect = getDBConnectionString,
+} = {}) {
+  const session = await VideoSessionModel.findById(sessionId);
 
   if (!session) {
     return;
@@ -2231,18 +2301,20 @@ async function deleteEmptyLayersAndReflowTimeLine(sessionId) {
 
   // Nothing to delete → no reflow needed
   if (!removedLayerIds.size) {
+    // Base-video completion may have finalized shorter scene durations even
+    // when every scene survived. Repair the live narrative before derivatives.
+    const captured = captureMovieResourceTimeline(session);
+    const synchronized = synchronizeMovieResourceTimeline(session);
+    if (captured.changed || synchronized.changed) await session.save();
     return;
   }
 
   // iteratively call removeLayerInSession for each removed layer
   for (const layerId of removedLayerIds) {
-    try {
-      await removeLayerInSession(session.userId, {
-        sessionId: sessionId,
-        layerId: layerId,
-      });
-    } catch {
-    }
+    await removeLayerInSession(session.userId, {
+      sessionId: sessionId,
+      layerId: layerId,
+    }, { VideoSessionModel, connect });
   }
 }
 
@@ -2250,13 +2322,16 @@ async function deleteEmptyLayersAndReflowTimeLine(sessionId) {
 
 
 
-export async function removeLayerInSession(userId, payload) {
+export async function removeLayerInSession(userId, payload, {
+  VideoSessionModel = VideoSession,
+  connect = getDBConnectionString,
+} = {}) {
   const { sessionId, layerId } = payload;
 
-  await getDBConnectionString();
+  await connect();
 
   // 1) Load the session
-  const videoSession = await VideoSession.findOne({ _id: sessionId });
+  const videoSession = await VideoSessionModel.findOne({ _id: sessionId });
   if (!videoSession) {
     throw new Error("Session not found");
   }
@@ -2269,6 +2344,10 @@ export async function removeLayerInSession(userId, payload) {
     throw new Error("Layer not found");
   }
 
+  // Bind current scenes/audio before removing anything. Origin snapshots stay
+  // immutable while the saved current plan can be compacted repeatedly.
+  captureMovieResourceTimeline(videoSession);
+
   let audioLayers = videoSession.audioLayers || [];
   const originalTimelineEnd = (videoSession.layers || []).reduce(
     (maxEnd, layer) => Math.max(maxEnd, getLayerEndTime(layer)),
@@ -2279,16 +2358,17 @@ export async function removeLayerInSession(userId, payload) {
   // 3) Remove the layer
   const removedLayer = videoSession.layers.splice(layerIndex, 1)[0];
 
-  // 4) If there's a connected audio layer, remove it as well
-  //    (connectedLayerId === layerId means it was "tied" to this layer)
-  const connectedAudioIndex = videoSession.audioLayers.findIndex(
-    (audioLayer) => audioLayer.connectedLayerId === layerId
-  );
-
-
-  if (connectedAudioIndex !== -1) {
-    videoSession.audioLayers.splice(connectedAudioIndex, 1);
-  }
+  // Every connected clip belongs to this scene, including index-only legacy
+  // speech. IDs take precedence over stale indexes on modern sessions.
+  videoSession.audioLayers = audioLayers.filter((audioLayer) => {
+    const connectedId = audioLayer.connectedLayerId?.toString?.() || '';
+    if (connectedId) return connectedId !== layerId;
+    const index = audioLayer.connectedLayerIndex == null ? null : Number(audioLayer.connectedLayerIndex);
+    if (!Number.isInteger(index)) return true;
+    if (index === layerIndex) return false;
+    if (index > layerIndex) audioLayer.connectedLayerIndex = index - 1;
+    return true;
+  });
 
 
 
@@ -2298,13 +2378,16 @@ export async function removeLayerInSession(userId, payload) {
 
   for (let i = layerIndex; i < videoSession.layers.length; i++) {
     const currentLayer = videoSession.layers[i];
+    const previousStart = Number(currentLayer.durationOffset) || 0;
     videoSession.layers[i].durationOffset = newStartDuration;
     newStartDuration += currentLayer.duration;
     videoSession.layers[i].frameGenerationPending = true;
-    let connectedAudioLayer = videoSession.audioLayers.find(
-      (audioLayer) => audioLayer.connectedLayerId === currentLayer._id.toString()
-    );
-    if (connectedAudioLayer) {
+    const connectedAudioLayers = videoSession.audioLayers.filter((audioLayer) => {
+      const connectedId = audioLayer.connectedLayerId?.toString?.() || '';
+      return connectedId ? connectedId === currentLayer._id.toString()
+        : audioLayer.connectedLayerIndex != null && Number(audioLayer.connectedLayerIndex) === i;
+    });
+    for (const connectedAudioLayer of connectedAudioLayers) {
       const layerStartTime = typeof currentLayer.durationOffset === 'number'
         ? currentLayer.durationOffset
         : 0;
@@ -2312,20 +2395,21 @@ export async function removeLayerInSession(userId, payload) {
         ? currentLayer.duration
         : 0;
 
-      if (connectedAudioLayer.generationType === 'speech') {
-        const audioDuration = typeof connectedAudioLayer.duration === 'number'
-          ? connectedAudioLayer.duration
-          : 0;
-        const durationDiff = layerDuration - audioDuration;
-        const audioStartOffset = durationDiff > 0 ? (durationDiff / 2) : 0;
-        connectedAudioLayer.startTime = layerStartTime + audioStartOffset;
-        connectedAudioLayer.endTime = connectedAudioLayer.startTime + audioDuration;
-        connectedAudioLayer.connectedLayerStartTimeOffset = audioStartOffset;
-      } else {
-        connectedAudioLayer.startTime = layerStartTime;
-        connectedAudioLayer.endTime = layerStartTime + layerDuration;
-        connectedAudioLayer.duration = layerDuration;
-      }
+      const storedOffset = connectedAudioLayer.connectedLayerStartTimeOffset;
+      const oldAudioStart = Number(connectedAudioLayer.startTime);
+      const offset = Math.min(layerDuration, Math.max(0,
+        connectedAudioLayer.startTime != null && Number.isFinite(oldAudioStart)
+          ? oldAudioStart - previousStart
+          : storedOffset != null && Number.isFinite(Number(storedOffset)) ? Number(storedOffset) : 0));
+      const oldDuration = Number(connectedAudioLayer.duration);
+      const duration = Math.min(Math.max(0, layerDuration - offset),
+        Number.isFinite(oldDuration) && oldDuration >= 0 ? oldDuration : layerDuration - offset);
+      connectedAudioLayer.connectedLayerId = currentLayer._id.toString();
+      connectedAudioLayer.connectedLayerIndex = i;
+      connectedAudioLayer.connectedLayerStartTimeOffset = offset;
+      connectedAudioLayer.startTime = layerStartTime + offset;
+      connectedAudioLayer.duration = duration;
+      connectedAudioLayer.endTime = connectedAudioLayer.startTime + duration;
     }
   }
 
@@ -2338,25 +2422,15 @@ export async function removeLayerInSession(userId, payload) {
   // 7) Mark the session to regenerate frames
   videoSession.frameGenerationPending = true;
 
-  // 8) Save the updated video session
-  const updatedVideoSession = await videoSession.save();
-
-
-
-  audioLayers = updatedVideoSession.audioLayers || [];
-  audioLayers = clampAudioLayersToReflowedTimeline(
-    audioLayers,
+  // Persist the plan, retained clips and music clamp in the same save. A second
+  // write could expose a compacted layer list with its stale narrative/audio.
+  videoSession.audioLayers = clampAudioLayersToReflowedTimeline(
+    videoSession.audioLayers,
     videoSession.totalDuration,
     fullLengthMusicAudioLayerIds
   );
-
-  await VideoSession.updateOne({
-    _id: sessionId,
-  }, {
-    $set: {
-      audioLayers: audioLayers,
-    }
-  });
+  synchronizeMovieResourceTimeline(videoSession);
+  const updatedVideoSession = await videoSession.save();
 
   return {
     videoSession: updatedVideoSession,
@@ -2434,6 +2508,8 @@ async function getTimeout(ms = 1000) {
 }
 
 export const __testOnly__ = {
+  deleteEmptyLayersAndReflowTimeLine,
+  checkVideoRenderStatus,
   resolveAudioGenerationFailureMessage,
   hasLayerStillVisuals,
   hasGeneratedAiVideoOutput,

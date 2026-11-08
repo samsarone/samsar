@@ -2382,6 +2382,7 @@ export async function generatePendingVideoRequests() {
         // Update session
         const sessionUpdate = {
           videoLink: aggregateVideoLink,
+          ...(!branchRenderContext ? { finalVideoDurationSeconds: frameCountToSeconds(totalDurationInFrames, frameRate) } : {}),
           remoteURL: aggregateRemoteURL,
           videoGenerationPending: false,
           generationError: null,
@@ -2403,7 +2404,7 @@ export async function generatePendingVideoRequests() {
           }
         }
         const aggregateUpdateResult = await VideoSession.updateOne(
-          aggregateUpdateFilter,
+          { ...aggregateUpdateFilter, expressGenerationCancelled: { $ne: true }, expressGenerationFailed: { $ne: true } },
           { $set: sessionUpdate },
         );
         const aggregateCompletionTransitioned = !branchRenderContext

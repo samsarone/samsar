@@ -133,6 +133,8 @@ export default function AssistantHome(props) {
     onDeleteMessage,
     onResetMessages,
     onSessionCleared,
+    deliveryError,
+    onRetryDelivery,
     getFrameImageData,
     currentLayerId,
     onSceneActionApplied,
@@ -245,7 +247,7 @@ export default function AssistantHome(props) {
   const handleSubmit = async (event) => {
     event.preventDefault();
     const normalizedInput = userInput.trim();
-    if (!normalizedInput || isAssistantQueryGenerating || isPreparingFrameImage || isAssistantModelUnavailable || isResetting || isResetConfirmVisible) return;
+    if (!normalizedInput || isAssistantQueryGenerating || deliveryError?.retryable || isPreparingFrameImage || isAssistantModelUnavailable || isResetting || isResetConfirmVisible) return;
     const interactionVersion = interactionVersionRef.current;
     const submittedSessionId = sessionId;
 
@@ -743,6 +745,14 @@ export default function AssistantHome(props) {
               {isStandaloneDeployment && !isInferenceModelAvailabilityLoading && !hasConfiguredInferenceModels ? (
                 <div className="mb-3 rounded-2xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs font-medium text-amber-600 dark:text-amber-200">{uiText("Configure OpenAI, Google Cloud, Alibaba Cloud, OpenRouter, or a Samsar API key in setup to use the assistant.")}</div>
               ) : null}
+              {deliveryError && (
+                <div role="alert" className="mb-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-left text-sm">
+                  {uiText(deliveryError.message)}
+                  {deliveryError.retryable && onRetryDelivery && (
+                    <button type="button" className="ml-2 underline" disabled={isResetting || isResetConfirmVisible} onClick={onRetryDelivery}>{uiText('Retry')}</button>
+                  )}
+                </div>
+              )}
               <TextareaAutosize
                 value={userInput}
                 onChange={(event) => setUserInput(event.target.value)}
@@ -779,7 +789,7 @@ export default function AssistantHome(props) {
                 <CommonButton
                   type="submit"
                   isPending={isAssistantQueryGenerating || isPreparingFrameImage}
-                  isDisabled={isAssistantModelUnavailable || isResetting || isResetConfirmVisible || !userInput.trim()}
+                  isDisabled={Boolean(deliveryError?.retryable) || isAssistantModelUnavailable || isResetting || isResetConfirmVisible || !userInput.trim()}
                   extraClasses="!m-0 min-w-[72px] shrink-0"
                 >{uiText("Send")}</CommonButton>
               </div>

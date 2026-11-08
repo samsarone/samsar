@@ -70,12 +70,12 @@ function resolveFramesPerSecond(value) {
   return VALID_FRAMES_PER_SECOND.has(rounded) ? rounded : DEFAULT_FRAMES_PER_SECOND;
 }
 
-export async function createNewBlankQuickSession(userId) {
+export async function createNewBlankQuickSession(userId, initialState = {}) {
   try {
     // Create a new session with optional userId or other default fields
     const userData = await User.findById(userId).select('videoFramesPerSecond').lean();
     const framesPerSecond = resolveFramesPerSecond(userData?.videoFramesPerSecond);
-    const newSessionData = await VideoSession.create({ userId, framesPerSecond }); // Ensure schema supports this field
+    const newSessionData = await VideoSession.create({ ...initialState, userId, framesPerSecond });
     return newSessionData._id.toString();
   } catch (error) {
     console.error('Error creating new session:', error);

@@ -7,6 +7,58 @@ const CONTAINER_RUNTIMES = new Set(['docker', 'container', 'compose', 'kubernete
 export const DEFAULT_CLEANUP_MIN_AGE_HOURS = 168;
 export const DEFAULT_STALE_SESSION_FRAME_CLEANUP_HOURS = 24;
 export const DEFAULT_INTERMEDIATE_MEDIA_CLEANUP_HOURS = 48;
+const GIB = 1024 ** 3;
+
+function readCleanupBoolean(value, fallback, name) {
+  if (value === undefined || value === null || String(value).trim() === '') return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+  if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+  throw new Error(`${name} must be a boolean.`);
+}
+
+function readCleanupPositiveNumber(value, fallback, name, maximum = Number.MAX_SAFE_INTEGER) {
+  if (value === undefined || value === null || String(value).trim() === '') return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > maximum) {
+    throw new Error(`${name} must be a positive number no greater than ${maximum}.`);
+  }
+  return parsed;
+}
+
+// Keep completed-session cleanup independent of the legacy 24h/48h sweeps.
+// The engine uses filesystem bavail (space available to applications), not bfree.
+export function getCompletedFrameCleanupConfig(env = process.env) {
+  const config = {
+    enabled: readCleanupBoolean(env.FRAME_CLEANUP_ENABLED, true, 'FRAME_CLEANUP_ENABLED'),
+    dryRun: readCleanupBoolean(env.FRAME_CLEANUP_DRY_RUN, false, 'FRAME_CLEANUP_DRY_RUN'),
+    minCompletedAgeMs: readCleanupPositiveNumber(
+      env.COMPLETED_SESSION_FRAME_CLEANUP_MINUTES, 15,
+      'COMPLETED_SESSION_FRAME_CLEANUP_MINUTES', Number.MAX_SAFE_INTEGER / 60000,
+    ) * 60000,
+    pressureUsedPercent: readCleanupPositiveNumber(
+      env.FRAME_CLEANUP_PRESSURE_USED_PERCENT, 80, 'FRAME_CLEANUP_PRESSURE_USED_PERCENT', 100,
+    ),
+    pressureAvailableBytes: readCleanupPositiveNumber(
+      env.FRAME_CLEANUP_PRESSURE_AVAILABLE_GIB, 32, 'FRAME_CLEANUP_PRESSURE_AVAILABLE_GIB',
+      Number.MAX_SAFE_INTEGER / GIB,
+    ) * GIB,
+    targetUsedPercent: readCleanupPositiveNumber(
+      env.FRAME_CLEANUP_TARGET_USED_PERCENT, 75, 'FRAME_CLEANUP_TARGET_USED_PERCENT', 100,
+    ),
+    targetAvailableBytes: readCleanupPositiveNumber(
+      env.FRAME_CLEANUP_TARGET_AVAILABLE_GIB, 64, 'FRAME_CLEANUP_TARGET_AVAILABLE_GIB',
+      Number.MAX_SAFE_INTEGER / GIB,
+    ) * GIB,
+  };
+  if (config.targetUsedPercent > config.pressureUsedPercent) {
+    throw new Error('FRAME_CLEANUP_TARGET_USED_PERCENT must not exceed FRAME_CLEANUP_PRESSURE_USED_PERCENT.');
+  }
+  if (config.targetAvailableBytes < config.pressureAvailableBytes) {
+    throw new Error('FRAME_CLEANUP_TARGET_AVAILABLE_GIB must be at least FRAME_CLEANUP_PRESSURE_AVAILABLE_GIB.');
+  }
+  return config;
+}
 
 const STAGE_RETENTION_DEFAULTS = Object.freeze({
   STALE_SESSION_FRAME_CLEANUP_HOURS: DEFAULT_STALE_SESSION_FRAME_CLEANUP_HOURS,

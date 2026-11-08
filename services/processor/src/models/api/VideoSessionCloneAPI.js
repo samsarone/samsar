@@ -1,3 +1,5 @@
+import { admitPostProcessing } from './PostProcessingBilling.js';
+import { stripInheritedBilling } from '../../billing/PostProcessingBilling.js';
 import path from 'path';
 import fs from 'fs';
 import fsExtra from 'fs-extra';
@@ -5,6 +7,8 @@ import { fileURLToPath } from 'url';
 import { Types } from 'mongoose';
 import { isContainerRuntime } from '../../utils/EnvironmentUtils.js';
 import { captureSessionSceneReferences } from '../video/SceneIdentity.js';
+import { publishClonedAiVideoMedia } from './ClonedAiVideoMedia.js';
+import { uploadFileToMediaBucket } from '../AWS.js';
 
 import { getDBConnectionString } from '../DBString.js';
 import { createNewBlankQuickSession } from '../QuickSession.js';
@@ -58,6 +62,13 @@ const CRITICAL_RENDER_ASSET_PATTERNS = [
   /(?:^|\/)global_videos\/generations\//,
   /(?:^|\/)video\/generations\//,
   /(?:^|\/)video\/lip_sync\//,
+];
+const FRAME_CACHE_ASSET_PREFIXES = [
+  'video/frames',
+  'ai_video/frames',
+  'global_videos/frames',
+  'video/narrator_avatar/frames',
+  'video/narrator_avatar/joined_frames',
 ];
 
 function normalizeOptionalString(value) {
@@ -271,8 +282,22 @@ function resolveAssetsRoot() {
   return resolveAssetsRoots()[0];
 }
 
-async function copyDirIfExists(sourceDir, targetDir) {
+function isFrameCacheAssetReference(value) {
+  const relativePath = path.posix.normalize(normalizeAssetReferencePath(value))
+    .replace(/^assets(?:_v2)?\//, '');
+  return FRAME_CACHE_ASSET_PREFIXES.some((prefix) => (
+    relativePath === prefix || relativePath.startsWith(`${prefix}/`)
+  ));
+}
+
+async function copyDirIfExists(sourceDir, targetDir, { assetsRoot, includeFrameCaches = true } = {}) {
   if (!sourceDir || !targetDir) {
+    return false;
+  }
+
+  const filter = (sourcePath) => includeFrameCaches ||
+    !isFrameCacheAssetReference(path.relative(assetsRoot, sourcePath));
+  if (!filter(sourceDir)) {
     return false;
   }
 
@@ -285,35 +310,30 @@ async function copyDirIfExists(sourceDir, targetDir) {
     overwrite: true,
     errorOnExist: false,
     recursive: true,
+    ...(!includeFrameCaches ? { filter } : {}),
   });
   return true;
 }
 
-async function copySessionAssetDirectories({ assetsRoot, assetsRoots, oldSessionId, newSessionId }) {
+async function copySessionAssetDirectories({ assetsRoot, assetsRoots, oldSessionId, newSessionId, includeFrameCaches = true }) {
   const roots = Array.isArray(assetsRoots) && assetsRoots.length
     ? assetsRoots
     : [assetsRoot].filter(Boolean);
 
-  await Promise.all(roots.flatMap((root) => [
-    copyDirIfExists(path.join(root, 'video', oldSessionId), path.join(root, 'video', newSessionId)),
-    copyDirIfExists(path.join(root, 'video', 'output', oldSessionId), path.join(root, 'video', 'output', newSessionId)),
-    copyDirIfExists(path.join(root, 'video', 'frames', oldSessionId), path.join(root, 'video', 'frames', newSessionId)),
-    copyDirIfExists(path.join(root, 'video', 'audio', oldSessionId), path.join(root, 'video', 'audio', newSessionId)),
-    copyDirIfExists(path.join(root, 'video', 'outro', oldSessionId), path.join(root, 'video', 'outro', newSessionId)),
-    copyDirIfExists(path.join(root, 'video', 'splash', oldSessionId), path.join(root, 'video', 'splash', newSessionId)),
-    copyDirIfExists(path.join(root, 'video', 'lip_sync', oldSessionId), path.join(root, 'video', 'lip_sync', newSessionId)),
-    copyDirIfExists(path.join(root, 'video', 'narrator_avatar', 'audio', oldSessionId), path.join(root, 'video', 'narrator_avatar', 'audio', newSessionId)),
-    copyDirIfExists(path.join(root, 'video', 'narrator_avatar', 'video', oldSessionId), path.join(root, 'video', 'narrator_avatar', 'video', newSessionId)),
-    copyDirIfExists(path.join(root, 'video', 'narrator_avatar', 'frames', oldSessionId), path.join(root, 'video', 'narrator_avatar', 'frames', newSessionId)),
-    copyDirIfExists(path.join(root, 'video', 'generations', oldSessionId), path.join(root, 'video', 'generations', newSessionId)),
-    copyDirIfExists(path.join(root, 'video', 'footer_qr', oldSessionId), path.join(root, 'video', 'footer_qr', newSessionId)),
-    copyDirIfExists(path.join(root, 'video', 'footer_logo', oldSessionId), path.join(root, 'video', 'footer_logo', newSessionId)),
-    copyDirIfExists(path.join(root, 'ai_video', 'frames', oldSessionId), path.join(root, 'ai_video', 'frames', newSessionId)),
-    copyDirIfExists(path.join(root, 'ai_video', 'audio', oldSessionId), path.join(root, 'ai_video', 'audio', newSessionId)),
-    copyDirIfExists(path.join(root, 'ai_video', 'generations', oldSessionId), path.join(root, 'ai_video', 'generations', newSessionId)),
-    copyDirIfExists(path.join(root, 'global_videos', 'frames', oldSessionId), path.join(root, 'global_videos', 'frames', newSessionId)),
-    copyDirIfExists(path.join(root, 'global_videos', 'generations', oldSessionId), path.join(root, 'global_videos', 'generations', newSessionId)),
-  ]));
+  const directories = [
+    ['video'], ['video', 'output'], ['video', 'frames'], ['video', 'audio'],
+    ['video', 'outro'], ['video', 'splash'], ['video', 'lip_sync'],
+    ['video', 'narrator_avatar', 'audio'], ['video', 'narrator_avatar', 'video'],
+    ['video', 'narrator_avatar', 'frames'], ['video', 'generations'],
+    ['video', 'footer_qr'], ['video', 'footer_logo'], ['ai_video', 'frames'],
+    ['ai_video', 'audio'], ['ai_video', 'generations'],
+    ['global_videos', 'frames'], ['global_videos', 'generations'],
+  ];
+  await Promise.all(roots.flatMap((root) => directories.map((segments) => copyDirIfExists(
+    path.join(root, ...segments, oldSessionId),
+    path.join(root, ...segments, newSessionId),
+    { assetsRoot: root, includeFrameCaches },
+  ))));
 }
 
 function getRootAssetVersion(rootPath) {
@@ -420,7 +440,7 @@ function collectSessionAssetReferencePairs(sessionData, oldSessionId, newSession
   return Array.from(pairs.values());
 }
 
-async function copyReferencedSessionAssets({ sessionData, assetsRoots, oldSessionId, newSessionId }) {
+async function copyReferencedSessionAssets({ sessionData, assetsRoots, oldSessionId, newSessionId, includeFrameCaches = true }) {
   const roots = Array.isArray(assetsRoots) ? assetsRoots.filter(Boolean) : [];
   if (!roots.length) {
     return {
@@ -445,6 +465,9 @@ async function copyReferencedSessionAssets({ sessionData, assetsRoots, oldSessio
   const missingSourceSamples = [];
 
   for (const pair of pairs) {
+    if (!includeFrameCaches && isFrameCacheAssetReference(pair.source)) {
+      continue;
+    }
     const normalizedSourcePath = getAssetReferenceLogPath(pair.source);
     if (isCloudFrontSignedAssetUrl(pair.source)) {
       signedReferenceCount += 1;
@@ -473,7 +496,10 @@ async function copyReferencedSessionAssets({ sessionData, assetsRoots, oldSessio
       const matchingTargets = targetCandidates.filter((targetCandidate) => targetCandidate.root === sourceCandidate.root);
       const targets = matchingTargets.length ? matchingTargets : targetCandidates;
       for (const targetCandidate of targets) {
-        if (await copyDirIfExists(sourceCandidate.path, targetCandidate.path)) {
+        if (await copyDirIfExists(sourceCandidate.path, targetCandidate.path, {
+          assetsRoot: sourceCandidate.root,
+          includeFrameCaches,
+        })) {
           copied += 1;
           copiedPair = true;
         }
@@ -935,7 +961,10 @@ function resolveCloneResultUrl(sessionData = {}) {
   );
 }
 
-export async function cloneVideoSessionAndQueueRender(userId, payload = {}) {
+export async function cloneVideoSessionAndQueueRender(userId, payload = {}, {
+  publishFile = uploadFileToMediaBucket,
+  resolveAssetsRoots: resolveRoots = resolveAssetsRoots,
+} = {}) {
   if (!userId) {
     const error = new Error('userId is required.');
     error.status = 400;
@@ -978,8 +1007,9 @@ export async function cloneVideoSessionAndQueueRender(userId, payload = {}) {
     throw error;
   }
 
-  const newSessionId = await createNewBlankQuickSession(userId);
-  const assetsRoots = resolveAssetsRoots();
+  const newSessionId = await createNewBlankQuickSession(userId, { expressGenerationPending: false });
+  await admitPostProcessing({ sessionId: newSessionId, userId, operation: 'clone_render', mode: 'free' });
+  const assetsRoots = resolveRoots();
   await copySessionAssetDirectories({ assetsRoots, oldSessionId, newSessionId });
   const referencedAssetCopyResult = await copyReferencedSessionAssets({
     sessionData: originalSessionData,
@@ -994,6 +1024,7 @@ export async function cloneVideoSessionAndQueueRender(userId, payload = {}) {
   delete clonedSession.__v;
   delete clonedSession.createdAt;
   delete clonedSession.updatedAt;
+  stripInheritedBilling(clonedSession);
 
   const rewriteSummary = rewriteSessionAssetReferences(clonedSession, oldSessionId, newSessionId);
   logCloneAssetSummary('clone_render', {
@@ -1007,6 +1038,7 @@ export async function cloneVideoSessionAndQueueRender(userId, payload = {}) {
     clonedSession,
     webhookUrl: normalizeOptionalString(payload.webhookUrl),
   });
+  await publishClonedAiVideoMedia({ clonedSession, newSessionId, userId, assetsRoots, publishFile });
 
   await VideoSession.updateOne({ _id: newSessionId }, { $set: clonedSession });
 
@@ -1044,7 +1076,10 @@ export async function cloneVideoSessionAndQueueRender(userId, payload = {}) {
   };
 }
 
-export async function cloneVideoSessionAndRegenerateNarratorAvatar(userId, payload = {}) {
+export async function cloneVideoSessionAndRegenerateNarratorAvatar(userId, payload = {}, {
+  publishFile = uploadFileToMediaBucket,
+  resolveAssetsRoots: resolveRoots = resolveAssetsRoots,
+} = {}) {
   if (!userId) {
     const error = new Error('userId is required.');
     error.status = 400;
@@ -1096,8 +1131,9 @@ export async function cloneVideoSessionAndRegenerateNarratorAvatar(userId, paylo
     throw error;
   }
 
-  const newSessionId = await createNewBlankQuickSession(userId);
-  const assetsRoots = resolveAssetsRoots();
+  const newSessionId = await createNewBlankQuickSession(userId, { expressGenerationPending: false });
+  await admitPostProcessing({ sessionId: newSessionId, userId, operation: 'regenerate_avatar', mode: 'free' });
+  const assetsRoots = resolveRoots();
   await copySessionAssetDirectories({ assetsRoots, oldSessionId, newSessionId });
   const referencedAssetCopyResult = await copyReferencedSessionAssets({
     sessionData: originalSessionData,
@@ -1112,6 +1148,7 @@ export async function cloneVideoSessionAndRegenerateNarratorAvatar(userId, paylo
   delete clonedSession.__v;
   delete clonedSession.createdAt;
   delete clonedSession.updatedAt;
+  stripInheritedBilling(clonedSession);
 
   const rewriteSummary = rewriteSessionAssetReferences(clonedSession, oldSessionId, newSessionId);
   logCloneAssetSummary('regenerate_avatar', {
@@ -1127,6 +1164,7 @@ export async function cloneVideoSessionAndRegenerateNarratorAvatar(userId, paylo
     avatarImageRequestId: '',
     webhookUrl: normalizeOptionalString(payload.webhookUrl),
   });
+  await publishClonedAiVideoMedia({ clonedSession, newSessionId, userId, assetsRoots, publishFile });
 
   await VideoSession.updateOne({ _id: newSessionId }, { $set: clonedSession });
 
@@ -1186,7 +1224,10 @@ export async function cloneVideoSessionAndRegenerateNarratorAvatar(userId, paylo
   };
 }
 
-export async function copyVideoSession(userId, payload = {}) {
+export async function copyVideoSession(userId, payload = {}, {
+  publishFile = uploadFileToMediaBucket,
+  resolveAssetsRoots: resolveRoots = resolveAssetsRoots,
+} = {}) {
   if (!userId) {
     const error = new Error('userId is required.');
     error.status = 400;
@@ -1234,8 +1275,9 @@ export async function copyVideoSession(userId, payload = {}) {
   const oldSessionId = originalSessionDoc._id.toString();
   const originalSessionData = originalSessionDoc.toObject({ depopulate: true });
   captureSessionSceneReferences(originalSessionData);
-  const newSessionId = await createNewBlankQuickSession(userId);
-  const assetsRoots = resolveAssetsRoots();
+  const newSessionId = await createNewBlankQuickSession(userId, { expressGenerationPending: false });
+  await admitPostProcessing({ sessionId: newSessionId, userId, operation: 'copy_studio', mode: 'free' });
+  const assetsRoots = resolveRoots();
   await copySessionAssetDirectories({ assetsRoots, oldSessionId, newSessionId });
   const referencedAssetCopyResult = await copyReferencedSessionAssets({
     sessionData: originalSessionData,
@@ -1250,6 +1292,7 @@ export async function copyVideoSession(userId, payload = {}) {
   delete clonedSession.__v;
   delete clonedSession.createdAt;
   delete clonedSession.updatedAt;
+  stripInheritedBilling(clonedSession);
 
   const rewriteSummary = rewriteSessionAssetReferences(clonedSession, oldSessionId, newSessionId);
   logCloneAssetSummary('copy_studio', {
@@ -1260,6 +1303,7 @@ export async function copyVideoSession(userId, payload = {}) {
     rewriteSummary,
   });
   prepareCopiedSessionForStudio({ clonedSession, userId });
+  await publishClonedAiVideoMedia({ clonedSession, newSessionId, userId, assetsRoots, publishFile });
 
   await VideoSession.updateOne({ _id: newSessionId }, { $set: clonedSession });
   const copiedSession = await VideoSession.findById(newSessionId);

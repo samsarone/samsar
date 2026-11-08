@@ -1,3 +1,6 @@
+import { selectPreviewPreloadSegments } from '../../utils/sessionLoadingPolicy.mjs';
+import { getVidgeniePreviewFrameStyle } from './vidgenieLayout.js';
+import { SkeletonBlock, SkeletonStatus } from '../common/LoadingSkeleton.jsx';
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { translateText as uiText } from '../../utils/localization.js';
 import { getStudioMediaIdentity } from '../video/util/studioMediaIdentity.mjs';
@@ -24,10 +27,6 @@ const STATIC_ASSET_BASE_URL = (
 ).replace(/\/+$/, '');
 const PREVIEW_MUSIC_DUCKED_VOLUME_RATIO = 0.225;
 const PREVIEW_MEDIA_PRELOAD_TIMEOUT_MS = 15000;
-const PREVIEW_MEDIA_OBJECT_URL_CACHE_TTL_MS = 10 * 60 * 1000;
-const PREVIEW_MEDIA_OBJECT_URL_FAILURE_TTL_MS = 60 * 1000;
-const PREVIEW_MEDIA_OBJECT_URL_CACHE_MAX_ENTRIES = 24;
-const PREVIEW_MEDIA_OBJECT_URL_CACHE_MAX_BYTES = 256 * 1024 * 1024;
 const PREVIEW_AUDIO_SEEK_TOLERANCE_SECONDS = 0.12;
 const PREVIEW_VIDEO_SEEK_TOLERANCE_SECONDS = 0.12;
 const PREVIEW_VIDEO_METADATA_READY_STATE = 1;
@@ -40,10 +39,6 @@ const TIMELINE_SEGMENT_TARGET_WIDTH_PX = 48;
 const TIMELINE_SECONDS_TARGET_WIDTH_PX = 6;
 const TIMELINE_MAX_WIDTH_FACTOR = 2;
 const previewVisualReadyCache = new Set();
-const previewVisualPreloadPromises = new Map();
-const previewVisualObjectUrlCache = new Map();
-const previewVisualObjectUrlPromises = new Map();
-const previewVisualObjectUrlFailures = new Map();
 
 const STAGE_ORDER = [
   'prompt_generation',
@@ -610,171 +605,8 @@ function getPreviewVisualCacheKey(segment) {
   return `${segment.type || 'media'}:${getStudioMediaIdentity(segment.url)}`;
 }
 
-function canCachePreviewVisualUrl(url) {
-  return typeof url === 'string' && /^https?:\/\//i.test(url.trim());
-}
-
-function revokePreviewVisualObjectUrl(entry) {
-  if (!entry?.objectUrl || typeof URL === 'undefined' || typeof URL.revokeObjectURL !== 'function') {
-    return;
-  }
-  URL.revokeObjectURL(entry.objectUrl);
-}
-
 function clearPreviewVisualCaches() {
-  previewVisualObjectUrlCache.forEach((entry) => revokePreviewVisualObjectUrl(entry));
   previewVisualReadyCache.clear();
-  previewVisualPreloadPromises.clear();
-  previewVisualObjectUrlCache.clear();
-  previewVisualObjectUrlPromises.clear();
-  previewVisualObjectUrlFailures.clear();
-}
-
-function prunePreviewVisualObjectUrlCache(now = Date.now()) {
-  previewVisualObjectUrlFailures.forEach((expiresAt, cacheKey) => {
-    if (expiresAt <= now) {
-      previewVisualObjectUrlFailures.delete(cacheKey);
-    }
-  });
-
-  previewVisualObjectUrlCache.forEach((entry, cacheKey) => {
-    if (!entry || entry.expiresAt <= now) {
-      revokePreviewVisualObjectUrl(entry);
-      previewVisualObjectUrlCache.delete(cacheKey);
-    }
-  });
-
-  const entriesByLastAccess = [...previewVisualObjectUrlCache.entries()]
-    .sort((left, right) => (left[1]?.lastAccessed || 0) - (right[1]?.lastAccessed || 0));
-
-  const getTotalBytes = () => [...previewVisualObjectUrlCache.values()]
-    .reduce((total, entry) => total + (entry?.bytes || 0), 0);
-
-  while (previewVisualObjectUrlCache.size > PREVIEW_MEDIA_OBJECT_URL_CACHE_MAX_ENTRIES) {
-    const oldest = entriesByLastAccess.shift();
-    if (!oldest) break;
-    const [cacheKey, entry] = oldest;
-    revokePreviewVisualObjectUrl(entry);
-    previewVisualObjectUrlCache.delete(cacheKey);
-  }
-
-  let totalBytes = getTotalBytes();
-  while (totalBytes > PREVIEW_MEDIA_OBJECT_URL_CACHE_MAX_BYTES && entriesByLastAccess.length > 0) {
-    const [cacheKey, entry] = entriesByLastAccess.shift();
-    revokePreviewVisualObjectUrl(entry);
-    previewVisualObjectUrlCache.delete(cacheKey);
-    totalBytes -= entry?.bytes || 0;
-  }
-}
-
-function getCachedPreviewVisualObjectUrl(segment) {
-  const cacheKey = getPreviewVisualCacheKey(segment);
-  if (!cacheKey) return null;
-
-  const now = Date.now();
-  prunePreviewVisualObjectUrlCache(now);
-  const entry = previewVisualObjectUrlCache.get(cacheKey);
-  if (!entry) return null;
-
-  entry.lastAccessed = now;
-  entry.expiresAt = now + PREVIEW_MEDIA_OBJECT_URL_CACHE_TTL_MS;
-  return entry.objectUrl;
-}
-
-function storePreviewVisualObjectUrl(cacheKey, blob) {
-  if (
-    !cacheKey ||
-    !blob ||
-    typeof URL === 'undefined' ||
-    typeof URL.createObjectURL !== 'function'
-  ) {
-    return null;
-  }
-
-  const previousEntry = previewVisualObjectUrlCache.get(cacheKey);
-  if (previousEntry) {
-    revokePreviewVisualObjectUrl(previousEntry);
-  }
-
-  const now = Date.now();
-  const objectUrl = URL.createObjectURL(blob);
-  previewVisualObjectUrlCache.set(cacheKey, {
-    objectUrl,
-    bytes: blob.size || 0,
-    expiresAt: now + PREVIEW_MEDIA_OBJECT_URL_CACHE_TTL_MS,
-    lastAccessed: now,
-  });
-  prunePreviewVisualObjectUrlCache(now);
-  return objectUrl;
-}
-
-function cachePreviewVisualObjectUrl(segment) {
-  const cacheKey = getPreviewVisualCacheKey(segment);
-  if (!cacheKey || !canCachePreviewVisualUrl(segment?.url)) {
-    return Promise.resolve(null);
-  }
-
-  const now = Date.now();
-  const failureExpiresAt = previewVisualObjectUrlFailures.get(cacheKey);
-  if (failureExpiresAt && failureExpiresAt > now) {
-    return Promise.resolve(null);
-  }
-  if (failureExpiresAt) {
-    previewVisualObjectUrlFailures.delete(cacheKey);
-  }
-
-  const cachedUrl = getCachedPreviewVisualObjectUrl(segment);
-  if (cachedUrl) {
-    return Promise.resolve(cachedUrl);
-  }
-
-  if (
-    typeof fetch !== 'function' ||
-    typeof URL === 'undefined' ||
-    typeof URL.createObjectURL !== 'function'
-  ) {
-    return Promise.resolve(null);
-  }
-
-  if (previewVisualObjectUrlPromises.has(cacheKey)) {
-    return previewVisualObjectUrlPromises.get(cacheKey);
-  }
-
-  const promise = fetch(segment.url, { cache: 'force-cache' })
-    .then((response) => {
-      if (!response.ok) {
-        throw new Error(`Preview media fetch failed: ${response.status}`);
-      }
-
-      const contentLength = Number(response.headers?.get?.('content-length'));
-      if (
-        Number.isFinite(contentLength) &&
-        contentLength > PREVIEW_MEDIA_OBJECT_URL_CACHE_MAX_BYTES
-      ) {
-        throw new Error('Preview media is too large to cache.');
-      }
-
-      return response.blob();
-    })
-    .then((blob) => {
-      if (!blob || blob.size > PREVIEW_MEDIA_OBJECT_URL_CACHE_MAX_BYTES) {
-        return null;
-      }
-      return storePreviewVisualObjectUrl(cacheKey, blob);
-    })
-    .catch(() => {
-      previewVisualObjectUrlFailures.set(
-        cacheKey,
-        Date.now() + PREVIEW_MEDIA_OBJECT_URL_FAILURE_TTL_MS
-      );
-      return null;
-    })
-    .finally(() => {
-      previewVisualObjectUrlPromises.delete(cacheKey);
-    });
-
-  previewVisualObjectUrlPromises.set(cacheKey, promise);
-  return promise;
 }
 
 function primeInactiveAudioElement(element) {
@@ -815,10 +647,10 @@ function primeInactiveAudioElement(element) {
 function markPreviewVisualReady(cacheKey) {
   if (!cacheKey) return;
   previewVisualReadyCache.add(cacheKey);
-  previewVisualPreloadPromises.delete(cacheKey);
 }
 
-function preloadPreviewImage(url, cacheKey) {
+function preloadPreviewImage(url, cacheKey, signal) {
+  if (signal?.aborted) return Promise.resolve(false);
   return new Promise(resolve => {
     const image = new Image();
     let settled = false;
@@ -828,9 +660,13 @@ function preloadPreviewImage(url, cacheKey) {
       settled = true;
       if (timeoutId) window.clearTimeout(timeoutId);
       image.onload = image.onerror = null;
+      signal?.removeEventListener('abort', abort);
+      if (!ready) image.removeAttribute('src');
       if (ready) markPreviewVisualReady(cacheKey);
       resolve(ready);
     };
+    const abort = () => finish(false);
+    signal?.addEventListener('abort', abort, { once: true });
     image.onload = () => {
       if (typeof image.decode === 'function') image.decode().then(() => finish(true)).catch(() => finish(false));
       else finish(true);
@@ -842,7 +678,8 @@ function preloadPreviewImage(url, cacheKey) {
   });
 }
 
-function preloadPreviewVideo(url, cacheKey) {
+function preloadPreviewVideo(url, cacheKey, signal) {
+  if (signal?.aborted) return Promise.resolve(false);
   return new Promise(resolve => {
     const video = document.createElement('video');
     let settled = false;
@@ -854,6 +691,7 @@ function preloadPreviewVideo(url, cacheKey) {
       video.removeEventListener('loadeddata', readyHandler);
       video.removeEventListener('canplay', readyHandler);
       video.removeEventListener('error', errorHandler);
+      signal?.removeEventListener('abort', errorHandler);
       video.removeAttribute('src');
       try { video.load(); } catch { /* Detached browser element. */ }
       if (ready) markPreviewVisualReady(cacheKey);
@@ -861,6 +699,7 @@ function preloadPreviewVideo(url, cacheKey) {
     };
     const readyHandler = () => finish(true);
     const errorHandler = () => finish(false);
+    signal?.addEventListener('abort', errorHandler, { once: true });
     video.muted = true;
     video.playsInline = true;
     video.preload = 'auto';
@@ -873,27 +712,13 @@ function preloadPreviewVideo(url, cacheKey) {
   });
 }
 
-function preloadPreviewVisualSegment(segment) {
+function preloadPreviewVisualSegment(segment, signal) {
   const cacheKey = getPreviewVisualCacheKey(segment);
-  if (!cacheKey || previewVisualReadyCache.has(cacheKey)) {
-    return Promise.resolve();
-  }
-  if (previewVisualPreloadPromises.has(cacheKey)) {
-    return previewVisualPreloadPromises.get(cacheKey);
-  }
-  if (typeof window === 'undefined' || typeof document === 'undefined') {
-    markPreviewVisualReady(cacheKey);
-    return Promise.resolve();
-  }
-
-  const promise = segment.type === 'video'
-    ? preloadPreviewVideo(segment.url, cacheKey)
-    : preloadPreviewImage(segment.url, cacheKey);
-  previewVisualPreloadPromises.set(cacheKey, promise);
-  promise.finally(() => {
-    if (previewVisualPreloadPromises.get(cacheKey) === promise) previewVisualPreloadPromises.delete(cacheKey);
-  });
-  return promise;
+  if (!cacheKey || previewVisualReadyCache.has(cacheKey)) return Promise.resolve();
+  if (typeof window === 'undefined' || typeof document === 'undefined') return Promise.resolve();
+  return segment.type === 'video'
+    ? preloadPreviewVideo(segment.url, cacheKey, signal)
+    : preloadPreviewImage(segment.url, cacheKey, signal);
 }
 
 export default function ProgressIndicator(props) {
@@ -969,6 +794,7 @@ export default function ProgressIndicator(props) {
     sessionPreview?.requestId ||
     generationStatusDetails?.session_id ||
     generationStatusDetails?.request_id ||
+    rawSessionDetails?._id || rawSessionDetails?.id ||
     null;
   const shouldLimitMobileVideoPreload =
     isMobilePreviewDevice &&
@@ -1014,18 +840,13 @@ export default function ProgressIndicator(props) {
       : undefined),
     [audioSegments, enableScrollableLayerTimeline, timelineDuration],
   );
-  const visualSegmentsToPreload = useMemo(() => {
-    if (!shouldLimitMobileVideoPreload) {
-      return visualSegments;
-    }
-
-    return visualSegments.filter((segment) => (
-      segment.type !== 'video' ||
-      (activeVisualSegment?.key && segment.key === activeVisualSegment.key)
-    ));
-  }, [activeVisualSegment?.key, shouldLimitMobileVideoPreload, visualSegments]);
+  const visualSegmentsToPreload = selectPreviewPreloadSegments(visualSegments, activeVisualSegment?.key, {
+    hidden: Boolean(videoLink || pendingPreviewVideoLink),
+    limitVideo: shouldLimitMobileVideoPreload,
+  });
+  const preloadSignature = visualSegmentsToPreload.map((segment) => `${segment.type}:${segment.url}`).join('|');
   const activeVisualCacheKey = getPreviewVisualCacheKey(activeVisualSegment);
-  const activeVisualSourceUrl = getCachedPreviewVisualObjectUrl(activeVisualSegment) || activeVisualSegment?.url || '';
+  const activeVisualSourceUrl = activeVisualSegment?.url || '';
   const activeVisualRenderKey = activeVisualSegment
     ? `${activeVisualSegment.key}-${activeVisualSegment.stage}-${activeVisualSourceUrl || activeVisualSegment.url}`
     : null;
@@ -1050,19 +871,9 @@ export default function ProgressIndicator(props) {
     || (activeVideoRef.current?.readyState ?? 0) >= PREVIEW_VIDEO_FRAME_READY_STATE;
   const isActiveVisualReady = !activeVisualSegment
     || (isActiveVisualPreloaded && isActiveVideoElementReady);
-  const previewAspectRatio = normalizePreviewAspectRatio(sessionPreview);
+  const previewAspectRatio = normalizePreviewAspectRatio(sessionPreview || rawSessionDetails);
   const isPortraitPreview = previewAspectRatio === '9:16';
-  const aspectRatio = isPortraitPreview ? '9 / 16' : '16 / 9';
-  const previewFrameStyle = {
-    aspectRatio,
-    width: isPortraitPreview
-      ? 'min(100%, 31.5dvh, 292px)'
-      : 'min(100%, calc(100vw - 48px), 640px)',
-    maxWidth: '100%',
-    maxHeight: isPortraitPreview
-      ? 'min(56dvh, 520px)'
-      : 'min(44dvh, 360px)',
-  };
+  const previewFrameStyle = getVidgeniePreviewFrameStyle(previewAspectRatio);
   const previewPlaybackButtonLabel = isPreviewPlaying ? uiText("Pause preview") : uiText("Play preview");
 
   useEffect(() => {
@@ -1229,24 +1040,15 @@ export default function ProgressIndicator(props) {
 
   useEffect(() => {
     if (!visualSegmentsToPreload.length) return undefined;
-    let isMounted = true;
+    const controller = new AbortController();
     visualSegmentsToPreload.forEach((segment) => {
-      preloadPreviewVisualSegment(segment).then(() => {
-        if (isMounted) {
-          setVisualPreloadVersion((version) => version + 1);
-        }
-      });
-      cachePreviewVisualObjectUrl(segment).then((objectUrl) => {
-        if (isMounted && objectUrl) {
-          setVisualPreloadVersion((version) => version + 1);
-        }
+      preloadPreviewVisualSegment(segment, controller.signal).then(() => {
+        if (!controller.signal.aborted) setVisualPreloadVersion((version) => version + 1);
       });
     });
-    setVisualPreloadVersion((version) => version + 1);
-    return () => {
-      isMounted = false;
-    };
-  }, [visualSegmentsToPreload]);
+    return () => controller.abort();
+    // Polling can recreate the segments without changing any media.
+  }, [preloadSignature, sessionPreviewIdentity]);
 
   useEffect(() => {
     if (activeVisualSegment?.type !== 'video') {
@@ -1408,9 +1210,10 @@ export default function ProgressIndicator(props) {
           </div>
         </div>
       ) : expressGenerationStatus === null && !videoLink && !hasTimelinePreview && !pendingPreviewActualLink ? (
-        <div className="flex justify-center items-center h-48">
-          <FaSpinner className="animate-spin text-4xl" />
-        </div>
+        <SkeletonStatus label={uiText("Preparing generation")} className="py-4">
+          <SkeletonBlock className="h-3 w-full rounded-full" />
+          <SkeletonBlock className="mt-3 h-4 w-44 max-w-full" />
+        </SkeletonStatus>
       ) : null}
 
       {isGenerationWaitingForApproval && canProcessNextStep && onProcessNextStep && (
@@ -1661,7 +1464,7 @@ export default function ProgressIndicator(props) {
                 key={segment.key}
                 ref={(element) => registerAudioRef(segment.key, element)}
                 src={segment.url}
-                preload="auto"
+                preload={isSegmentActiveAtTime(segment, previewTime) ? 'metadata' : 'none'}
                 muted={previewAudioMuted || !previewAudioUnlocked}
               />
             ))}

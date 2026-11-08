@@ -7,13 +7,17 @@ import { LocalizationProvider } from '../../src/contexts/LocalizationContext.jsx
 import { persistAuthToken } from '../../src/utils/web.jsx';
 import OneshotEditor from '../../src/components/oneshot_editor/OneshotEditor.jsx';
 
-const harness = vi.hoisted(() => ({ session: null, status: null }));
+const harness = vi.hoisted(() => ({ session: null, status: null, nextSession: null, inferenceAvailability: null }));
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 vi.mock('../../src/contexts/UserContext.jsx', () => ({
   useUser: () => ({ user: { _id: 'owner', generationCredits: 2000 }, userInitiated: true, userFetching: false, getUserAPI: vi.fn() }),
 }));
 vi.mock('../../src/contexts/ColorMode.jsx', () => ({ useColorMode: () => ({ colorMode: 'light' }) }));
 vi.mock('../../src/contexts/AlertDialogContext.jsx', () => ({ useAlertDialog: () => ({ openAlertDialog: vi.fn(), closeAlertDialog: vi.fn() }) }));
+vi.mock('../../src/hooks/useInferenceModelAvailability.js', async () => {
+  const actual = await vi.importActual(new URL('../../src/hooks/useInferenceModelAvailability.js', import.meta.url).pathname);
+  return { ...actual, useInferenceModelAvailability: () => harness.inferenceAvailability || actual.useInferenceModelAvailability() };
+});
 vi.mock('react-tooltip', () => ({ Tooltip: () => null }));
 vi.mock('react-toastify', () => ({ ToastContainer: () => null, toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
 vi.mock('../../src/components/auth/AuthContainer.jsx', () => ({ default: () => null, AUTH_DIALOG_OPTIONS: {} }));
@@ -37,18 +41,133 @@ function deferred() {
 beforeEach(() => {
   harness.session = { _id: 'previous', layers: [], audioLayers: [], inputPrompt: '' };
   harness.status = { status: 'PENDING', session_id: 'previous' };
+  harness.nextSession = { _id: 'new-project', layers: [], audioLayers: [], inputPrompt: '' };
+  harness.inferenceAvailability = null;
   axios.get.mockReset();
   axios.post.mockReset();
   axios.get.mockImplementation(async (url) => {
     if (url.includes('/video_sessions/session_details')) {
       return { data: url.includes('id=new-project')
-        ? { _id: 'new-project', layers: [], audioLayers: [], inputPrompt: '' }
+        ? harness.nextSession
         : harness.session };
     }
     if (url.includes('status_detailed')) return { data: harness.status };
     throw new Error(`Unexpected API request: ${url}`);
   });
   persistAuthToken('session-isolation-token');
+});
+
+describe('Vidgenie completed session models', () => {
+  function completeSession(settings = {}) {
+    harness.session = {
+      ...harness.session,
+      isExpressGeneration: true,
+      expressGenerationType: 'TEXT_TO_VIDEO',
+      inputPrompt: 'Saved story',
+      videoLink: 'https://media.example/final.mp4',
+      ...settings,
+    };
+    harness.status = { status: 'COMPLETED', videoLink: harness.session.videoLink };
+  }
+
+  function expandRequest() {
+    fireEvent.click(screen.getByRole('button', { name: /Original request/ }));
+  }
+
+  function expectModel(label, value) {
+    const field = screen.getByText(new RegExp(`^${label}$`, 'i')).parentElement;
+    expect(field).toHaveTextContent(value);
+    expect(field.querySelector('input')).toBeDisabled();
+  }
+
+  it.each(['TEXT_TO_VIDEO', 'IMAGE_LIST_TO_VIDEO'])('shows the saved %s models instead of browser defaults', async (expressGenerationType) => {
+    localStorage.setItem('defaultVidGPTImageGenerationModel', 'GPTIMAGE2.5');
+    localStorage.setItem('defaultVIdGPTVideoGenerationModel', 'RUNWAYML');
+    localStorage.setItem('defaultVidgenieImageListVideoGenerationModel', 'RUNWAYML');
+    completeSession({
+      expressGenerationType,
+      expressGenerationImageModel: 'SEEDREAM',
+      expressGenerativeVideoModel: 'VEO3.1I2V',
+      expressGenerationInferenceModel: 'claude-fable-5.1',
+      expressGenerationInferenceEffort: 'xhigh',
+      // Explicit generation settings take priority over older session fields.
+      imageModel: 'NANOBANANAPRO', videoGenerationModel: 'RUNWAYML',
+      inferenceModel: 'gpt-6-astra', inferenceEffort: 'high',
+    });
+    await mount();
+    expandRequest();
+    expectModel('Image model', 'Seedream');
+    expectModel('Video model', 'VEO3.1 I2V');
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
+    expect(screen.getByRole('combobox', { name: 'Claude model' })).toHaveValue('claude-fable-5.1');
+    expect(screen.getByRole('combobox', { name: 'Claude model' })).toBeDisabled();
+    expectModel('Inference effort', 'xhigh');
+    expect(localStorage.getItem('defaultVidGPTImageGenerationModel')).toBe('GPTIMAGE2.5');
+    expect(localStorage.getItem('defaultVIdGPTVideoGenerationModel')).toBe('RUNWAYML');
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  it('shows older session fields and a saved model subtype even when the model is no longer offered', async () => {
+    completeSession({ imageModel: 'NANOBANANA2', videoGenerationModel: 'PIXVERSEI2V', videoGenerationModelSubType: 'comic' });
+    await mount();
+    expandRequest();
+    expectModel('Image model', 'NanoBanana 2');
+    expectModel('Video model', 'PIXVERSEI2V');
+    expectModel('Pixverse style', 'comic');
+  });
+
+  it('preserves unrecognized historical model keys instead of showing current defaults', async () => {
+    completeSession({ image_model: 'ARCHIVED_IMAGE_MODEL', video_model: 'ARCHIVED_VIDEO_MODEL' });
+    await mount();
+    expandRequest();
+    expectModel('Image model', 'ARCHIVED_IMAGE_MODEL');
+    expectModel('Video model', 'ARCHIVED_VIDEO_MODEL');
+  });
+
+  it('displays the saved inference model when deployment availability excludes it', async () => {
+    harness.inferenceAvailability = {
+      isStandaloneDeployment: false, isLoading: false, hasConfiguredInferenceModels: true,
+      inferenceModelOptions: [{ label: 'GPT 6 Astra', value: 'gpt-6-astra' }],
+    };
+    completeSession({ expressGenerationInferenceModel: 'claude-fable-5.1', expressGenerationInferenceEffort: 'xhigh' });
+    await mount();
+    expect(screen.getByText('Inference: Claude Fable 5.1')).toBeVisible();
+    expandRequest();
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
+    expect(screen.getByRole('combobox', { name: 'Claude model' })).toHaveValue('claude-fable-5.1');
+    expectModel('Inference effort', 'xhigh');
+  });
+
+  it('updates model values when navigating between completed sessions', async () => {
+    completeSession({ expressGenerationImageModel: 'SEEDREAM', expressGenerativeVideoModel: 'VEO3.1I2V' });
+    harness.nextSession = {
+      ...harness.session, _id: 'new-project',
+      expressGenerationImageModel: 'NANOBANANAPRO', expressGenerativeVideoModel: 'KLINGIMGTOVID4',
+    };
+    await mount();
+    expandRequest();
+    expectModel('Image model', 'Seedream');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Open new session' })); });
+    expandRequest();
+    expectModel('Image model', 'NanoBanana Pro');
+    expectModel('Video model', 'Kling 4');
+  });
+
+  it('keeps the new-session model defaults after viewing a completed session', async () => {
+    localStorage.setItem('defaultVidGPTImageGenerationModel', 'GPTIMAGE2.5');
+    localStorage.setItem('defaultVIdGPTVideoGenerationModel', 'RUNWAYML');
+    completeSession({ expressGenerationImageModel: 'SEEDREAM', expressGenerativeVideoModel: 'VEO3.1I2V' });
+    await mount();
+    expandRequest();
+    expectModel('Image model', 'Seedream');
+    await openNewSession();
+    expect(screen.getByText(/^Image model$/i).parentElement).toHaveTextContent('GPTImage 2.6');
+    expect(screen.getByText(/^Video model$/i).parentElement).toHaveTextContent('RunwayML Gen 4.5');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Submit', exact: true })); });
+    expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/step\/text_to_video$/), expect.objectContaining({
+      input: expect.objectContaining({ session_id: 'new-project', image_model: 'GPTIMAGE2.5', video_model: 'RUNWAYML' }),
+    }), expect.anything());
+  });
 });
 
 function Navigation() {

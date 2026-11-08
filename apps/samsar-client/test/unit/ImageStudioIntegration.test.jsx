@@ -115,7 +115,8 @@ describe('image studio integration', () => {
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Send', exact: true })));
     expect(requests('/assistants/submit_assistant_query')[0][1].stream).toBe(true);
     expect(requests('/assistants/submit_assistant_query')[0][1].assistantContext).toMatchObject({ version: 1, page: 'image' });
-    await act(async () => vi.advanceTimersByTimeAsync(4000));
+    // Delivery now polls immediately, then waits a second after each request.
+    await act(async () => vi.advanceTimersByTimeAsync(3000));
     expect(screen.getByText('Live suggestion')).toBeInTheDocument();
     await act(async () => vi.advanceTimersByTimeAsync(1000));
     expect(screen.getByText('Live suggestion continues')).toBeInTheDocument();

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -7,6 +8,8 @@ import test from 'node:test';
 import {
   __testOnly__,
   cleanupOldLocalAssetsV2Media,
+  cleanupCompletedSessionFramesTask,
+  deleteFramesForStaleSessions,
   isTaskProcessorFileCleanupEnabled,
   isTaskProcessorGenerationSideEffectsEnabled,
 } from '../src/TaskProcessor.js';
@@ -14,6 +17,39 @@ import {
   getTaskProcessorSchedule,
   runTaskProcessorSchedule,
 } from '../src/TaskScheduler.js';
+
+test('container full maintenance uses the completed-session guard instead of legacy deletion', async () => {
+  const env = { SAMSAR_RUNTIME: 'docker' };
+  let calls = 0;
+  const result = await deleteFramesForStaleSessions({
+    env,
+    completedFrameCleanupTask: async (options) => {
+      assert.equal(options.env, env);
+      calls++;
+      return { skippedActive: 1 };
+    },
+  });
+  assert.equal(calls, 1);
+  assert.deepEqual(result, { skippedActive: 1 });
+});
+
+test('disabled completed-frame cleanup never queries session state', async () => {
+  const result = await cleanupCompletedSessionFramesTask({
+    env: { TASK_PROCESSOR_ENABLE_FILE_CLEANUP: 'false' },
+    loadSessionState: async () => { throw new Error('should not query'); },
+  });
+  assert.deepEqual(result, { disabled: true });
+});
+
+test('a full disk cannot make maintenance log appends crash the runner', (t) => {
+  const messages = [];
+  t.mock.method(fsSync, 'appendFileSync', () => {
+    throw Object.assign(new Error('No space left on device'), { code: 'ENOSPC' });
+  });
+  t.mock.method(console, 'error', (...args) => messages.push(args));
+  assert.doesNotThrow(() => __testOnly__.appendMaintenanceLog('/unwritable/log', 'message'));
+  assert.equal(messages[0][1].code, 'ENOSPC');
+});
 
 test('generation side effects preserve legacy behavior outside Docker', () => {
   assert.equal(

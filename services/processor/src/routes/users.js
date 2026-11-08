@@ -1,7 +1,7 @@
 import express from 'express';
 import {
   setUserData, getUserData, verifyUserSession,
-  verifyUserToken, verifyEmail, requestApplyCreditsCoupon,
+  verifyEmail, requestApplyCreditsCoupon,
   updateUserDetails, startFreeTrial,
   deleteUser, deleteProjects, deleteGenerations,
   getAPIKeysForUser, createAPIKeyForUser, deleteUserAPIKey, deleteAllAPIKeysForUser,
@@ -138,8 +138,7 @@ router.get('/verify_token', async (req, res) => {
       return;
     }
 
-    const userData = await verifyUserToken({ authToken });
-    res.send(formatUserClientProfile(userData));
+    res.send(formatUserClientProfile(user));
   } catch (e) {
     res.status(400).send({ error: e.message });
   }

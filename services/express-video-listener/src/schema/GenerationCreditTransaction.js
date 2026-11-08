@@ -5,6 +5,8 @@ const generationCreditTransactionSchema = new Schema({
   amount: { type: Number, required: true },
   direction: { type: String, enum: ['debit', 'credit'], required: true },
   source: { type: String, index: true },
+  idempotencyKey: String,
+  apiKeyId: { type: Schema.Types.ObjectId, default: null },
   metadata: Schema.Types.Mixed,
   balanceAfter: Number,
 }, { timestamps: true });

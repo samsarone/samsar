@@ -10,6 +10,8 @@ import GeneratedMusic from './schema/GeneratedMusic.js';
 
 import { getDBConnectionString } from './DBString.js';
 import { getCleanupMinAgeHours, getProcessorAssetsRoot, isContainerRuntime } from './CleanupConfig.js';
+import { cleanupCompletedSessionFrames } from './CompletedFrameCleanup.js';
+import { createFrameCleanupStateLoader } from './FrameCleanupSessionState.js';
 
 
 const DEFAULT_STALE_SESSION_FRAME_CLEANUP_BATCH_SIZE = 64;
@@ -45,7 +47,7 @@ function logInfo(message) {
   const timestamp = new Date().toISOString();
   const logPath = process.env.TASK_PROCESSOR_CRON_LOG_PATH ||
     path.join(os.homedir(), 'cronTabs.log');
-  fs.appendFileSync(logPath, `[${timestamp}] ${message}\n`);
+  appendMaintenanceLog(logPath, `[${timestamp}] ${message}\n`);
 }
 
 // Utility function to append error to cron error log
@@ -54,7 +56,39 @@ function logError(message) {
   const timestamp = new Date().toISOString();
   const errorPath = process.env.TASK_PROCESSOR_CRON_ERROR_PATH ||
     path.join(os.homedir(), 'cronTabs.error');
-  fs.appendFileSync(errorPath, `[${timestamp}] ${message}\n`);
+  appendMaintenanceLog(errorPath, `[${timestamp}] ${message}\n`);
+}
+
+function appendMaintenanceLog(filename, message) {
+  try {
+    fs.appendFileSync(filename, message);
+  } catch (error) {
+    // A full filesystem must not turn maintenance error reporting into another
+    // unhandled failure. Docker still collects stdout/stderr diagnostics.
+    console.error('[task-processor] Cron log append failed; continuing with console logging.', {
+      code: error?.code || 'UNKNOWN',
+    });
+  }
+}
+
+const loadFrameCleanupSessionState = createFrameCleanupStateLoader();
+
+export async function cleanupCompletedSessionFramesTask({
+  env = process.env,
+  loadSessionState = loadFrameCleanupSessionState,
+  ...options
+} = {}) {
+  if (!isTaskProcessorFileCleanupEnabled(env)) {
+    return { disabled: true };
+  }
+  const result = await cleanupCompletedSessionFrames({
+    assetsRoots: ['assets', 'assets_v2'].map((name) => getProcessorAssetsRoot(name, { env })),
+    loadSessionState,
+    env,
+    ...options,
+  });
+  logInfo(`Completed-session frame cleanup finished: ${JSON.stringify(result)}`);
+  return result;
 }
 
 function readPositiveIntegerEnv(name, fallbackValue) {
@@ -306,7 +340,15 @@ async function markSessionFramesForRegeneration(
   );
 }
 
-export async function deleteFramesForStaleSessions() {
+export async function deleteFramesForStaleSessions({
+  env = process.env,
+  completedFrameCleanupTask = cleanupCompletedSessionFramesTask,
+} = {}) {
+  // Container maintenance must use the same completed-session/active-job checks
+  // as the five-minute pass; the legacy updatedAt-only sweep cannot bypass them.
+  // Native cron retains its existing regeneration-oriented maintenance behavior.
+  if (isContainerRuntime(env)) return completedFrameCleanupTask({ env });
+
   await getDBConnectionString();
 
   const staleSessionFrameCleanupHours = getCleanupMinAgeHours(
@@ -565,6 +607,7 @@ export async function runScheduledTasks() {
 }
 
 export const __testOnly__ = {
+  appendMaintenanceLog,
   createStaleVideoSessionCursor,
   findEligibleFramePaths,
   markSessionFramesForRegeneration,

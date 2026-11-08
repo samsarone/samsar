@@ -118,3 +118,56 @@ it('F2P: failed active images hold playback until refreshed credentials decode s
     await waitFor(() => expect(boundary.playback.isVisualReady).toBe(true));
   } finally { globalThis.Image = OriginalImage; }
 });
+
+it('does not block a ready video on the base image it replaces', async () => {
+  const session = initial();
+  session.layers[0].hasAiVideoLayer = true;
+  session.layers[0].aiVideoLayer = '/clip.mp4';
+  session.layers[0].imageSession.activeItemList = [{ id: 'base', type: 'image', is_base_image: true, src: '/unavailable.png' }];
+  axios.get.mockResolvedValue({ data: session });
+  await mount();
+  expect(boundary.playback.isVisualReady).toBe(false);
+  await act(async () => { boundary.editor.onVideoReadyChange('one', '/clip.mp4', true); });
+  await waitFor(() => expect(boundary.playback.isVisualReady).toBe(true));
+});
+
+it('does not block preview on an image placeholder without a source', async () => {
+  const session = initial();
+  session.layers[0].imageSession.activeItemList = [{ id: 'placeholder', type: 'image' }];
+  axios.get.mockResolvedValue({ data: session });
+  await mount();
+  await waitFor(() => expect(boundary.playback.isVisualReady).toBe(true));
+});
+
+it('keeps waiting for visible overlay images and honors unsaved hide/unhide changes', async () => {
+  const session = initial();
+  session.layers[0].hasAiVideoLayer = true;
+  session.layers[0].aiVideoLayer = '/clip.mp4';
+  session.layers[0].imageSession.activeItemList = [
+    { id: 'base', type: 'image', isBaseImage: true, src: '/base.png' },
+    { id: 'overlay', type: 'image', src: '/overlay.png' },
+  ];
+  axios.get.mockResolvedValue({ data: session });
+  await mount();
+  await act(async () => { boundary.editor.onVideoReadyChange('one', '/clip.mp4', true); });
+  expect(boundary.playback.isVisualReady).toBe(false);
+  await act(async () => { boundary.editor.toggleHideItemInLayer('overlay'); });
+  expect(boundary.playback.isVisualReady).toBe(true);
+  await act(async () => { boundary.editor.toggleHideItemInLayer('overlay'); });
+  expect(boundary.playback.isVisualReady).toBe(false);
+});
+
+it('requires the ready signal to match the current scene and video source', async () => {
+  const session = initial();
+  session.layers.forEach(scene => { scene.hasAiVideoLayer = true; scene.aiVideoLayer = '/clip.mp4'; });
+  axios.get.mockResolvedValue({ data: session });
+  await mount();
+  await act(async () => { boundary.editor.onVideoReadyChange('two', '/clip.mp4', true); });
+  expect(boundary.playback.isVisualReady).toBe(false);
+  await act(async () => { boundary.editor.onVideoReadyChange('one', '/old.mp4', true); });
+  expect(boundary.playback.isVisualReady).toBe(false);
+  await act(async () => { boundary.editor.onVideoReadyChange('one', '/clip.mp4', true); });
+  expect(boundary.playback.isVisualReady).toBe(true);
+  await act(async () => { boundary.editor.onVideoReadyChange('one', '/clip.mp4', false); });
+  expect(boundary.playback.isVisualReady).toBe(false);
+});

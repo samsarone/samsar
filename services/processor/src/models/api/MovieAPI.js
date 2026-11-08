@@ -1,4 +1,5 @@
 import VideoSession from "../../schema/VideoSession.js";
+import { beginHostedAgentBilling, settleHostedAgentBilling } from '../HostedAgentBilling.js';
 import ExpressGenerationBuilderRequest from '../../schema/ExpressGenerationBuilderRequest.js';
 import { randomUUID } from 'crypto';
 import { getDBConnectionString } from "../DBString.js";
@@ -282,13 +283,24 @@ function getSessionIdFromPayload(payload = {}) {
   return rawValue.trim();
 }
 
-async function getOrCreateSessionId(userId, payload) {
+async function existingHostedAdmissionResponse(userId, payload) {
+  const sessionId = getSessionIdFromPayload(payload);
+  if (!sessionId) return null;
+  const session = await VideoSession.findOne({ _id: sessionId, userId: String(userId) })
+    .select('hostedAgentBilling postProcessingBilling').lean();
+  return !session?.postProcessingBilling && session?.hostedAgentBilling?.version === 2
+    ? { request_id: sessionId, session_id: sessionId } : null;
+}
+
+async function getOrCreateSessionId(userId, payload, operations = {}) {
+  const create = operations.create || createNewBlankQuickSession;
+  const load = operations.load || getSessionById;
   const requestedSessionId = getSessionIdFromPayload(payload);
   if (!requestedSessionId) {
-    return createNewBlankQuickSession(userId);
+    return create(userId);
   }
 
-  const existingSession = await getSessionById(requestedSessionId);
+  const existingSession = await load(requestedSessionId);
   if (!existingSession) {
     const error = new Error('Session not found.');
     error.status = 404;
@@ -302,6 +314,11 @@ async function getOrCreateSessionId(userId, payload) {
     throw error;
   }
 
+  // A full new agent job cannot spend or replace a post-processing operation's
+  // fixed fee. Keep that request intact and admit this job on a new session.
+  if (existingSession.postProcessingBilling?.version === 1) {
+    return create(userId, { expressGenerationPending: false });
+  }
   return existingSession._id.toString();
 }
 
@@ -442,6 +459,9 @@ async function requestCreateVideoInternal(userId, payload = {}, webhookUrl, {
   payload = applyDockerSubtitleAvailability(payload);
 
   await getDBConnectionString();
+  const existingAdmission = await existingHostedAdmissionResponse(userId, payload);
+  if (existingAdmission) return existingAdmission;
+
 
   const reusesNarrativeArtifacts = Boolean(preparedNarrativeArtifacts);
 
@@ -559,7 +579,8 @@ async function requestCreateVideoInternal(userId, payload = {}, webhookUrl, {
       customModelOverrides.payload.frames_per_second,
     ) || 24,
   });
-  await assertSufficientExpressVideoCreditsForPreflight({
+  const agentBillingEstimate = await assertSufficientExpressVideoCreditsForPreflight({
+    hostedAgentBilling: true,
     userId,
     payload,
     routeType: 'text_to_video',
@@ -671,9 +692,15 @@ async function requestCreateVideoInternal(userId, payload = {}, webhookUrl, {
     preparedNarrativeArtifacts,
   });
 
-  await createUnifiedSessionAndUpdateWebhook(userId, normalizedPayload, webhookUrl, {
-    preparedNarrativeArtifacts,
-  });
+  try {
+    await createUnifiedSessionAndUpdateWebhook(userId, normalizedPayload, webhookUrl, { preparedNarrativeArtifacts,
+      billingAdmission: { estimate: agentBillingEstimate,
+        metadata: { model: selectedVideoModel, pricingRateClass, isExternalUserRequest: payload.isExternalUserRequest } },
+    });
+  } catch (error) {
+    await markTextToVideoBuilderSessionFailed(sessionId, error);
+    throw error;
+  }
 
 
   return {
@@ -684,6 +711,7 @@ async function requestCreateVideoInternal(userId, payload = {}, webhookUrl, {
 
 
 async function createUnifiedSessionAndUpdateWebhook(userId, payload, webhookUrl, {
+  billingAdmission = null,
   preparedNarrativeArtifacts = null,
 } = {}) {
   await getDBConnectionString();
@@ -861,6 +889,7 @@ async function createUnifiedSessionAndUpdateWebhook(userId, payload, webhookUrl,
     finalPayload,
     webhookUrl,
     builderSessionSubType,
+    billingAdmission,
   );
 
   return {
@@ -967,6 +996,10 @@ export async function requestCreateVideoFromImageListAndMetadata(userId, payload
   if (!userId) {
     throw new Error('userId is required.');
   }
+
+  await getDBConnectionString();
+  const existingAdmission = await existingHostedAdmissionResponse(userId, payload);
+  if (existingAdmission) return existingAdmission;
 
   payload = applyDockerSubtitleAvailability(payload);
 
@@ -1108,7 +1141,8 @@ export async function requestCreateVideoFromImageListAndMetadata(userId, payload
       imageListFramesPerSecond,
     ) +
     (generatedOutroOptions.generate_outro_image === true ? OUTRO_LAYER_DURATION_SECONDS : 0);
-  await assertSufficientExpressVideoCreditsForPreflight({
+  const agentBillingEstimate = await assertSufficientExpressVideoCreditsForPreflight({
+    hostedAgentBilling: true,
     userId,
     payload,
     routeType: 'image_list_to_video',
@@ -1240,7 +1274,10 @@ export async function requestCreateVideoFromImageListAndMetadata(userId, payload
     builderSessionSubType: 'video_create',
   });
 
-  scheduleImageListToVideoBuilderSession(sessionId, userId, normalizedPayload, webhookUrl);
+  await scheduleTextToVideoBuilderSession(sessionId, userId, normalizedPayload, webhookUrl, 'video_create', {
+    routeType: 'image_list_to_video', estimate: agentBillingEstimate,
+    metadata: { model: normalizedPayload.video_model, pricingRateClass, isExternalUserRequest: payload.isExternalUserRequest },
+  });
 
   return {
     request_id: sessionId,
@@ -1503,42 +1540,6 @@ export async function processImageListToVideoBuilderSession(sessionId, userId, p
 
 }
 
-function scheduleImageListToVideoBuilderSession(sessionId, userId, payload, webhookUrl) {
-  // Defer heavy work so API can return session_id before background processing starts.
-  const start = () => {
-    void (async () => {
-      await markExpressGenerationBuilderState(sessionId, {
-        routeType: 'image_list_to_video',
-        status: 'RUNNING',
-        sessionSubType: 'video_create',
-      });
-      await processImageListToVideoBuilderSession(sessionId, userId, payload, webhookUrl);
-      await markExpressGenerationBuilderState(sessionId, {
-        routeType: 'image_list_to_video',
-        status: 'COMPLETED',
-        sessionSubType: 'video_create',
-      });
-    })().catch(async (error) => {
-      console.error(`processImageListToVideoBuilderSession failed for session ${sessionId}`, error);
-      await markExpressGenerationBuilderState(sessionId, {
-        routeType: 'image_list_to_video',
-        status: 'FAILED',
-        sessionSubType: 'video_create',
-        error,
-      });
-      await markImageListToVideoBuilderSessionFailed(sessionId, error);
-      await markGlobalBuilderSessionFailed(sessionId, extractImageListToVideoErrorMessage(error));
-    });
-  };
-
-  if (typeof setImmediate === 'function') {
-    setImmediate(start);
-    return;
-  }
-
-  setTimeout(start, 0);
-}
-
 function deferTextToVideoBuilderRun(sessionId) {
   const start = () => {
     void runPersistedTextToVideoBuilderSession(sessionId);
@@ -1556,6 +1557,8 @@ async function scheduleTextToVideoBuilderSession(
   payload,
   webhookUrl,
   sessionSubType = 'video_create',
+  billingAdmission = null,
+  operations = {},
 ) {
   await getDBConnectionString();
   const normalizedSessionId = sessionId?.toString?.() || String(sessionId);
@@ -1564,7 +1567,8 @@ async function scheduleTextToVideoBuilderSession(
     {
       $set: {
         userId: userId?.toString?.() || String(userId),
-        routeType: 'text_to_video',
+        routeType: billingAdmission?.routeType || 'text_to_video',
+        billingAdmission,
         sessionSubType,
         status: 'QUEUED',
         payload,
@@ -1580,10 +1584,13 @@ async function scheduleTextToVideoBuilderSession(
     },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
-  deferTextToVideoBuilderRun(normalizedSessionId);
+  if (billingAdmission) {
+    await (operations.begin || beginHostedAgentBilling)(normalizedSessionId, billingAdmission.estimate, billingAdmission.metadata);
+  }
+  (operations.defer || deferTextToVideoBuilderRun)(normalizedSessionId);
 }
 
-async function runPersistedTextToVideoBuilderSession(sessionId) {
+async function runPersistedTextToVideoBuilderSession(sessionId, operations = {}) {
   await getDBConnectionString();
   const now = new Date();
   const leaseExpiresAt = new Date(now.getTime() + TEXT_TO_VIDEO_BUILDER_LEASE_MS);
@@ -1640,19 +1647,39 @@ async function runPersistedTextToVideoBuilderSession(sessionId) {
   heartbeat.unref?.();
 
   try {
+    const session = await VideoSession.findById(sessionId).select('hostedAgentBilling expressGenerationPaused expressGenerationFailed expressGenerationCancelled').lean();
+    if (session?.hostedAgentBilling?.version === 2 &&
+        (session.expressGenerationPaused || session.hostedAgentBilling.state === 'PAUSED')) {
+      await ExpressGenerationBuilderRequest.updateOne({ _id: job._id, leaseOwner: TEXT_TO_VIDEO_BUILDER_WORKER_ID }, {
+        $set: { status: 'QUEUED', leaseOwner: null, leaseExpiresAt: null },
+      });
+      return false;
+    }
+    if (session?.expressGenerationFailed || session?.expressGenerationCancelled ||
+        ['FAILED', 'CANCELLED', 'COMPLETED'].includes(session?.hostedAgentBilling?.state)) {
+      await ExpressGenerationBuilderRequest.updateOne({ _id: job._id, leaseOwner: TEXT_TO_VIDEO_BUILDER_WORKER_ID }, {
+        $set: { status: 'FAILED', leaseOwner: null, leaseExpiresAt: null },
+      });
+      return false;
+    }
+    if (job.billingAdmission) {
+      const admission = await (operations.begin || beginHostedAgentBilling)(sessionId, job.billingAdmission.estimate, job.billingAdmission.metadata);
+      if (admission.billing && admission.billing.state !== 'ACTIVE') {
+        throw Object.assign(new Error('Builder funding is paused or terminal.'), { code: 'AGENT_BILLING_PENDING' });
+      }
+    }
     await markExpressGenerationBuilderState(sessionId, {
-      routeType: 'text_to_video',
+      routeType: job.routeType || 'text_to_video',
       status: 'RUNNING',
       sessionSubType: job.sessionSubType,
     });
-    await createVidGPTSessionAndUpdateWebhook(
-      job.userId,
-      job.payload,
-      job.webhookUrl,
-      job.sessionSubType,
-    );
+    if (job.routeType === 'image_list_to_video') {
+      await (operations.processImageList || processImageListToVideoBuilderSession)(sessionId, job.userId, job.payload, job.webhookUrl);
+    } else {
+      await (operations.processText || createVidGPTSessionAndUpdateWebhook)(job.userId, job.payload, job.webhookUrl, job.sessionSubType);
+    }
     await markExpressGenerationBuilderState(sessionId, {
-      routeType: 'text_to_video',
+      routeType: job.routeType || 'text_to_video',
       status: 'COMPLETED',
       sessionSubType: job.sessionSubType,
     });
@@ -1671,6 +1698,20 @@ async function runPersistedTextToVideoBuilderSession(sessionId) {
     );
     return true;
   } catch (error) {
+    const latest = await VideoSession.findById(sessionId).select('hostedAgentBilling expressGenerationPaused').lean();
+    if (latest?.hostedAgentBilling?.version === 2 &&
+        (latest.expressGenerationPaused || latest.hostedAgentBilling.state === 'PAUSED')) {
+      await ExpressGenerationBuilderRequest.updateOne({ _id: job._id, leaseOwner: TEXT_TO_VIDEO_BUILDER_WORKER_ID }, {
+        $set: { status: 'QUEUED', leaseOwner: null, leaseExpiresAt: null },
+      });
+      return false;
+    }
+    if (['FAILED', 'CANCELLED', 'COMPLETED'].includes(latest?.hostedAgentBilling?.state)) {
+      await ExpressGenerationBuilderRequest.updateOne({ _id: job._id, leaseOwner: TEXT_TO_VIDEO_BUILDER_WORKER_ID }, {
+        $set: { status: 'FAILED', leaseOwner: null, leaseExpiresAt: null },
+      });
+      return false;
+    }
     console.error(`createVidGPTSessionAndUpdateWebhook failed for session ${sessionId}`, error);
     await ExpressGenerationBuilderRequest.updateOne(
       { _id: job._id, leaseOwner: TEXT_TO_VIDEO_BUILDER_WORKER_ID },
@@ -1685,12 +1726,13 @@ async function runPersistedTextToVideoBuilderSession(sessionId) {
       },
     );
     await markExpressGenerationBuilderState(sessionId, {
-      routeType: 'text_to_video',
+      routeType: job.routeType || 'text_to_video',
       status: 'FAILED',
       sessionSubType: job.sessionSubType,
       error,
     });
-    await markTextToVideoBuilderSessionFailed(sessionId, error);
+    if (job.routeType === 'image_list_to_video') await markImageListToVideoBuilderSessionFailed(sessionId, error);
+    else await markTextToVideoBuilderSessionFailed(sessionId, error);
     await markGlobalBuilderSessionFailed(sessionId, extractTextToVideoErrorMessage(error));
     return false;
   } finally {
@@ -1712,7 +1754,9 @@ export async function recoverPersistedTextToVideoBuilderSessions({ limit = 20 } 
         ],
       },
     ],
-  }).select('sessionId').sort({ createdAt: 1 }).limit(limit).lean();
+  // Paused requests are requeued without processing. Rotate by last update so
+  // a page of paused jobs cannot starve newer recoverable work.
+  }).select('sessionId').sort({ updatedAt: 1, createdAt: 1 }).limit(limit).lean();
 
   for (const job of jobs) {
     deferTextToVideoBuilderRun(job.sessionId);
@@ -1930,6 +1974,7 @@ async function markTextToVideoBuilderSessionFailed(sessionId, error) {
     await VideoSession.findByIdAndUpdate(sessionId, {
       $set: setPayload,
     });
+    await settleHostedAgentBilling(sessionId, 'FAILED');
   } catch (markError) {
     console.error(`Failed to mark text_to_video session ${sessionId} as failed`, markError);
   }
@@ -1997,6 +2042,7 @@ async function markImageListToVideoBuilderSessionFailed(sessionId, error) {
     await VideoSession.findByIdAndUpdate(sessionId, {
       $set: setPayload,
     });
+    await settleHostedAgentBilling(sessionId, 'FAILED');
   } catch (markError) {
     console.error(`Failed to mark image_list_to_video session ${sessionId} as failed`, markError);
   }
@@ -3165,3 +3211,5 @@ export function normalizeImageListInput(imageUrls = []) {
     imageListPayload: normalizedItems,
   };
 }
+
+export const hostedAgentBuilderTestHooks = { scheduleTextToVideoBuilderSession, runPersistedTextToVideoBuilderSession, existingHostedAdmissionResponse, getOrCreateSessionId };

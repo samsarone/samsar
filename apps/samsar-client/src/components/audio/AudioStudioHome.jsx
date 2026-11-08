@@ -1,3 +1,4 @@
+import { AudioCardsSkeleton } from '../common/PageSkeletonLoader.jsx';
 import WorkspaceAssistant from '../assistant/WorkspaceAssistant.jsx';
 import { getUiLanguage } from '../../utils/localization.js';
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
@@ -840,9 +841,7 @@ export default function AudioStudioHome() {
 
                 {libraryError ? <div className="mt-5 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm status-error">{libraryError}</div> : null}
                 {libraryLoading && libraryItems.length === 0 ? (
-                  <div className="grid gap-4 py-6 sm:grid-cols-2 xl:grid-cols-3">
-                    {[0, 1, 2].map((item) => <div key={item} className={`h-40 animate-pulse rounded-2xl border ${panelClass}`} />)}
-                  </div>
+                  <AudioCardsSkeleton />
                 ) : libraryItems.length > 0 ? (
                   <>
                     <div className="grid gap-4 py-6 sm:grid-cols-2 xl:grid-cols-3">

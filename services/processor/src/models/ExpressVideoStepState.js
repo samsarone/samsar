@@ -1,5 +1,6 @@
 import { getDBConnectionString } from './DBString.js';
 import VideoSession from '../schema/VideoSession.js';
+import { controlHostedAgentBilling } from './HostedAgentBilling.js';
 
 export const EXPRESS_STEP_VIDEO_STAGES = Object.freeze([
   'prompt_generation',
@@ -226,7 +227,7 @@ export async function markExpressStepStageCompleted(sessionId, stageKey, {
 
   await getDBConnectionString();
   const sessionData = await VideoSession.findById(sessionId)
-    .select('expressGenerationStatus expressStepGeneration')
+    .select('expressGenerationStatus expressStepGeneration hostedAgentBilling')
     .lean();
   const expressGenerationStatus = sessionData?.expressGenerationStatus || {};
   const manualStepStages = normalizeExpressStepStageList(
@@ -287,7 +288,19 @@ export async function markExpressStepStageCompleted(sessionId, stageKey, {
     setPayload.expressGenerationPending = true;
   }
 
-  return VideoSession.findByIdAndUpdate(sessionId, { $set: setPayload }, { new: true });
+  let session;
+  if (shouldPauseForNextStep && sessionData?.hostedAgentBilling?.version === 2) {
+    await controlHostedAgentBilling(sessionId, 'PAUSED', setPayload);
+    session = await VideoSession.findById(sessionId);
+  } else {
+    session = await VideoSession.findOneAndUpdate({ _id: sessionId,
+      ...(sessionData?.hostedAgentBilling?.version === 2 ? {
+        'hostedAgentBilling.state': 'ACTIVE',
+        'hostedAgentBilling.controlRevision': sessionData.hostedAgentBilling.controlRevision,
+      } : {}),
+    }, { $set: setPayload }, { new: true });
+  }
+  return session;
 }
 
 export async function markExpressStepStagePending(sessionId, stageKey) {
@@ -303,10 +316,7 @@ export async function markExpressStepStagePending(sessionId, stageKey) {
   await getDBConnectionString();
   const now = new Date();
   const label = EXPRESS_STEP_VIDEO_STAGE_LABELS[normalizedStage] || normalizedStage;
-  return VideoSession.findByIdAndUpdate(
-    sessionId,
-    {
-      $set: {
+  const fields = {
         isStepVideoGeneration: true,
         expressGenerationPending: true,
         'expressStepGeneration.enabled': true,
@@ -325,8 +335,8 @@ export async function markExpressStepStagePending(sessionId, stageKey) {
         'expressStepGeneration.can_process_next': false,
         'expressStepGeneration.updatedAt': now,
         'expressStepGeneration.updated_at': now,
-      },
-    },
-    { new: true },
-  );
+      };
+  const billing = await controlHostedAgentBilling(sessionId, 'ACTIVE', fields);
+  if (!billing.legacy) return VideoSession.findById(sessionId);
+  return VideoSession.findByIdAndUpdate(sessionId, { $set: fields }, { new: true });
 }

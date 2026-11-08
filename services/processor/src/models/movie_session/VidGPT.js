@@ -1,5 +1,7 @@
+import { refundLegacyProvisionalCredits } from '../LegacyProvisionalRefund.js';
 import { normalizeStoredGPTImageModelKey } from '../../consts/GPTImageModelKeys.js';
 import { getDBConnectionString } from "../DBString.js";
+import { fundHostedAgentRequest, settleHostedAgentBilling, recordHostedAgentNarrativeCompletion } from '../HostedAgentBilling.js';
 import {
   extractThemeFromUserPrompt,
   extractGroundedThemeFromUserPrompt,
@@ -23,8 +25,6 @@ import {
 import VideoSession from "../../schema/VideoSession.js";
 import { processImgToVidGPT } from './Img2VidGPT.js';
 import { getLanguageStringFromLanguageCode } from "../../consts/LanguageCodes.js";
-import { creditGenerationCredits } from "../GenerationCredits.js";
-import { applyExternalRequestRefundBySessionId } from "../external/User.js";
 
 
 import {
@@ -80,6 +80,12 @@ function clonePreparedNarrativeArtifact(value) {
  * never opt themselves out of moderation or prompt generation.
  */
 export async function createVidGPTSessionFromNarrativeArtifacts(userId, payload = {}) {
+  await getDBConnectionString();
+  await fundHostedAgentRequest(userId, payload);
+  return createFundedVidGPTSessionFromNarrativeArtifacts(userId, payload);
+}
+
+async function createFundedVidGPTSessionFromNarrativeArtifacts(userId, payload = {}) {
   await getDBConnectionString();
 
   const {
@@ -315,6 +321,22 @@ export async function createVidGPTSessionFromNarrativeArtifacts(userId, payload 
 
 export async function createVidGPTSession(userId, payload) {
   await getDBConnectionString();
+  await fundHostedAgentRequest(userId, payload);
+  try {
+    return await createFundedVidGPTSession(userId, payload);
+  } catch (error) {
+    const sessionId = payload.sessionID;
+    await VideoSession.updateOne({ _id: sessionId }, { $set: {
+      expressGenerationFailed: true, expressGenerationPending: false,
+      'expressGenerationStatus.status': 'FAILED', expressGenerationError: error.message,
+    } });
+    await settleHostedAgentBilling(sessionId, 'FAILED');
+    throw error;
+  }
+}
+
+async function createFundedVidGPTSession(userId, payload) {
+  await getDBConnectionString();
   let { prompt, sessionID,
     aspectRatio,
 
@@ -507,6 +529,7 @@ export async function createVidGPTSession(userId, payload) {
     narrativeJson,
     movieResourceList,
   } = narrativeGeneration;
+  await recordHostedAgentNarrativeCompletion(sessionID);
   const stableNarrativeJson = clonePreparedNarrativeArtifact(narrativeJson);
   const stableMovieResourceList = clonePreparedNarrativeArtifact(
     movieResourceList || narrativeJson,
@@ -800,32 +823,14 @@ async function processSessionCompletionFailure(sessionId) {
 
   await getDBConnectionString();
 
+  await settleHostedAgentBilling(sessionId, 'FAILED');
+
   const sessionData = await VideoSession.findOne({ _id: sessionId });
 
   // return user credits
-  if (sessionData.provisionalCredits) {
-    // return the user session provisional credits back to the user
-    const userId = sessionData.userId;
-    const creditsToRefund = Number(sessionData.provisionalCredits) || 0;
-    if (creditsToRefund > 0) {
-      await creditGenerationCredits(userId, creditsToRefund, {
-        source: 'video_generation_refund',
-        metadata: {
-          sessionId,
-          reason: 'prompt_generation_failed',
-        },
-      });
-      await applyExternalRequestRefundBySessionId({
-        internalUserId: userId?.toString?.() || userId,
-        sessionId,
-        creditsRefunded: creditsToRefund,
-        reason: 'prompt_generation_failed',
-      });
-    }
+  if (!sessionData) return;
+  await refundLegacyProvisionalCredits(sessionId);
 
-    // update provisional credits to 0
-    await VideoSession.findByIdAndUpdate(sessionId, { provisionalCredits: 0 });
-  }
   if (sessionData.externalWebhook) {
     // send POST request to externalWebhook
 

@@ -536,3 +536,10 @@ test('joined title helpers collect source titles and build fallback title', () =
     'Joined reel: Bangkok Street Food + Travel Reels + Island Hopping',
   );
 });
+
+test('joined output cannot inherit the source agent wallet operation or duration', () => {
+  const clonedSession = { hostedAgentBilling: { version: 2, state: 'COMPLETED', netFunded: 2160 }, finalVideoDurationSeconds: 60 };
+  __testOnly__.prepareSessionForJoin({ clonedSession, totalDuration: 120 });
+  assert.equal(clonedSession.hostedAgentBilling, undefined);
+  assert.equal(clonedSession.finalVideoDurationSeconds, undefined);
+});

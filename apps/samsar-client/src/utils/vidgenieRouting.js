@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { rememberSessionLoadingLayout } from './sessionLoadingLayout.js';
 import { getDefaultAuthenticatedPath } from './defaultRoutes.js';
 import { IS_STANDALONE_DEPLOYMENT } from './environment.jsx';
 import { createBlankVidgenieSession } from './vidgenieSessionApi.js';
@@ -122,6 +123,7 @@ export async function resolveGuestVidgenieEntryPath({
   const guestSessionId = guestSession?.isGuestSession === true
     ? getVidgenieSessionId(guestSession)
     : null;
+  if (guestSessionId) rememberSessionLoadingLayout(guestSession);
   if (guestSessionId && typeof onGuestSessionResolved === 'function') {
     onGuestSessionResolved(guestSession);
   }
@@ -148,6 +150,7 @@ export async function resolveVidgenieEntryPath({
   const pendingSession = await findLatestPendingVidgenieSession(apiServer, headers);
   const pendingSessionId = getVidgenieSessionId(pendingSession);
   if (pendingSessionId) {
+    rememberSessionLoadingLayout(pendingSession);
     storeVidgenieSessionId(pendingSessionId);
     return appendRouteSearch(`/vidgenie/${pendingSessionId}`, search);
   }

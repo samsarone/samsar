@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getCleanupMinAgeHours, getProcessorAssetsRoot } from '../src/CleanupConfig.js';
+import { getCleanupMinAgeHours, getCompletedFrameCleanupConfig, getProcessorAssetsRoot } from '../src/CleanupConfig.js';
 import { getTaskProcessorSchedule } from '../src/TaskScheduler.js';
 
 test('hosted and standalone containers use mounted media paths and recurring maintenance', () => {
@@ -57,4 +57,60 @@ test('other cleanup stages retain the shared global fallback', () => {
   assert.equal(getCleanupMinAgeHours('OTHER_CLEANUP_HOURS', { CLEANUP_MIN_AGE_HOURS: '72' }), 72);
   assert.equal(getCleanupMinAgeHours('OTHER_CLEANUP_HOURS', { CLEANUP_MIN_AGE_HOURS: '72', OTHER_CLEANUP_HOURS: '96' }), 96);
   assert.throws(() => getCleanupMinAgeHours('OTHER_CLEANUP_HOURS', { CLEANUP_MIN_AGE_HOURS: '0' }), /positive number/);
+});
+
+test('completed-frame defaults use a short grace and disk-pressure hysteresis independently of legacy retention', () => {
+  const expected = {
+    enabled: true,
+    dryRun: false,
+    minCompletedAgeMs: 15 * 60000,
+    pressureUsedPercent: 80,
+    pressureAvailableBytes: 32 * 1024 ** 3,
+    targetUsedPercent: 75,
+    targetAvailableBytes: 64 * 1024 ** 3,
+  };
+  assert.deepEqual(getCompletedFrameCleanupConfig({}), expected);
+  assert.deepEqual(getCompletedFrameCleanupConfig({ CLEANUP_MIN_AGE_HOURS: '168' }), expected);
+});
+
+test('completed-frame policy accepts explicit controls without changing the safety threshold units', () => {
+  assert.deepEqual(getCompletedFrameCleanupConfig({
+    FRAME_CLEANUP_ENABLED: 'false',
+    FRAME_CLEANUP_DRY_RUN: 'true',
+    COMPLETED_SESSION_FRAME_CLEANUP_MINUTES: '30',
+    FRAME_CLEANUP_PRESSURE_USED_PERCENT: '90',
+    FRAME_CLEANUP_PRESSURE_AVAILABLE_GIB: '16',
+    FRAME_CLEANUP_TARGET_USED_PERCENT: '70',
+    FRAME_CLEANUP_TARGET_AVAILABLE_GIB: '48',
+  }), {
+    enabled: false, dryRun: true, minCompletedAgeMs: 30 * 60000,
+    pressureUsedPercent: 90, pressureAvailableBytes: 16 * 1024 ** 3,
+    targetUsedPercent: 70, targetAvailableBytes: 48 * 1024 ** 3,
+  });
+  for (const value of ['false', '0', 'no', 'OFF', false]) {
+    assert.equal(getCompletedFrameCleanupConfig({ FRAME_CLEANUP_ENABLED: value }).enabled, false);
+  }
+  for (const value of ['true', '1', 'yes', 'ON', true]) {
+    assert.equal(getCompletedFrameCleanupConfig({ FRAME_CLEANUP_DRY_RUN: value }).dryRun, true);
+  }
+});
+
+test('invalid completed-frame controls fail closed instead of weakening the configured policy', () => {
+  for (const key of ['FRAME_CLEANUP_ENABLED', 'FRAME_CLEANUP_DRY_RUN']) {
+    assert.throws(() => getCompletedFrameCleanupConfig({ [key]: 'maybe' }), /must be a boolean/);
+  }
+  for (const key of [
+    'COMPLETED_SESSION_FRAME_CLEANUP_MINUTES',
+    'FRAME_CLEANUP_PRESSURE_AVAILABLE_GIB',
+    'FRAME_CLEANUP_TARGET_AVAILABLE_GIB',
+    'FRAME_CLEANUP_PRESSURE_USED_PERCENT',
+    'FRAME_CLEANUP_TARGET_USED_PERCENT',
+  ]) {
+    for (const value of ['invalid', '15minutes', '0', '-1', 'Infinity']) {
+      assert.throws(() => getCompletedFrameCleanupConfig({ [key]: value }), /positive number/);
+    }
+  }
+  assert.throws(() => getCompletedFrameCleanupConfig({ FRAME_CLEANUP_PRESSURE_USED_PERCENT: '101' }), /positive number/);
+  assert.throws(() => getCompletedFrameCleanupConfig({ FRAME_CLEANUP_TARGET_USED_PERCENT: '81' }), /must not exceed/);
+  assert.throws(() => getCompletedFrameCleanupConfig({ FRAME_CLEANUP_TARGET_AVAILABLE_GIB: '31' }), /must be at least/);
 });

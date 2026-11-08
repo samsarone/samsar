@@ -1,6 +1,7 @@
 import { getVideoTimeline } from '../utils/VideoTimeline.js';
 import { frameCountToSeconds, secondsToFrameCount, getLayerFrameRange } from '../utils/FrameClock.js';
 import { captureSessionSceneReferences, resolveLayerSourceSceneReference } from './video/SceneIdentity.js';
+import { captureMovieResourceTimeline, synchronizeMovieResourceTimeline } from '../utils/MovieResourceTimeline.js';
 import { getDBConnectionString } from "./DBString.js";
 import VideoSession from "../schema/VideoSession.js";
 import VideoSessionEditLog from "../schema/VideoSessionEditLog.js";
@@ -125,7 +126,7 @@ import {
   extendSessionTimelineToEndTime,
 } from './video/SessionTimelineExtension.js';
 
-import { buildSecureMediaDeliveryUrl, getObjectFromS3, uploadSpeechAudioToCDN } from './AWS.js';
+import { buildSecureMediaDeliveryUrl, withMediaDeliveryUrlCache, getObjectFromS3, uploadSpeechAudioToCDN } from './AWS.js';
 
 import fs from 'fs';
 import fsPromises from 'fs/promises';
@@ -408,7 +409,9 @@ async function findVideoSessionForStudioAccess(userId, sessionId, payload = {}, 
     return null;
   }
 
-  const session = await VideoSession.findById(sessionId);
+  const query = VideoSession.findById(sessionId);
+  // Only the response-only read opts in; mutation and frame endpoints keep full documents.
+  const session = await (options.omitResponseFrames ? query.select('-layers.frames') : query);
   if (!session) {
     return null;
   }
@@ -4509,6 +4512,7 @@ async function finalizeUserVideoLayerUpload({
     throw new Error('Layer not found');
   }
 
+  captureMovieResourceTimeline(sessionDataValue);
   const layer = sessionDataValue.layers[layerIndex];
   if (taskId && layer?.userVideoUploadTaskId && layer.userVideoUploadTaskId !== taskId) {
     return null;
@@ -4672,6 +4676,7 @@ async function finalizeUserVideoLayerUpload({
   }
 
   await deleteUnlockedFrameGenerations(sessionId, normalizedLayerId);
+  synchronizeMovieResourceTimeline(sessionDataValue);
   await sessionDataValue.save();
   await ensureUnlockedFrameGenerations(sessionId, pendingFrameRefreshLayerIds);
   await requestRealignConnectedAudioLayersToLayers(sessionId);
@@ -5289,7 +5294,7 @@ export async function getSessionDetails(payload) {
   await getDBConnectionString();
   const { userId, id } = payload;
 
-  const videoSession = await requireVideoSessionForStudioAccess(userId, id, payload);
+  const videoSession = await requireVideoSessionForStudioAccess(userId, id, payload, { omitResponseFrames: true });
   return sanitizeStudioSessionPayload(videoSession, { viewerUserId: userId });
 }
 
@@ -5411,7 +5416,9 @@ export async function requestGuestVideoGeneration(sessionId, renderOptions = {})
     markAllSessionLayersPendingForFrameGeneration(videoSession);
   }
 
+  captureMovieResourceTimeline(videoSession);
   const customSpeechTimelineExtension = extendSessionTimelineToCustomSpeechEnd(videoSession);
+  synchronizeMovieResourceTimeline(videoSession);
   if (customSpeechTimelineExtension.extended) {
   }
 
@@ -5445,7 +5452,8 @@ export async function requestGuestVideoGeneration(sessionId, renderOptions = {})
 
   await VideoSession.updateOne(
     { _id: sessionId },
-    { $set: { layers: sessionLayers, frameGenerationPending: sessionFrameGenerationPending } },
+    { $set: { layers: sessionLayers, frameGenerationPending: sessionFrameGenerationPending,
+      ...(videoSession.movieResourceList != null ? { movieResourceList: videoSession.movieResourceList } : {}) } },
     { new: true }
   );
 
@@ -5503,6 +5511,7 @@ export async function requestGuestVideoGeneration(sessionId, renderOptions = {})
   videoSession.videoLink = null;
   videoSession.remoteURL = null;
 
+  synchronizeMovieResourceTimeline(videoSession);
   await videoSession.save();
 
   // Delete all VideoGeneration requests with sessionId
@@ -5545,7 +5554,9 @@ export async function requestVideoGeneration(userId, sessionId, renderOptions = 
     markAllSessionLayersPendingForFrameGeneration(videoSession);
   }
 
+  captureMovieResourceTimeline(videoSession);
   const customSpeechTimelineExtension = extendSessionTimelineToCustomSpeechEnd(videoSession);
+  synchronizeMovieResourceTimeline(videoSession);
   if (customSpeechTimelineExtension.extended) {
   }
 
@@ -5579,7 +5590,8 @@ export async function requestVideoGeneration(userId, sessionId, renderOptions = 
 
   await VideoSession.updateOne(
     { _id: sessionId },
-    { $set: { layers: sessionLayers, frameGenerationPending: sessionFrameGenerationPending } },
+    { $set: { layers: sessionLayers, frameGenerationPending: sessionFrameGenerationPending,
+      ...(videoSession.movieResourceList != null ? { movieResourceList: videoSession.movieResourceList } : {}) } },
     { new: true }
   );
 
@@ -5651,6 +5663,7 @@ export async function requestVideoGeneration(userId, sessionId, renderOptions = 
     videoSession.notificationEmail = userData.email;
     videoSession.notificationSent = false;
   }
+  synchronizeMovieResourceTimeline(videoSession);
   await videoSession.save();
 
   // Delete all VideoGeneration requests with sessionId
@@ -6043,6 +6056,8 @@ export async function regenerateFramesForSession(id, resetDurations = false, opt
     throw new Error("Video session not found");
   }
 
+  captureMovieResourceTimeline(videoSession);
+
   await VideoSession.updateOne(
     { _id: id },
     {
@@ -6121,6 +6136,7 @@ export async function regenerateFramesForSession(id, resetDurations = false, opt
   videoSession.frameGenerationPending = setSessionFrameGenerationPending;
   videoSession.videoGenerationPending = false;
   videoSession.expressGenerationPending = false;
+  synchronizeMovieResourceTimeline(videoSession);
   await videoSession.save();
 
   if (prepareAiVideoFrames && !(resetDurations && preferFrameBasedDurations)) {
@@ -6292,7 +6308,11 @@ function toPlainActiveItem(item) {
   return item;
 }
 
-async function sanitizeStudioSessionPayload(session, options = {}) {
+function sanitizeStudioSessionPayload(session, options = {}) {
+  return withMediaDeliveryUrlCache(() => buildStudioSessionPayload(session, options));
+}
+
+async function buildStudioSessionPayload(session, options = {}) {
   if (!session) {
     return session;
   }
@@ -6321,9 +6341,9 @@ async function sanitizeStudioSessionPayload(session, options = {}) {
     ));
 
   const [pendingFrameGenerations, activeUserVideoUploadTasks, generatedAiVideos] = await Promise.all([
-    FrameGeneration.find({ sessionId })
-      .select('layerId')
-      .lean(),
+    Array.isArray(sessionPayload.layers) && sessionPayload.layers.some((layer) => layer?.frameGenerationPending)
+      ? FrameGeneration.find({ sessionId }).select('layerId').lean()
+      : Promise.resolve([]),
     UserVideoUploadTask.find({
       sessionId,
       status: { $in: Array.from(ACTIVE_USER_VIDEO_UPLOAD_TASK_STATUSES) },
@@ -6365,7 +6385,9 @@ async function sanitizeStudioSessionPayload(session, options = {}) {
       const imageSession = layer?.imageSession && typeof layer.imageSession === 'object'
         ? {
           ...layer.imageSession,
-          activeItemList: hydrateStudioActiveItemListForResponse(layer, sessionPayload),
+          activeItemList: isSessionOwnerForViewer
+            ? layer.imageSession.activeItemList
+            : hydrateStudioActiveItemListForResponse(layer, sessionPayload),
         }
         : layer?.imageSession;
       const sanitizedLayer = {
@@ -6403,6 +6425,7 @@ async function sanitizeStudioSessionPayload(session, options = {}) {
   delete responsePayload.editableShareCollaborators;
   delete responsePayload.editableShareImportedUserIds;
   if (!isSessionOwnerForViewer) {
+    removePrivateStudioBillingFields(responsePayload);
     delete responsePayload.shareEnabled;
     delete responsePayload.shareToken;
     delete responsePayload.shareCreatedAt;
@@ -6415,6 +6438,17 @@ async function sanitizeStudioSessionPayload(session, options = {}) {
   }
 
   return responsePayload;
+}
+
+function removePrivateStudioBillingFields(payload) {
+  // Sharing editing/media access does not share the owner's wallet, receipts or
+  // pending refund operations. Keep those records available only to the owner.
+  for (const field of [
+    'hostedAgentBilling', 'postProcessingBilling', 'legacyProvisionalRefund',
+    'refundSettlement', 'sessionReceipt', 'expressGenerationCreditCharges',
+    'provisionalCredits', 'videoBillingAPIKeyUsage', 'videoBillingDebits',
+    'videoCreditsCharged', 'videoRemainingCredits',
+  ]) delete payload[field];
 }
 
 async function sanitizePublicStudioSessionPayload(session) {
@@ -6459,7 +6493,7 @@ async function sanitizePublicStudioSessionPayload(session) {
   delete publicPayload.externalRequestUserId;
   delete publicPayload.externalRequestIdentityKey;
   delete publicPayload.notificationEmail;
-  delete publicPayload.sessionReceipt;
+  removePrivateStudioBillingFields(publicPayload);
 
   publicPayload.layers = Array.isArray(publicPayload.layers)
     ? publicPayload.layers.map((layer) => {
@@ -7377,6 +7411,8 @@ export async function updateLayerForSession(payload) {
     throw new Error("Session not found");
   }
 
+  captureMovieResourceTimeline(session);
+
   // 2) Mark transcripts to regenerate, since durations may change
   await VideoSession.updateOne(
     { _id: sessionId },
@@ -7524,6 +7560,9 @@ export async function updateLayerForSession(payload) {
     await fsExtra.remove(framesPath);
   }
 
+  session.totalDuration = durationOffset;
+  synchronizeMovieResourceTimeline(session);
+
   // 8) Update the DB with the new layers & audioLayers
   await VideoSession.updateOne(
     { _id: sessionId },
@@ -7531,6 +7570,7 @@ export async function updateLayerForSession(payload) {
       $set: {
         layers,
         audioLayers,
+        ...(session.movieResourceList != null ? { movieResourceList: session.movieResourceList } : {}),
         totalDuration: durationOffset,
       },
     }
@@ -8292,6 +8332,7 @@ export async function addNewLayerToSession(userId, payload) {
   }
 
   captureSessionSceneReferences(videoSession);
+  captureMovieResourceTimeline(videoSession);
   const layers = videoSession.layers || [];
 
   // 2) Create a new "Session" sub-document for the layer
@@ -8341,19 +8382,21 @@ export async function addNewLayerToSession(userId, payload) {
     layers.push(newLayer);
   }
 
-  // 5) Recompute durationOffset for all layers in the new order
-  let runningOffset = 0;
+  // Reflow before the first save so connected audio and the current plan
+  // already use the new scene offsets if subsequent work fails.
+  videoSession.totalDuration = recalculateLayerOffsetsAndConnectedAudio(
+    layers,
+    videoSession.audioLayers || [],
+  );
   for (let i = 0; i < layers.length; i++) {
-    layers[i].durationOffset = runningOffset;
-    runningOffset += layers[i].duration;
-
-    // Mark frame generation pending so the frames get refreshed
     layers[i].frameGenerationPending = true;
   }
 
   // 6) Mark the entire session as needing frame regeneration
   videoSession.frameGenerationPending = true;
   videoSession.layers = layers;
+
+  synchronizeMovieResourceTimeline(videoSession);
 
   // 7) Save the updated session
   let updatedVideoSession = await videoSession.save();
@@ -8377,6 +8420,7 @@ export async function addNewLayerToSession(userId, payload) {
   const totalDuration = recalculateLayerOffsetsAndConnectedAudio(updatedLayers, audioLayers);
   updatedVideoSession.totalDuration = totalDuration;
   updatedVideoSession.frameGenerationPending = true;
+  synchronizeMovieResourceTimeline(updatedVideoSession);
 
   await VideoSession.updateOne({
     _id: sessionId,
@@ -8384,6 +8428,7 @@ export async function addNewLayerToSession(userId, payload) {
     $set: {
       layers: updatedLayers,
       audioLayers: audioLayers,
+      ...(updatedVideoSession.movieResourceList != null ? { movieResourceList: updatedVideoSession.movieResourceList } : {}),
       totalDuration,
       frameGenerationPending: true,
     }
@@ -8410,6 +8455,7 @@ export async function copyLayerInSession(userId, payload) {
   }
 
   captureSessionSceneReferences(videoSession);
+  captureMovieResourceTimeline(videoSession);
   const sourceLayer = videoSession.layers.find((layer) => layer._id?.toString?.() === newLayer?._id?.toString?.());
   const sourceIdentity = sourceLayer?.sourceSceneRef
     ? sourceLayer
@@ -8444,6 +8490,8 @@ export async function copyLayerInSession(userId, payload) {
   videoSession.totalDuration = totalDuration;
   videoSession.frameGenerationPending = true;
 
+  synchronizeMovieResourceTimeline(videoSession);
+
   // Save the updated video session to the database
   const updatedVideoSession = await videoSession.save();
   return {
@@ -8464,6 +8512,7 @@ export async function removeLayerInSession(userId, payload) {
   }
 
   captureSessionSceneReferences(videoSession);
+  captureMovieResourceTimeline(videoSession);
   // 2) Find the layer index
   const layerIndex = videoSession.layers.findIndex(
     (layer) => layer._id.toString() === layerId
@@ -8514,6 +8563,9 @@ export async function removeLayerInSession(userId, payload) {
 
   // 7) Mark the session to regenerate frames
   videoSession.frameGenerationPending = true;
+
+  // Keep the finalized plan and retained timeline in the same save.
+  synchronizeMovieResourceTimeline(videoSession);
 
   // 8) Save the updated video session
   await videoSession.save();
@@ -8587,6 +8639,8 @@ export async function addLayersViaPromptList(userId, payload) {
     throw new Error("Session not found");
   }
 
+  captureMovieResourceTimeline(videoSession);
+
   const durationPerScene = duration ? duration : videoSession.defaultSceneDuration;
 
   const userData = await User.findOne({ _id: userId });
@@ -8658,7 +8712,9 @@ export async function addLayersViaPromptList(userId, payload) {
   });
 
   videoSession.layers = videoSession.layers.concat(layers);
+  videoSession.totalDuration = videoSession.layers.reduce((sum, layer) => sum + layer.duration, 0);
 
+  synchronizeMovieResourceTimeline(videoSession);
   const updatedVideoSession = await videoSession.save();
 
   const contentFilterRating = userData.contentFilterRating;
@@ -9239,6 +9295,30 @@ export async function updateSessionLayers(payload) {
     throw new Error("Session not found");
   }
 
+  captureSessionSceneReferences(videoSessionData);
+  const capturedTimeline = captureMovieResourceTimeline(videoSessionData);
+  const shouldReflowMovieTimeline = capturedTimeline.reason !== 'unsupported_plan';
+  const previousLayersById = new Map(videoSessionData.layers.map((layer) => [String(layer._id), layer]));
+  layerPayload = layerPayload.map((layer) => {
+    const previousLayer = previousLayersById.get(String(layer._id));
+    if (!previousLayer?.sourceSceneRef) return previousLayer && shouldReflowMovieTimeline && !Array.isArray(audioLayers)
+      ? { ...layer, durationOffset: previousLayer.durationOffset } : layer;
+    // Studio payloads can omit origin metadata. Keep the captured snapshot
+    // when replacing a retained layer rather than recapturing it after reorder.
+    return {
+      ...layer,
+      // Existing audio remains on the previous timeline when omitted by the
+      // client. Use that clock to preserve its relative offset during reflow.
+      ...(shouldReflowMovieTimeline && !Array.isArray(audioLayers) ? { durationOffset: previousLayer.durationOffset } : {}),
+      sourceSceneIndex: previousLayer.sourceSceneIndex,
+      sourceSceneRef: JSON.parse(JSON.stringify(previousLayer.sourceSceneRef)),
+      ...(layer.imageSession ? { imageSession: {
+        ...layer.imageSession,
+        sourceSceneIndex: previousLayer.sourceSceneIndex,
+        sourceSceneRef: JSON.parse(JSON.stringify(previousLayer.sourceSceneRef)),
+      } } : {}),
+    };
+  });
   videoSessionData.layers = layerPayload;
   if (Array.isArray(audioLayers)) {
     const nextAudioLayers = sessionUpdates?.enableSubtitles === false
@@ -9265,6 +9345,13 @@ export async function updateSessionLayers(payload) {
     });
   }
 
+  if (shouldReflowMovieTimeline) {
+    videoSessionData.totalDuration = recalculateLayerOffsetsAndConnectedAudio(
+      videoSessionData.layers,
+      videoSessionData.audioLayers || [],
+    );
+  }
+  synchronizeMovieResourceTimeline(videoSessionData);
   const updatedVideoSession = await videoSessionData.save();
 
   // Start frame generation for all layers
@@ -10148,6 +10235,8 @@ export async function requestRegenerateSubtitles(userId, payload) {
     );
     const isVideoGeneration = sessionDataValue.isVidGPTGen;
 
+    captureMovieResourceTimeline(sessionDataValue);
+
     // Recompute each layer's durationOffset
     let durationOffset = 0;
     for (let i = 0; i < sessionLayers.length; i++) {
@@ -10173,6 +10262,7 @@ export async function requestRegenerateSubtitles(userId, payload) {
     // Save audio adjustments and updated layers
     sessionDataValue.layers = sessionLayers;
     sessionDataValue.audioLayers = sessionDataValue.audioLayers; // mutated in-place above
+    synchronizeMovieResourceTimeline(sessionDataValue);
     await sessionDataValue.save();
   }
 
@@ -11386,7 +11476,9 @@ export async function addGlobalAudioFromLibraryToSession(userId, payload) {
     ...normalizeGlobalAudioLayersField(sessionData),
     globalAudioLayer,
   ];
+  captureMovieResourceTimeline(sessionData);
   extendSessionTimelineToCustomSpeechEnd(sessionData, [globalAudioLayer]);
+  synchronizeMovieResourceTimeline(sessionData);
 
   const savedSession = await sessionData.save();
   const savedGlobalAudioLayer = normalizeGlobalAudioLayersField(savedSession).find(
@@ -11431,7 +11523,9 @@ export async function updateGlobalAudioLayersForSession(userId, payload) {
   }
 
   sessionData.global_audio_layers = normalizedGlobalAudioLayers;
+  captureMovieResourceTimeline(sessionData);
   extendSessionTimelineToCustomSpeechEnd(sessionData, normalizedGlobalAudioLayers);
+  synchronizeMovieResourceTimeline(sessionData);
   const savedSession = await sessionData.save();
 
   return {
@@ -11641,7 +11735,9 @@ export async function addAudioFromLibraryToSession(userId, payload) {
   }
 
   sessionData.audioLayers.push(audioLayer);
+  captureMovieResourceTimeline(sessionData);
   extendSessionTimelineToCustomSpeechEnd(sessionData, [audioLayer]);
+  synchronizeMovieResourceTimeline(sessionData);
 
   let saveRes = await sessionData.save();
 
@@ -11740,6 +11836,7 @@ export async function addAiVideoLayerToSession(userId, payload) {
     throw new Error('Layer not found');
   }
 
+  captureMovieResourceTimeline(sessionDataValue);
   const layer = sessionDataValue.layers[layerIndex];
   if (layer.userVideoGenerationPending || layer.hasUserVideoLayer || layer.userVideoLayer) {
     throw new Error('Remove the uploaded or pending video before adding another video artefact to this layer.');
@@ -11888,7 +11985,12 @@ export async function addAiVideoLayerToSession(userId, payload) {
     layer.frameGenerationPending = true;
   }
 
-  // Save the updated session data
+  // Save the measured duration, reflowed audio and current plan together.
+  sessionDataValue.totalDuration = recalculateLayerOffsetsAndConnectedAudio(
+    sessionDataValue.layers,
+    sessionDataValue.audioLayers || [],
+  );
+  synchronizeMovieResourceTimeline(sessionDataValue);
   await sessionDataValue.save();
 
   let updatedSessionData = await VideoSession.findOne({ _id: sessionId });
@@ -11978,6 +12080,8 @@ export async function addAiVideoLayerToSession(userId, payload) {
     updatedLayers[i].frameGenerationPending = true;
   }
   const totalDuration = recalculateLayerOffsetsAndConnectedAudio(updatedLayers, audioLayers);
+  updatedSessionData.totalDuration = totalDuration;
+  synchronizeMovieResourceTimeline(updatedSessionData);
 
   await VideoSession.updateOne({
     _id: sessionId,
@@ -11985,6 +12089,7 @@ export async function addAiVideoLayerToSession(userId, payload) {
     $set: {
       layers: updatedLayers,
       audioLayers: audioLayers,
+      ...(updatedSessionData.movieResourceList != null ? { movieResourceList: updatedSessionData.movieResourceList } : {}),
       frameGenerationPending: true,
       totalDuration,
     }
@@ -12385,6 +12490,7 @@ export async function addVideoFromLibraryToSession(userId, payload) {
     throw new Error('Layer not found');
   }
 
+  captureMovieResourceTimeline(sessionDataValue);
   const layer = sessionDataValue.layers[layerIndex];
   if (hasAnyLayerVideoLink(layer) || hasPendingLayerVideoTask(layer)) {
     throw new Error('Remove the existing or pending video artefact before importing another video.');
@@ -12520,6 +12626,7 @@ export async function addVideoFromLibraryToSession(userId, payload) {
   sessionDataValue.frameGenerationPending = true;
 
   await deleteUnlockedFrameGenerations(sessionId, layerId);
+  synchronizeMovieResourceTimeline(sessionDataValue);
   await sessionDataValue.save();
 
   const updatedSession = await VideoSession.findOne({ _id: sessionId });
@@ -12599,6 +12706,7 @@ async function applyQueuedVideoLayerEditTask(taskId) {
       throw new Error('Layer not found');
     }
 
+    captureMovieResourceTimeline(sessionDataValue);
     const layer = sessionDataValue.layers[layerIndex];
     const sourceType = getLayerVideoSourceType(layer);
     const sourceVideoLink = getLayerPreferredVideoLink(layer);
@@ -12885,6 +12993,7 @@ async function applyQueuedVideoLayerEditTask(taskId) {
     const shouldRegenerateSubtitles = shouldRegenerateSubtitlesForSession(sessionDataValue);
     sessionDataValue.transcriptGenerationPending = shouldRegenerateSubtitles;
 
+    synchronizeMovieResourceTimeline(sessionDataValue);
     await sessionDataValue.save();
     await ensureUnlockedFrameGenerations(sessionId, pendingFrameRefreshLayerIds);
     await requestRealignConnectedAudioLayersToLayers(sessionId);
@@ -13341,6 +13450,7 @@ export async function updateLayersOrder(payload) {
   }
 
   captureSessionSceneReferences(videoSession);
+  captureMovieResourceTimeline(videoSession);
   // Mark transcript generation as pending (we’ll set this back to false once done).
   await VideoSession.updateOne(
     { _id: sessionId },
@@ -13375,6 +13485,8 @@ export async function updateLayersOrder(payload) {
   videoSession.audioLayers = normalizeAudioLayerArrayManualVolumeSettings(updatedAudioLayers);
   videoSession.totalDuration = totalDuration;
   videoSession.frameGenerationPending = true;
+
+  synchronizeMovieResourceTimeline(videoSession);
 
   // Save the updated session.
   let updatedVideoSession = await videoSession.save();
@@ -13432,6 +13544,8 @@ export async function requestRealignLayersToSpeechAndRegenerateSubtitles(userId,
     throw new Error('Video session not found');
   }
 
+  captureMovieResourceTimeline(sessionData);
+
   // Identify speech audio layers
   const speechAudioLayers = sessionData.audioLayers.filter(layer => layer.generationType === 'speech');
 
@@ -13474,6 +13588,8 @@ export async function requestRealignLayersToSpeechAndRegenerateSubtitles(userId,
     durationOffset += videoLayer.duration;
   }
 
+  sessionData.totalDuration = durationOffset;
+
   // Set frameGenerationPending to true for all layers
   sessionData.layers.forEach(layer => {
     layer.frameGenerationPending = true;
@@ -13481,6 +13597,7 @@ export async function requestRealignLayersToSpeechAndRegenerateSubtitles(userId,
   sessionData.frameGenerationPending = true;
 
   // Save the updated session data
+  synchronizeMovieResourceTimeline(sessionData);
   await sessionData.save();
 
   await ensureUnlockedFrameGenerations(
@@ -13580,6 +13697,7 @@ export async function requestRealignLayersToAiVideoLayerAndRegenerateSubtitles(u
     throw new Error('VideoSession not found');
   }
 
+  captureMovieResourceTimeline(sessionData);
   let sessionLayers = sessionData.layers || [];
   let sessionAudioLayers = sessionData.audioLayers || [];
   const framesPerSecond = getSessionFramesPerSecondWithLog(
@@ -13614,6 +13732,7 @@ export async function requestRealignLayersToAiVideoLayerAndRegenerateSubtitles(u
   sessionData.audioLayers = sessionAudioLayers;
   sessionData.totalDuration = totalDuration;
   sessionData.frameGenerationPending = true;
+  synchronizeMovieResourceTimeline(sessionData);
   await sessionData.save();
 
   await ensureUnlockedFrameGenerations(

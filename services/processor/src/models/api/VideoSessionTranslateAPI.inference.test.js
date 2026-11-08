@@ -1,15 +1,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { __testOnly__, getTranslateVideoBillingPreview, translateVideoSessionAndQueueGeneration } from './VideoSessionTranslateAPI.js';
 import mongoose from 'mongoose';
 import User from '../../schema/User.js';
 import VideoSession from '../../schema/VideoSession.js';
 import AudioGeneration from '../../schema/AudioGeneration.js';
 import { rewriteNarrativeSpeechItemToFitScene } from '../agent/MovieCreatorAgent.js';
+import { __testOnly__ as mediaStorage } from '../AWS.js';
+import { publishClonedAiVideoMedia } from './ClonedAiVideoMedia.js';
 
 function mockSession(t, preferences = {}) {
   const source = {
     _id: 'source-session', userId: 'owner', inferenceModel: 'gpt-6-astra',
+    hostedAgentBilling: { version: 2, state: 'COMPLETED', netFunded: 3600 },
+    postProcessingBilling: { version: 1, creditsCharged: 75 },
+    sessionReceipt: { refunded: 3600 }, expressGenerationCreditCharges: { totalCharged: 3600 },
     totalDuration: 5, aspectRatio: '16:9',
     movieResourceList: {
       scenes: [{ visual: 'A speaker', duration: 5 }],
@@ -87,7 +95,11 @@ test('translation without subtitles does not require OpenAI credentials, but sub
     }
   });
   const reachedCreation = new Error('Reached session creation without a subtitle provider');
-  const create = t.mock.method(VideoSession, 'create', async () => { throw reachedCreation; });
+  const create = t.mock.method(VideoSession, 'create', async (initialState) => {
+    assert.equal(initialState.expressGenerationPending, false);
+    assert.equal(initialState.transcriptGenerationPending, false);
+    throw reachedCreation;
+  });
   const payload = { session_id: 'source-session', language: 'FR', skipCreditDeduction: true };
   await assert.rejects(translateVideoSessionAndQueueGeneration('owner', {
     ...payload, enable_subtitles: true,
@@ -125,6 +137,10 @@ test('translation job keeps selected inference settings for speech, speakers, ov
     assert.equal(request.model, 'claude-fable-5.1-xhigh');
     assert.equal(request.options.reasoningEffort, 'xhigh');
   }
+  assert.equal(saved.hostedAgentBilling, undefined);
+  assert.equal(saved.postProcessingBilling, undefined);
+  assert.equal(saved.sessionReceipt, undefined);
+  assert.equal(saved.expressGenerationCreditCharges, undefined);
   assert.equal(saved.inferenceModel, 'claude-fable-5.1-xhigh');
   assert.equal(saved.expressGenerationInferenceModel, saved.inferenceModel);
   assert.equal(saved.inferenceEffort, 'xhigh');
@@ -257,3 +273,101 @@ test('translation timing uses the connected scene snapshot when joined source in
   __testOnly__.resetTimelineDurationsFromMovieResourceList(session);
   assert.equal(session.audioLayers[0].duration, 2.5);
 });
+
+async function preparePublicationFixture(t, failureMode) {
+  const source = mockSession(t, { selectedInferenceModel: 'claude-fable-5.1', selectedInferenceEffort: 'high' });
+  Object.assign(source.layers[0], {
+    layerAiVideoType: 'character', layerBaseAiImageType: 'character',
+    hasAiVideoLayer: true, aiVideoGenerationStatus: 'COMPLETED',
+    aiVideoLayer: 'assets_v2/ai_video/generations/source-session/scene/base.mp4',
+    aiVideoRemoteLink: 'https://cdn.example/assets_v2/user_resources/owner/ai_videos/source-session/scene/base.mp4',
+    hasLipSyncVideoLayer: true,
+    lipSyncVideoLayer: 'assets_v2/video/lip_sync/source-session/scene/old-lip.mp4',
+    lipSyncRemoteLink: 'https://cdn.example/assets_v2/video/lip_sync/source-session/scene/old-lip.mp4',
+    lipSyncVideoGenerationStatus: 'COMPLETED',
+  });
+  const original = structuredClone(source);
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'translation-publication-regression-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const root = path.join(directory, 'assets_v2');
+  const originalKey = 'assets_v2/user_resources/owner/ai_videos/source-session/scene/base.mp4';
+  const objects = new Map([[originalKey, 'BASE VIDEO']]);
+  for (const [relative, bytes] of [
+    ['ai_video/generations/source-session/scene/base.mp4', 'BASE VIDEO'],
+    ['video/lip_sync/source-session/scene/old-lip.mp4', 'OLD LIP SYNC'],
+    ['video/frames/source-session/scene/0.png', 'OLD FRAME'],
+  ]) {
+    const filename = path.join(root, relative);
+    await fs.mkdir(path.dirname(filename), { recursive: true });
+    await fs.writeFile(filename, bytes);
+  }
+  const events = [];
+  const publishFile = mediaStorage.createMediaFilePublisher({
+    useLocalMedia: () => false,
+    getClient: () => ({ send: async ({ input }) => {
+      if (failureMode === 'upload') throw new Error('remote upload rejected');
+      const chunks = [];
+      for await (const chunk of input.Body) chunks.push(chunk);
+      objects.set(input.Key, Buffer.concat(chunks).toString());
+      events.push('uploaded');
+    } }),
+    buildUrl: (key) => `https://cdn.example/${key}`,
+    primeUrl: async (url) => {
+      if (failureMode === 'cdn' || !objects.has(new URL(url).pathname.slice(1))) {
+        throw new Error('CDN cache prime returned status 403');
+      }
+      events.push('readable');
+    },
+  });
+  const saved = [];
+  const updates = t.mock.method(VideoSession, 'updateOne', async (filter, update) => {
+    const prepared = update.$set;
+    const publishedKey = new URL(prepared.layers[0].aiVideoRemoteLink).pathname.slice(1);
+    assert.equal(objects.get(publishedKey), 'BASE VIDEO');
+    assert.equal(events.at(-1), 'readable');
+    saved.push(JSON.parse(JSON.stringify(prepared)));
+    events.push('activated');
+  });
+  const queued = t.mock.method(AudioGeneration.prototype, 'save', async function () {
+    assert.equal(events.at(-1), 'activated');
+    events.push('speech-queued');
+  });
+  const preview = await getTranslateVideoBillingPreview('owner', { session_id: 'source-session', language: 'FR' });
+  const run = () => __testOnly__.processTranslateVideoSessionJob({
+    ...preview, userId: 'owner', newSessionId: 'translated-session',
+  }, {
+    translateTextContent: async (texts) => texts,
+    copyTranslateSessionAssets: (options) => __testOnly__.copyTranslateSessionAssets({ ...options, assetsRoots: [root] }),
+    publishClonedAiVideoMedia: (options) => publishClonedAiVideoMedia({ ...options, assetsRoots: [root], publishFile }),
+  });
+  return { source, original, objects, originalKey, root, events, saved, updates, queued, run };
+}
+
+test('translation publishes a real copied clip to the remote store before activating or queuing speech', async (t) => {
+  const f = await preparePublicationFixture(t);
+  await f.run();
+  assert.deepEqual(f.events, ['uploaded', 'readable', 'activated', 'speech-queued']);
+  assert.equal(f.updates.mock.callCount(), 1);
+  assert.equal(f.queued.mock.callCount(), 1);
+  assert.equal(f.objects.size, 2);
+  assert.equal(f.objects.get(f.originalKey), 'BASE VIDEO');
+  assert.equal(f.saved[0].layers[0].aiVideoGenerationPending, false);
+  assert.equal(f.saved[0].layers[0].lipSyncVideoLayer, null);
+  assert.equal(f.saved[0].layers[0].lipSyncGenerationPending, true);
+  const layerId = f.saved[0].layers[0]._id;
+  assert.equal(f.saved[0].layers[0].aiVideoRemoteLink,
+    `https://cdn.example/assets_v2/user_resources/owner/ai_videos/translated-session/${layerId}/base.mp4`);
+  await assert.rejects(fs.stat(path.join(f.root, 'video/frames/translated-session')), { code: 'ENOENT' });
+  assert.deepEqual(f.source, f.original);
+});
+
+for (const failureMode of ['upload', 'cdn']) {
+  test(`translation ${failureMode} publication failure leaves session inactive and queues no speech`, async (t) => {
+    const f = await preparePublicationFixture(t, failureMode);
+    await assert.rejects(f.run(), failureMode === 'upload' ? /upload rejected/ : /status 403/);
+    assert.equal(f.updates.mock.callCount(), 0);
+    assert.equal(f.queued.mock.callCount(), 0);
+    assert.deepEqual(f.source, f.original);
+    assert.equal(f.objects.get(f.originalKey), 'BASE VIDEO');
+  });
+}

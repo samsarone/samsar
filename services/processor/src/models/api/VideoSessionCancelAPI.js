@@ -2,6 +2,7 @@ import { Types } from 'mongoose';
 
 import { getDBConnectionString } from '../DBString.js';
 import VideoSession from '../../schema/VideoSession.js';
+import { settleHostedAgentBilling, controlHostedAgentBilling } from '../HostedAgentBilling.js';
 
 const CANCELLED_STATUS = 'CANCELLED';
 const PAUSED_STATUS = 'PAUSED';
@@ -49,7 +50,7 @@ function buildCancelledExpressGenerationStatus(rawStatus) {
   return currentStatus;
 }
 
-export async function cancelVideoSessionRender(userId, payload = {}) {
+export async function cancelVideoSessionRender(userId, payload = {}, dependencies = {}) {
   if (!userId) {
     const error = new Error('userId is required.');
     error.status = 400;
@@ -70,14 +71,14 @@ export async function cancelVideoSessionRender(userId, payload = {}) {
     throw error;
   }
 
-  await getDBConnectionString();
+  await (dependencies.connect || getDBConnectionString)();
 
   const userIdString = userId.toString();
   const videoSession = await VideoSession.findOne({
     _id: sessionId,
     userId: userIdString,
   })
-    .select('_id expressGenerationStatus')
+    .select('_id expressGenerationStatus hostedAgentBilling postProcessingBilling')
     .lean();
 
   if (!videoSession) {
@@ -90,24 +91,25 @@ export async function cancelVideoSessionRender(userId, payload = {}) {
     videoSession.expressGenerationStatus,
   );
 
-  await VideoSession.updateOne(
-    { _id: sessionId, userId: userIdString },
-    {
-      $set: {
-        expressGenerationPending: false,
-        expressGenerationPaused: false,
-        expressGenerationCancelled: true,
-        frameGenerationPending: false,
-        videoGenerationPending: false,
-        audioGenerationPending: false,
-        transcriptGenerationPending: false,
-        aiVideoGenerationPending: false,
-        lipSyncGenerationPending: false,
-        soundEffectGenerationPending: false,
-        expressGenerationStatus: cancelledExpressGenerationStatus,
-      },
-    },
-  );
+  const controlFields = {
+    expressGenerationPending: false,
+    expressGenerationPaused: false,
+    expressGenerationCancelled: true,
+    frameGenerationPending: false,
+    videoGenerationPending: false,
+    audioGenerationPending: false,
+    transcriptGenerationPending: false,
+    aiVideoGenerationPending: false,
+    lipSyncGenerationPending: false,
+    soundEffectGenerationPending: false,
+    expressGenerationStatus: cancelledExpressGenerationStatus,
+  };
+  if (!videoSession.postProcessingBilling && videoSession.hostedAgentBilling?.version === 2) {
+    await (dependencies.control || controlHostedAgentBilling)(sessionId, 'CANCELLED', controlFields);
+  } else {
+    await VideoSession.updateOne({ _id: sessionId, userId: userIdString }, { $set: controlFields });
+    await (dependencies.settle || settleHostedAgentBilling)(sessionId, 'CANCELLED');
+  }
 
   return {
     request_id: sessionId,
@@ -118,7 +120,7 @@ export async function cancelVideoSessionRender(userId, payload = {}) {
   };
 }
 
-async function getOwnedVideoSessionForRenderControl(userId, payload = {}) {
+async function getOwnedVideoSessionForRenderControl(userId, payload = {}, dependencies = {}) {
   if (!userId) {
     const error = new Error('userId is required.');
     error.status = 400;
@@ -139,7 +141,7 @@ async function getOwnedVideoSessionForRenderControl(userId, payload = {}) {
     throw error;
   }
 
-  await getDBConnectionString();
+  await (dependencies.connect || getDBConnectionString)();
 
   const userIdString = userId.toString();
   const videoSession = await VideoSession.findOne({
@@ -148,7 +150,7 @@ async function getOwnedVideoSessionForRenderControl(userId, payload = {}) {
   }).select(
     '_id isExpressGeneration expressGenerationPending expressGenerationPaused ' +
     'expressGenerationStatus expressGenerationCancelled expressGenerationFailed ' +
-    'videoGenerationPending videoLink remoteURL',
+    'videoGenerationPending videoLink remoteURL hostedAgentBilling postProcessingBilling',
   );
 
   if (!videoSession) {
@@ -216,8 +218,8 @@ function buildResumedExpressGenerationStatus(rawStatus) {
   return currentStatus;
 }
 
-export async function pauseVideoSessionRender(userId, payload = {}) {
-  const { sessionId, userIdString, videoSession } = await getOwnedVideoSessionForRenderControl(userId, payload);
+export async function pauseVideoSessionRender(userId, payload = {}, dependencies = {}) {
+  const { sessionId, userIdString, videoSession } = await getOwnedVideoSessionForRenderControl(userId, payload, dependencies);
   assertRenderCanBePaused(videoSession);
 
   const pausedExpressGenerationStatus = buildPausedExpressGenerationStatus(
@@ -225,18 +227,19 @@ export async function pauseVideoSessionRender(userId, payload = {}) {
   );
   const now = new Date();
 
-  await VideoSession.updateOne(
-    { _id: sessionId, userId: userIdString },
-    {
-      $set: {
-        expressGenerationPending: false,
-        videoGenerationPending: false,
-        expressGenerationPaused: true,
-        expressGenerationPausedAt: now,
-        expressGenerationStatus: pausedExpressGenerationStatus,
-      },
-    },
-  );
+  const controlFields = {
+    expressGenerationPending: false,
+    videoGenerationPending: false,
+    expressGenerationPaused: true,
+    expressGenerationPausedAt: now,
+    expressGenerationStatus: pausedExpressGenerationStatus,
+  };
+  if (!videoSession.postProcessingBilling && videoSession.hostedAgentBilling?.version === 2) {
+    await (dependencies.control || controlHostedAgentBilling)(sessionId, 'PAUSED', controlFields);
+  } else {
+    await VideoSession.updateOne({ _id: sessionId, userId: userIdString }, { $set: controlFields });
+    await (dependencies.settle || settleHostedAgentBilling)(sessionId, 'PAUSED');
+  }
 
   return {
     request_id: sessionId,
@@ -250,8 +253,8 @@ export async function pauseVideoSessionRender(userId, payload = {}) {
   };
 }
 
-export async function resumeVideoSessionRender(userId, payload = {}) {
-  const { sessionId, userIdString, videoSession } = await getOwnedVideoSessionForRenderControl(userId, payload);
+export async function resumeVideoSessionRender(userId, payload = {}, dependencies = {}) {
+  const { sessionId, userIdString, videoSession } = await getOwnedVideoSessionForRenderControl(userId, payload, dependencies);
 
   if (videoSession.expressGenerationCancelled) {
     const error = new Error('Cannot resume a cancelled render.');
@@ -265,7 +268,8 @@ export async function resumeVideoSessionRender(userId, payload = {}) {
     throw error;
   }
 
-  if (videoSession.videoLink || videoSession.remoteURL) {
+  if ((videoSession.videoLink || videoSession.remoteURL) &&
+      !(videoSession.hostedAgentBilling?.state === 'PAUSED' || videoSession.expressGenerationPaused)) {
     const error = new Error('Cannot resume a completed render.');
     error.status = 409;
     throw error;
@@ -282,19 +286,20 @@ export async function resumeVideoSessionRender(userId, payload = {}) {
   );
   const now = new Date();
 
-  await VideoSession.updateOne(
-    { _id: sessionId, userId: userIdString },
-    {
-      $set: {
-        expressGenerationPending: true,
-        videoGenerationPending: true,
-        expressGenerationPaused: false,
-        expressGenerationResumedAt: now,
-        expressGenerationStatus: resumedExpressGenerationStatus,
-        expressGenerationCancelled: false,
-      },
-    },
-  );
+  const controlFields = {
+    expressGenerationPending: true,
+    videoGenerationPending: true,
+    expressGenerationPaused: false,
+    expressGenerationResumedAt: now,
+    expressGenerationStatus: resumedExpressGenerationStatus,
+    expressGenerationCancelled: false,
+  };
+  if (!videoSession.postProcessingBilling && videoSession.hostedAgentBilling?.version === 2) {
+    await (dependencies.control || controlHostedAgentBilling)(sessionId, 'ACTIVE', controlFields);
+  } else {
+    await VideoSession.updateOne({ _id: sessionId, userId: userIdString }, { $set: controlFields });
+    await (dependencies.settle || settleHostedAgentBilling)(sessionId, 'ACTIVE');
+  }
 
   return {
     request_id: sessionId,

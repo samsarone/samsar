@@ -7,7 +7,8 @@ import { fileURLToPath } from 'url';
 import { Types } from 'mongoose';
 
 import { getDBConnectionString } from '../DBString.js';
-import { deductGenerationCredits } from '../GenerationCredits.js';
+import { admitPostProcessing } from './PostProcessingBilling.js';
+import { stripInheritedBilling } from '../../billing/PostProcessingBilling.js';
 import { createNewBlankQuickSession } from '../QuickSession.js';
 import { upsertGlobalSessionMapping } from '../GlobalSession.js';
 
@@ -1275,18 +1276,18 @@ async function queueOutroImageAndRender(userId, payload = {}, options = {}) {
     throw error;
   }
 
-  const creditResult = skipCreditDeduction
-    ? { creditsCharged: creditsToCharge, remainingCredits: null }
-    : await deductGenerationCredits(userId, creditsToCharge, {
-        source: creditSource,
-        metadata: {
-          originalSessionId: normalizedOriginalSessionId,
-          requestType: 'API',
-        },
-      });
+  const newSessionId = await createNewBlankQuickSession(userId, { expressGenerationPending: false });
+  const creditResult = await admitPostProcessing({
+    sessionId: newSessionId, userId, external: skipCreditDeduction, priceCredits: creditsToCharge,
+    operation: creditSource,
+    metadata: {
+      originalSessionId: normalizedOriginalSessionId,
+      requestType: 'API',
+    },
+  });
 
   const assetsRoot = resolveAssetsRoot();
-  const newSessionId = await createNewBlankQuickSession(userId);
+
   const oldSessionId = normalizedOriginalSessionId;
   const pendingSourceLayerIds = canReplaceDetectedOutro
     ? [detectedOutroLayerInfo?.layerId].filter(Boolean)
@@ -1309,6 +1310,7 @@ async function queueOutroImageAndRender(userId, payload = {}, options = {}) {
   delete clonedSession.__v;
   delete clonedSession.createdAt;
   delete clonedSession.updatedAt;
+  stripInheritedBilling(clonedSession);
 
   rewriteSessionAssetReferences(clonedSession, oldSessionId, newSessionId);
 
@@ -2211,7 +2213,6 @@ async function persistPreparedPostProcessingSession({
     metadata,
   });
 
-
   const saveResult = await runLoggedPostProcessingStep({
     logPrefix,
     step: 'save cloned session',
@@ -2356,18 +2357,18 @@ async function queueFooterImageAndRender(userId, payload = {}, options = {}) {
     throw error;
   }
 
-  const creditResult = skipCreditDeduction
-    ? { creditsCharged: creditsToCharge, remainingCredits: null }
-    : await deductGenerationCredits(userId, creditsToCharge, {
-        source: creditSource,
-        metadata: {
-          originalSessionId: normalizedOriginalSessionId,
-          requestType: 'API',
-        },
-      });
+  const newSessionId = await createNewBlankQuickSession(userId, { expressGenerationPending: false });
+  const creditResult = await admitPostProcessing({
+    sessionId: newSessionId, userId, external: skipCreditDeduction, priceCredits: creditsToCharge,
+    operation: creditSource,
+    metadata: {
+      originalSessionId: normalizedOriginalSessionId,
+      requestType: 'API',
+    },
+  });
 
   const assetsRoot = resolveAssetsRoot();
-  const newSessionId = await createNewBlankQuickSession(userId);
+
   const oldSessionId = normalizedOriginalSessionId;
 
   try {
@@ -2385,6 +2386,7 @@ async function queueFooterImageAndRender(userId, payload = {}, options = {}) {
   delete clonedSession.__v;
   delete clonedSession.createdAt;
   delete clonedSession.updatedAt;
+  stripInheritedBilling(clonedSession);
 
   rewriteSessionAssetReferences(clonedSession, oldSessionId, newSessionId);
 

@@ -76,7 +76,7 @@ export default function BillingAccessGate() {
           </div>
         </div>
 
-        <div className="animate-pulse space-y-4">
+        <div className="theme-skeleton-pulse space-y-4">
           <div className={`rounded-2xl border ${borderColor} ${cardBg} p-6 space-y-4`}>
             <div className={`${muted} h-4 w-40 rounded-full`} />
             <div className="grid gap-4 md:grid-cols-3">

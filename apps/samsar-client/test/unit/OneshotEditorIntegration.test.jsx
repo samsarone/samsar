@@ -8,10 +8,13 @@ import { clearAuthData, persistAuthToken } from '../../src/utils/web.jsx';
 import OneshotEditor from '../../src/components/oneshot_editor/OneshotEditor.jsx';
 
 const harness = vi.hoisted(() => ({
-  user: null, session: null, status: null, userFetching: false, userInitiated: true,
+  user: null, session: null, status: null, userFetching: false, userInitiated: true, standalone: false,
   getUserAPI: vi.fn(), openAlertDialog: vi.fn(), closeAlertDialog: vi.fn(),
 }));
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
+vi.mock('../../src/utils/environment.jsx', async (importOriginal) => ({
+  ...await importOriginal(), get IS_STANDALONE_DEPLOYMENT() { return harness.standalone; },
+}));
 vi.mock('../../src/contexts/UserContext.jsx', () => ({ useUser: () => harness }));
 vi.mock('../../src/contexts/ColorMode.jsx', () => ({ useColorMode: () => ({ colorMode: 'light' }) }));
 vi.mock('../../src/contexts/AlertDialogContext.jsx', () => ({ useAlertDialog: () => harness }));
@@ -37,6 +40,7 @@ vi.mock('ace-builds/src-noconflict/ext-language_tools', () => ({}));
 vi.mock('react-ace', () => ({ default: ({ value, onChange, readOnly }) => <textarea aria-label="JSON request" value={value} onChange={(event) => onChange?.(event.target.value)} readOnly={readOnly} /> }));
 
 beforeEach(() => {
+  harness.standalone = false;
   harness.user = { _id: 'user-1', generationCredits: 2000, isEmailVerified: true };
   harness.userFetching = false;
   harness.userInitiated = true;
@@ -388,5 +392,64 @@ describe('Vidgenie assistant context', () => {
     expect(call[1].assistantContext).toMatchObject({ version: 1, page: 'vidgenie', view: 'initial', mode: 'T2V', draft: 'A traveler returns home' });
     expect(call[1].stream).toBe(true);
     expect(call[1].assistantContext).not.toHaveProperty('aspectRatio');
+  });
+});
+
+
+describe('session loading request budget', () => {
+  const detailCalls = () => axios.get.mock.calls.filter(([url]) => url.includes('/video_sessions/session_details'));
+  const statusCalls = () => axios.get.mock.calls.filter(([url]) => url.includes('status_detailed'));
+  const complete = () => {
+    harness.session = { ...harness.session, isExpressGeneration: true, inputPrompt: 'Saved prompt',
+      videoLink: 'https://media.example/final.mp4', expressGenerationPending: false };
+    harness.status = { status: 'COMPLETED', videoLink: harness.session.videoLink,
+      session: { id: 'project-1', layers: [{ id: 'scene', duration: 5, aiVideo: { url: 'https://media.example/clip.mp4' } }] } };
+  };
+  it.each([false, true])('completed session loads once (standalone=%s) and loads reroll details on demand', async (standalone) => {
+    harness.standalone = standalone;
+    complete();
+    await mountEditor();
+    expect(screen.getByText('Video ready')).toBeVisible();
+    expect(detailCalls()).toHaveLength(1);
+    expect(statusCalls()).toHaveLength(0);
+    const reroll = screen.getByRole('button', { name: /Re-roll|Reroll/i });
+    await act(async () => { fireEvent.click(reroll); });
+    expect(statusCalls()).toHaveLength(1);
+    expect(detailCalls()).toHaveLength(1);
+  });
+  it('anonymous standalone has one bootstrap and keeps polling pending work', async () => {
+    vi.useFakeTimers();
+    harness.standalone = true;
+    harness.user = null;
+    clearAuthData();
+    harness.status = { status: 'PENDING', session_id: 'project-1',
+      expressGenerationPending: true, expressGenerationStatus: { video_generation: 'PENDING' },
+      session: { id: 'project-1', layers: [] } };
+    await mountEditor();
+    expect(detailCalls()).toHaveLength(0);
+    const initialCalls = statusCalls().length;
+    expect(initialCalls).toBeLessThanOrEqual(2);
+    harness.status = { status: 'COMPLETED', session_id: 'project-1', videoLink: 'https://media.example/done.mp4' };
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(screen.getByText('Video ready')).toBeVisible();
+    expect(statusCalls()).toHaveLength(initialCalls + 1);
+  });
+  it('unchanged pending scene video does not repeatedly reload the full session', async () => {
+    vi.useFakeTimers();
+    harness.session = { ...harness.session, isExpressGeneration: true, inputPrompt: 'Rendering', expressGenerationPending: true };
+    harness.status = { status: 'PENDING', session_id: 'project-1', expressGenerationPending: true,
+      session: { id: 'project-1', layers: [{ id: 'scene', duration: 5, aiVideo: { url: 'https://media.example/clip.mp4' } }] } };
+    await mountEditor();
+    await act(async () => { await vi.advanceTimersByTimeAsync(20000); });
+    expect(detailCalls()).toHaveLength(1);
+    harness.status.session.layers[0].aiVideo.url = 'https://media.example/new-clip.mp4';
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(detailCalls()).toHaveLength(2);
+  });
+  it.each([403, 429, 500, 503])('does not amplify a %s session failure with status requests', async (status) => {
+    axios.get.mockRejectedValue({ response: { status, data: { message: 'Unavailable' } } });
+    await mountEditor();
+    expect(detailCalls()).toHaveLength(1);
+    expect(statusCalls()).toHaveLength(0);
   });
 });

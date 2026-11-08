@@ -1,7 +1,7 @@
 import VideoSession from '../../schema/VideoSession.js';
 import { readVideoModelCreditTotal } from './VideoModelStatusBilling.js';
 import GeneratedImage from '../../schema/generations/GeneratedImage.js';
-import { buildSecureMediaDeliveryUrl } from '../AWS.js';
+import { buildSecureMediaDeliveryUrl, withMediaDeliveryUrlCache } from '../AWS.js';
 import { resolveDockerLocalPublicAssetBaseUrl } from '../../consts/DockerDeploymentUrls.js';
 import { isContainerRuntime, isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
 
@@ -132,6 +132,8 @@ export const VIDEO_STATUS_SESSION_PROJECTION = [
 ].join(' ');
 
 export const VIDEO_STATUS_DETAILED_SESSION_PROJECTION = [
+  // Detailed status also builds compact status, including request-owned billing totals.
+  ...VIDEO_STATUS_SESSION_PROJECTION.split(' '),
   'remoteURL',
   'videoLink',
   'narrativeType',
@@ -1577,6 +1579,19 @@ export function resolveVideoHasFooter(sessionData = {}) {
   ));
 }
 
+function normalizeVideoStatusSnapshot(sessionData) {
+  const provider =
+    sessionData.expressGenerativeVideoModel ||
+    sessionData.expressGenerativeVideoModelSubType ||
+    sessionData.videoGenerationModelSubType ||
+    null;
+
+  return {
+    ...sessionData,
+    provider,
+  };
+}
+
 async function loadVideoStatusSnapshot(sessionId) {
   if (!sessionId) {
     return null;
@@ -1590,16 +1605,7 @@ async function loadVideoStatusSnapshot(sessionId) {
     return null;
   }
 
-  const provider =
-    sessionData.expressGenerativeVideoModel ||
-    sessionData.expressGenerativeVideoModelSubType ||
-    sessionData.videoGenerationModelSubType ||
-    null;
-
-  return {
-    ...sessionData,
-    provider,
-  };
+  return normalizeVideoStatusSnapshot(sessionData);
 }
 
 async function loadVideoDetailedStatusSnapshot(sessionId) {
@@ -1615,16 +1621,7 @@ async function loadVideoDetailedStatusSnapshot(sessionId) {
     return null;
   }
 
-  const provider =
-    sessionData.expressGenerativeVideoModel ||
-    sessionData.expressGenerativeVideoModelSubType ||
-    sessionData.videoGenerationModelSubType ||
-    null;
-
-  return {
-    ...sessionData,
-    provider,
-  };
+  return normalizeVideoStatusSnapshot(sessionData);
 }
 
 async function loadGeneratedImageCandidates(sessionId) {
@@ -2493,20 +2490,27 @@ export function buildNormalizedVideoSessionPreview(
   });
 }
 
-export async function buildVideoStatusResponse({
+export function buildVideoStatusResponse(options) {
+  return withMediaDeliveryUrlCache(() => buildVideoStatusResponseFromSnapshot(options));
+}
+
+async function buildVideoStatusResponseFromSnapshot({
   sessionId,
   requestId,
   provider,
   req,
   defaultResultUrl,
   defaultResultUrls,
+  sessionSnapshot: suppliedSnapshot,
 }) {
   if (!sessionId) {
     return null;
   }
 
   try {
-    const sessionSnapshot = await loadVideoStatusSnapshot(sessionId);
+    const sessionSnapshot = suppliedSnapshot
+      ? normalizeVideoStatusSnapshot(suppliedSnapshot)
+      : await loadVideoStatusSnapshot(sessionId);
     if (!sessionSnapshot) {
       return null;
     }
@@ -2688,31 +2692,34 @@ export async function buildVideoStatusResponse({
   }
 }
 
-export async function buildVideoStatusDetailedResponse({
+export function buildVideoStatusDetailedResponse(options) {
+  return withMediaDeliveryUrlCache(() => buildVideoStatusDetailedResponseFromSnapshot(options));
+}
+
+async function buildVideoStatusDetailedResponseFromSnapshot({
   sessionId,
   requestId,
   provider,
   req,
   defaultResultUrl,
   defaultResultUrls,
+  sessionSnapshot: suppliedSnapshot,
+  baseStatus: suppliedBaseStatus,
 }) {
-  const baseStatus = await buildVideoStatusResponse({
+  const sessionSnapshot = suppliedSnapshot || await loadVideoDetailedStatusSnapshot(sessionId);
+  if (!sessionSnapshot) return null;
+
+  const baseStatus = suppliedBaseStatus || await buildVideoStatusResponse({
     sessionId,
     requestId,
     provider,
     req,
     defaultResultUrl,
     defaultResultUrls,
+    sessionSnapshot,
   });
+  if (!baseStatus) return null;
 
-  if (!baseStatus) {
-    return null;
-  }
-
-  const sessionSnapshot = await loadVideoDetailedStatusSnapshot(sessionId);
-  if (!sessionSnapshot) {
-    return null;
-  }
   const generatedImageCandidates = await loadGeneratedImageCandidates(sessionId);
   const branching = buildNormalizedBranchingStatus(sessionSnapshot, req, { detailed: true });
   const normalizedBaseStatus = reconcileDetailedBranchStatus(

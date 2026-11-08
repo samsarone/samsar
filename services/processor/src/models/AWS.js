@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 // uploadImageToCDN.js
 
 import {
@@ -513,6 +514,14 @@ function isKnownMediaDeliveryUrl(value) {
   }
 }
 
+// Cache only within one response build. Never retain credentials across requests.
+const mediaDeliveryUrlCache = new AsyncLocalStorage();
+export function withMediaDeliveryUrlCache(buildResponse) {
+  return mediaDeliveryUrlCache.getStore()
+    ? buildResponse()
+    : mediaDeliveryUrlCache.run(new Map(), buildResponse);
+}
+
 export function buildSecureMediaDeliveryUrl(value) {
   if (/^https?:\/\//i.test(String(value || '')) && !isKnownMediaDeliveryUrl(value)) {
     return null;
@@ -521,7 +530,11 @@ export function buildSecureMediaDeliveryUrl(value) {
   if (!key) {
     return null;
   }
-  return buildMediaDeliveryUrl(key);
+  const cache = mediaDeliveryUrlCache.getStore();
+  if (cache?.has(key)) return cache.get(key);
+  const url = buildMediaDeliveryUrl(key);
+  cache?.set(key, url);
+  return url;
 }
 
 function buildUploadedObjectUrl({ bucketName, key, region }) {
@@ -662,6 +675,58 @@ export async function uploadSpeechAudioToCDN(absolutePath, remoteFileName) {
     throw new Error('Failed to upload audio to CDN');
   }
 }
+
+// Reused clips need the same secure media publication as newly generated AI
+// video. A filesystem clone alone does not create its corresponding S3 object.
+function createMediaFilePublisher({
+  getClient = ensureCdnS3Client,
+  useLocalMedia = shouldUseDockerLocalMedia,
+  persistLocalFile = persistDockerMediaFile,
+  buildUrl = buildMediaDeliveryUrl,
+  primeUrl = (url) => primeMediaBucketUrl({ bucketName: MEDIA_BUCKET_NAME, url }),
+  bucketName = MEDIA_BUCKET_NAME,
+} = {}) {
+  return async function publishMediaFile({ filePath, key, contentType = 'video/mp4' }) {
+    if (typeof filePath !== 'string' || !filePath) {
+      throw new Error('A local media file is required for publication.');
+    }
+    const rawKey = typeof key === 'string' ? key.replace(/^\/+/, '') : '';
+    if (!rawKey || /[\\\0?#]/.test(rawKey) || rawKey.split('/').some(
+      (part) => !part || part === '.' || part === '..',
+    )) {
+      throw new Error('A safe media object key is required for publication.');
+    }
+    const uploadKey = buildMediaUploadKey('', rawKey);
+    const stats = await fs.promises.stat(filePath);
+    if (!stats.isFile() || stats.size <= 0) {
+      throw new Error('Media publication requires a nonempty file.');
+    }
+    if (useLocalMedia()) {
+      return persistLocalFile(filePath, uploadKey);
+    }
+
+    // Resolve configuration/signing before uploading; return a remote reference
+    // only after both the upload and the provider-readiness check succeed.
+    const client = getClient();
+    const url = buildUrl(uploadKey);
+    const body = fs.createReadStream(filePath);
+    try {
+      await client.send(new PutObjectCommand({
+        Bucket: bucketName,
+        Key: uploadKey,
+        Body: body,
+        ContentLength: stats.size,
+        ContentType: contentType,
+      }));
+    } finally {
+      body.destroy();
+    }
+    await primeUrl(url);
+    return url;
+  };
+}
+
+export const uploadFileToMediaBucket = createMediaFilePublisher();
 
 
 /**
@@ -1171,6 +1236,7 @@ export async function deleteObjectsWithPrefix({ bucketName, prefix }) {
 }
 
 export const __testOnly__ = {
+  createMediaFilePublisher,
   buildMediaDeliveryUrl,
   getCloudFrontSignedUrlExpirationSeconds,
   getExplicitDockerExternalMediaConfig,
