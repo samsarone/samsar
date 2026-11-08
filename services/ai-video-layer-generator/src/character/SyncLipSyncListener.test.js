@@ -20,9 +20,7 @@ test('Sync lip sync keeps an accepted FAL job pending after a status timeout', a
     status: async () => { throw Object.assign(new Error('Gateway Timeout'), { status: 504 }); },
     result: async () => { resultCalls += 1; },
   };
-  assert.deepEqual(await listenToPendingSyncLipSyncRequests(request, { connect, queue }), {
-    responseStatus: 'PENDING',
-  });
+  await assert.rejects(listenToPendingSyncLipSyncRequests(request, { connect, queue }), { status: 504 });
   assert.equal(resultCalls, 0);
 });
 
@@ -37,9 +35,7 @@ test('Sync lip sync retries a completed FAL job when result fetch times out', as
       return { data: { video: { url: 'https://media.example.com/result.mp4' } } };
     },
   };
-  assert.deepEqual(await listenToPendingSyncLipSyncRequests(request, { connect, queue }), {
-    responseStatus: 'PENDING',
-  });
+  await assert.rejects(listenToPendingSyncLipSyncRequests(request, { connect, queue }), { status: 504 });
   assert.deepEqual(await listenToPendingSyncLipSyncRequests(request, { connect, queue }), {
     responseStatus: 'COMPLETED', remoteUrl: 'https://media.example.com/result.mp4',
   });
@@ -73,7 +69,7 @@ test('Sync lip sync fails a completed request with a structured terminal 504 res
 
 test('a structured gateway error during status polling preserves the accepted request', async (t) => {
   t.mock.method(console, 'error', () => {});
-  const result = await listenToPendingSyncLipSyncRequests(request, {
+  await assert.rejects(listenToPendingSyncLipSyncRequests(request, {
     connect,
     queue: {
       status: async () => {
@@ -84,8 +80,7 @@ test('a structured gateway error during status polling preserves the accepted re
       },
       result: async () => { assert.fail('status polling has not completed'); },
     },
-  });
-  assert.deepEqual(result, { responseStatus: 'PENDING' });
+  }), { status: 504 });
 });
 
 test('Sync lip sync retains definitive provider failures', async (t) => {
@@ -94,10 +89,9 @@ test('Sync lip sync retains definitive provider failures', async (t) => {
     connect, queue: { status: async () => ({ status: 'FAILED' }) },
   });
   assert.equal(providerFailed.responseStatus, 'FAILED');
-  const rejected = await listenToPendingSyncLipSyncRequests(request, {
+  await assert.rejects(listenToPendingSyncLipSyncRequests(request, {
     connect, queue: { status: async () => { throw Object.assign(new Error('Invalid request'), { status: 422 }); } },
-  });
-  assert.equal(rejected.responseStatus, 'FAILED');
+  }), { status: 422 });
   assert.equal(isRetryableSyncLipSyncPollError({ status: 504 }), true);
   assert.equal(isRetryableSyncLipSyncPollError({ status: 422 }), false);
 });

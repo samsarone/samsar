@@ -345,3 +345,30 @@ for (const field of ['expressGenerationPaused', 'expressGenerationCancelled']) {
     assert.deepEqual(f.events, []);
   });
 }
+
+test('terminal lip-sync infrastructure failure stops the pipeline and never falls back or bills success', async t => {
+  const f = pipeline(t);
+  await f.tick();
+  f.finish('lip', 'FAILED');
+  f.state.layers[0].lipSyncInfrastructureFailure = true;
+  f.state.layers[0].lipSyncVideoGenerationError = 'Provider network recovery exhausted';
+  await f.tick();
+  assert.equal(f.state.expressGenerationPending, false);
+  assert.equal(f.state.expressGenerationStatus.lip_sync_generation, 'FAILED');
+  assert.equal(f.state.expressGenerationFailed, true);
+  assert.equal(f.state.lipSyncGenerationSkipped, false);
+  assert.equal(f.billed.has('lip_sync_generation'), false);
+  assert.equal(f.events.includes('frames'), false);
+  assert.equal(f.events.filter(event => event === 'failed').length, 1);
+});
+
+test('an audio terminal marker settles failure before unrelated provider work can enqueue', async t => {
+  const f = pipeline(t);
+  f.state.audioLayers[0].generationStatus = 'FAILED';
+  f.state.providerNetworkFailure = { code: 'PROVIDER_NETWORK_RETRY_EXHAUSTED', stage: 'audio_generation', audioLayerId: 'speech', requestId: 'audio-request', message: 'Network retries exhausted' };
+  await f.tick();
+  assert.deepEqual(f.events, ['failed']);
+  assert.equal(f.state.expressGenerationStatus.audio_generation, 'FAILED');
+  assert.equal(f.state.expressGenerationStatus.status, 'FAILED');
+  assert.equal(f.state.expressGenerationPending, false);
+});

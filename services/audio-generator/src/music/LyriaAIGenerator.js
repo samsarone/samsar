@@ -35,7 +35,7 @@ import axios from "axios";
 import { createWriteStream } from "fs";
 import { pipeline } from "stream/promises";   // Node ≥ 16
 import { getCurrentEnvironment, isDockerRuntime } from "../util/environmentUtils.js";
-import { createSubmissionOutcomeUnknownError } from '../utils/ProviderSubmissionSafety.js';
+import { createSubmissionOutcomeUnknownError, rethrowAudioInfrastructureError, rethrowAudioMediaDownloadError } from '../utils/ProviderSubmissionSafety.js';
 
 
 
@@ -111,6 +111,7 @@ export async function dispatchAndProcessLyriaAIMusicRequest(payload) {
     try {
       responseData = await listenToPendingLyriaAiRequest(payload);
     } catch (error) {
+      rethrowAudioInfrastructureError(error);
       console.error(`listenToPendingLyriaAiRequest failed for audioGeneration ${payload._id}:`, error);
       responseData = { responseStatus: 'FAILED' };
     }
@@ -212,6 +213,7 @@ export async function requestGenerateLyriaAiLayer(payload) {
 
 
 
+    if (!request_id) throw new Error('Fal Lyria accepted no pollable request ID.');
     return request_id;
 
   } catch (error) {
@@ -228,7 +230,7 @@ async function downloadToTmp(url, sessionId = 'audio') {
   const tempDir = getTempDir(sessionId);
 
   const tmpPath = joinPath(tempDir, `lyria-src-${uuidv4()}.mp3`);
-  const res = await axios.get(url, { responseType: "stream", maxRedirects: 5 });
+  const res = await axios.get(url, { responseType: "stream", maxRedirects: 5, timeout: 60000 }).catch(rethrowAudioMediaDownloadError);
 
   // Axios throws for non-2xx codes, so res.status is already OK here
   await pipeline(res.data, createWriteStream(tmpPath));
@@ -338,6 +340,7 @@ export async function listenToPendingLyriaAiRequest(payload) {
       logs: true,
     });
   } catch (error) {
+    rethrowAudioInfrastructureError(error);
     console.error(`Failed to fetch fal queue status for ${generationId}:`, error);
     return {
       responseStatus: "PENDING",
@@ -345,6 +348,7 @@ export async function listenToPendingLyriaAiRequest(payload) {
     };
   }
 
+  rethrowAudioInfrastructureError(responseStatusData);
   const responseStatus = responseStatusData.status;
 
 
@@ -354,6 +358,7 @@ export async function listenToPendingLyriaAiRequest(payload) {
     try {
       result = await getFalQueueResultWithRetry(generationId, endpoint);
     } catch (error) {
+      rethrowAudioInfrastructureError(error);
       console.error("Error fetching result:", error);
       console.error(error);
 
@@ -398,6 +403,7 @@ export async function listenToPendingLyriaAiRequest(payload) {
         const audioRemotePath = await uploadMusicToCDN(localAudioPath, audioRemoteFileName);
         rawAudioUrl = audioRemotePath;
     } catch (error) {
+        rethrowAudioInfrastructureError(error);
         console.error(`Failed to upload extended Lyria audio for ${payload._id}:`, error);
         return {
           responseStatus: "FAILED",
@@ -435,6 +441,7 @@ async function getFalQueueResultWithRetry(requestId, endpoint, maxRetries = 3, b
       });
       return result;
     } catch (error) {
+      rethrowAudioInfrastructureError(error);
       if (attempt === maxRetries) {
         console.error(`Fal queue result failed after ${maxRetries} attempts`);
         throw error;

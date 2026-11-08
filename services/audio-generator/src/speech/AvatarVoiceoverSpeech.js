@@ -274,7 +274,7 @@ async function generateOpenAISpeechFile({ text, speaker, outputPath, instruction
     requestPayload.instructions = normalizeString(instructions);
   }
 
-  const mp3 = await openai.audio.speech.create(requestPayload);
+  const mp3 = await openai.audio.speech.create(requestPayload, { maxRetries: 0 });
   await fs.promises.writeFile(outputPath, Buffer.from(await mp3.arrayBuffer()));
   return outputPath;
 }

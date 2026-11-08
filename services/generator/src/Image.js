@@ -6,6 +6,7 @@ import { imageCallId } from './billing/ImageSettlement.js';
 import { checkpointForAttempt } from './billing/ImageResultCheckpoint.js';
 import { sealFalImageSubmission } from './billing/FalImageSubmission.js';
 import { sealImageAdapterSubmission } from './billing/ImageAdapterSubmission.js';
+import { deferAcceptedImagePoll, observeImageSubmissionFailure, resolveImageSubmissionAttempt, runImageSubmissionAttempt } from './utils/ImageSubmissionAttempt.js';
 import { normalizeStoredGPTImageModelKey } from './consts/GPTImageModelKeys.js';
 import { getImageFromText, getEditImageFromText } from './Dispatcher.js';
 import { getDBConnectionString } from './DBString.js';
@@ -1640,6 +1641,18 @@ async function rescheduleGenerationAfterRecoveryFailure(payload = {}, recoveryEr
 }
 
 async function recoverUnhandledGenerationTask(activeTask, error) {
+  if (error?.submissionOutcomeUnknown && ['EDIT', 'UPSCALE'].includes(activeTask?.operationType)) {
+    await ImageGeneration.updateOne({ _id: activeTask._id }, { $set: {
+      submissionOutcomeUnknown: true, errorMessage: error.message,
+      editStatus: 'FAILED', apiEditStatus: 'FAILED', generationStatus: 'FAILED',
+      apiGenerationStatus: 'FAILED', rowLocked: false,
+    } });
+    await finalizeUpscaleFailure(activeTask, error.message);
+    if (!activeTask.sessionId && !activeTask.videoSessionId) {
+      await markGlobalSessionFailed(String(activeTask._id), error.message);
+    }
+    return;
+  }
   if (isAvatarVoiceoverImageRequest(activeTask)) {
     await updateAvatarVoiceoverImageGeneration(
       { image: null, error: error?.message || 'Unable to generate avatar image.' },
@@ -2653,6 +2666,9 @@ async function pruneExpressImageLayerAfterFailure({
 }
 
 async function settleImageOutput(payload, result) {
+  if (result?.image || result?.resultUrl || result?.resultUrls?.length || result?.images?.length) {
+    await resolveImageSubmissionAttempt(payload, 'COMPLETED');
+  }
   if (imageBillingMode(payload) !== 'adapter') return;
   const receipt = result.imageBillingReceipt || {};
   const adapter = receipt.adapter || (payload.operationType === 'GENERATE'
@@ -2742,19 +2758,19 @@ async function processNextTask() {
         removeTaskFromQueueById(_id);
         return;
       }
-      await processPendingGenerationRequet(latestTask);
+      await runImageSubmissionAttempt(latestTask, () => processPendingGenerationRequet(latestTask));
     } else if (latestTask.operationType === "EDIT") {
       if (isTerminalImageRequestStatus(latestTask.editStatus)) {
         removeTaskFromQueueById(_id);
         return;
       }
-      await processEditRequest(latestTask);
+      await runImageSubmissionAttempt(latestTask, () => processEditRequest(latestTask));
     } else if (latestTask.operationType === "UPSCALE") {
       if (isTerminalImageRequestStatus(latestTask.editStatus)) {
         removeTaskFromQueueById(_id);
         return;
       }
-      await processUpscaleRequest(latestTask);
+      await runImageSubmissionAttempt(latestTask, () => processUpscaleRequest(latestTask));
     }
   } catch (error) {
     if (error.imageBillingPending) return;
@@ -2809,22 +2825,27 @@ async function processNextTask() {
 }
 
 export async function getAndProcessPendingImageGenerationRows() {
-  await getDBConnectionString();
-
   let lastBillingRecovery = 0;
   let billingRecovery = null;
   while (true) {
     await getTimeout(1000);
-    if (!billingRecovery && Date.now() - lastBillingRecovery > 15000) {
-      lastBillingRecovery = Date.now();
-      await ImageGeneration.updateMany({ imageBillingPolicy: 'adapter', imageDeliveryPending: true,
-        rowLocked: true, updatedAt: { $lte: new Date(Date.now() - 11 * 60 * 1000) } },
-      { $set: { rowLocked: false } });
-      billingRecovery = recoverImageBillingRequests()
-        .catch(error => console.error('[image-billing] Recovery pending:', error.message))
-        .finally(() => { billingRecovery = null; });
+    try {
+      await getDBConnectionString();
+      if (!billingRecovery && Date.now() - lastBillingRecovery > 15000) {
+        lastBillingRecovery = Date.now();
+        await ImageGeneration.updateMany({ imageBillingPolicy: 'adapter', imageDeliveryPending: true,
+          rowLocked: true, updatedAt: { $lte: new Date(Date.now() - 11 * 60 * 1000) } },
+        { $set: { rowLocked: false } });
+        billingRecovery = recoverImageBillingRequests()
+          .catch(error => console.error('[image-billing] Recovery pending:', error.message))
+          .finally(() => { billingRecovery = null; });
+      }
+      await processPendingImageRequests();
+    } catch (error) {
+      // Retry intake after reconnecting; submitted jobs keep their provider IDs
+      // and existing recovery paths decide how their results are delivered.
+      console.error('[image_generation] Worker poll failed; continuing after reconnect', error);
     }
-    await processPendingImageRequests();
   }
 }
 
@@ -3461,6 +3482,11 @@ async function updateAvatarVoiceoverImageGeneration(imageData, payload) {
 
 async function handleNoImageRetryOrFailure(payload, imageData, options = {}) {
 
+  await observeImageSubmissionFailure(payload, imageData, {
+    definitive: isSafetyRejectionMessage(getImageGenerationFailureMessage(imageData)),
+  });
+  if (await deferAcceptedImagePoll(payload)) return;
+
   const {
     _id: requestId,
     prompt,
@@ -4094,6 +4120,10 @@ async function scheduleImageEditAdapterRetry(
   message = 'Image edit adapter failed',
   { rotateAdapter = true } = {},
 ) {
+  await observeImageSubmissionFailure(payload, { error: message }, {
+    definitive: isSafetyRejectionMessage(message),
+  });
+  if (await deferAcceptedImagePoll(payload)) return true;
   const latestRequest = payload?._id
     ? await ImageGeneration.findById(payload._id).select('submissionOutcomeUnknown').lean()
     : null;
@@ -4289,6 +4319,13 @@ async function processUpscaleRequest(pendingRequestData) {
       ? { image: null, error: tariffError.message, definitiveAdapterFailure: true }
       : await getEditImageFromText(editPayload);
 
+    if (editedImageData && !editedImageData.image && !editedImageData.resultUrl &&
+        !editedImageData.resultUrls?.length && !editedImageData.images?.length) {
+      await observeImageSubmissionFailure(editPayload, editedImageData, {
+        definitive: isSafetyRejectionMessage(getImageGenerationFailureMessage(editedImageData)),
+      });
+    }
+
 
     if (!editedImageData) {
       const latestRequest = await ImageGeneration.findById(pendingRequestData._id).lean();
@@ -4335,6 +4372,7 @@ async function processUpscaleRequest(pendingRequestData) {
     }
   } catch (error) {
     if (error.imageBillingPending) throw error;
+    await observeImageSubmissionFailure(pendingRequestData, error);
     if (await scheduleImageEditAdapterRetry(
       pendingRequestData,
       error?.message || 'Upscale request failed',
@@ -4660,6 +4698,11 @@ async function processEditRequest(pendingRequestData) {
     const editedImageData = tariffError
       ? { image: null, error: tariffError.message, definitiveAdapterFailure: true }
       : await getEditImageFromText(editRequestPayload);
+    if (editedImageData && !editedImageData.image && !editedImageData.images?.length) {
+      await observeImageSubmissionFailure(editRequestPayload, editedImageData, {
+        definitive: isSafetyRejectionMessage(getImageGenerationFailureMessage(editedImageData)),
+      });
+    }
     if (editedImageData?.image || editedImageData?.images?.length) {
       if (!editedImageData.image) editedImageData.image = editedImageData.images[0];
       await settleImageOutput(editRequestPayload, editedImageData);
@@ -4756,6 +4799,7 @@ async function processEditRequest(pendingRequestData) {
     }
   } catch (e) {
     if (e.imageBillingPending) throw e;
+    await observeImageSubmissionFailure(pendingRequestData, e);
     if (await scheduleImageEditAdapterRetry(
       pendingRequestData,
       e?.message || 'Image edit adapter failed',

@@ -1,3 +1,4 @@
+import { rethrowAudioInfrastructureError } from '../utils/ProviderSubmissionSafety.js';
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
@@ -287,6 +288,7 @@ export async function processCustomTextToSpeechRequest(payload) {
       await AudioGeneration.findByIdAndUpdate(payload._id, { rowLocked: false });
     }
   } catch (error) {
+    rethrowAudioInfrastructureError(error);
     console.error('Error in processCustomTextToSpeechRequest:', error);
     await retryOrDeleteFailedUpdate(payload, error?.message || 'Custom text-to-speech request failed.');
   }

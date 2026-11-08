@@ -1,5 +1,5 @@
 import { fal } from "@fal-ai/client";
-import { createSubmissionOutcomeUnknownError } from '../utils/ProviderSubmissionSafety.js';
+import { createSubmissionOutcomeUnknownError, rethrowAudioInfrastructureError } from '../utils/ProviderSubmissionSafety.js';
 
 const FAL_API_KEY = process.env.FAL_API_KEY;
 
@@ -26,6 +26,7 @@ export async function generateSdAudioLayer(payload) {
       seconds_total: secondsTotal,
     }
   });
+  if (!request_id) throw new Error('Fal Stable Audio returned no pollable request ID.');
   return request_id;
 
 } catch (error) {
@@ -47,14 +48,19 @@ export async function listenToPendingSDAudioRequest(payload) {
   });
 
 
+  rethrowAudioInfrastructureError(responseStatusData);
   const responseStatus = responseStatusData.status;
 
 
   if (responseStatus === 'COMPLETED') {
 
-    const result = await fal.queue.result(FA_AUDIO_LINK, {
-      requestId: generationId
-    });
+    let result;
+    try {
+      result = await fal.queue.result(FA_AUDIO_LINK, { requestId: generationId });
+    } catch (error) {
+      rethrowAudioInfrastructureError(error);
+      throw error;
+    }
 
     const audioUrl = result.data.audio_file.url;
 

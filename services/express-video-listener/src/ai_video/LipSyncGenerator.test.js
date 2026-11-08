@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { __testOnly__ } from './LipSyncGenerator.js';
+import { __testOnly__, generateLipSyncForLayer } from './LipSyncGenerator.js';
+import VideoSession from '../schema/VideoSession.js';
+import AIVideoLayerGeneration from '../schema/AIVideoLayerGeneration.js';
 
 test('lip sync accepts original AI video layers with remote-only video references', () => {
   assert.equal(
@@ -134,4 +136,43 @@ test('one lip-sync enqueue failure marks its layer and still queues other charac
   assert.deepEqual(failed, [['first', 'Audio upload failed']]);
   assert.deepEqual(layers.map((layer) => layer.aiVideoLayer), ['/base/first.mp4', '/base/second.mp4']);
   assert.deepEqual(audioLayers.map((layer) => layer._id), ['speech-first', 'speech-second']);
+});
+
+
+test('an active lip-sync request is reused before media padding or publication can change its inputs', async t => {
+  const active = { _id: 'accepted-request', status: 'PENDING', videoLink: 'https://original.example/video.mp4', audioLink: 'https://original.example/audio.wav' };
+  const session = { userId: 'user' };
+  Object.defineProperty(session, 'audioLayers', { get() { throw new Error('Active provider request must not prepare audio again'); } });
+  t.mock.method(VideoSession, 'findOne', async () => session);
+  t.mock.method(VideoSession, 'updateOne', async () => ({ modifiedCount: 1 }));
+  t.mock.method(AIVideoLayerGeneration, 'findOne', () => ({ sort: async () => active }));
+  const result = await generateLipSyncForLayer('session', { _id: 'layer' }, { _id: 'speech' });
+  assert.equal(result, active);
+  assert.equal(result.videoLink, 'https://original.example/video.mp4');
+  assert.equal(result.audioLink, 'https://original.example/audio.wav');
+});
+
+
+test('terminal media publication failure stops enqueueing further layers without optional fallback', async () => {
+  const generated = [], failed = [];
+  const layers = ['first', 'second'].map(_id => ({ _id, layerAiVideoType: 'character', hasAiVideoLayer: true, aiVideoLayer: `/${_id}.mp4` }));
+  const audio = layers.map(layer => ({ _id: `speech-${layer._id}`, generationType: 'speech', connectedLayerId: layer._id }));
+  await __testOnly__.enqueueLipSyncLayers('session', layers, audio, {
+    generateLayer: async (_session, layer) => {
+      generated.push(layer._id);
+      throw Object.assign(new Error('Network recovery exhausted'), { code: 'PROVIDER_MEDIA_PREPARATION_FAILED', lipSyncInfrastructureFailure: true });
+    },
+    markFailed: async (_session, layerId, error) => failed.push([layerId, error.code]),
+    log: () => {},
+  });
+  assert.deepEqual(generated, ['first']);
+  assert.deepEqual(failed, [['first', 'PROVIDER_MEDIA_PREPARATION_FAILED']]);
+});
+
+test('lip sync preparation writes preserve pause, cancellation, terminal failure and completed output', () => {
+  const filter = __testOnly__.buildLipSyncLayerWriteGuard('session', 'layer');
+  assert.deepEqual(filter.expressGenerationPaused, { $ne: true });
+  assert.deepEqual(filter.expressGenerationCancelled, { $ne: true });
+  assert.deepEqual(filter.expressGenerationFailed, { $ne: true });
+  assert.deepEqual(filter.layers.$elemMatch, { _id: 'layer', lipSyncVideoGenerationStatus: { $ne: 'COMPLETED' } });
 });

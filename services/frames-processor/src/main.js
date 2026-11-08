@@ -1614,8 +1614,16 @@ export async function generateFramesForPendingSessions() {
 
   // Process tasks up to the concurrency limit
   while (ongoingTasks < MAX_CONCURRENT_TASKS && taskQueue.length > 0) {
-    processNextTask();
+    scheduleNextFrameTask();
   }
+}
+
+// Claims and failure persistence can reject during a database outage. Observe
+// detached work so the polling loop survives without replaying the job body.
+function scheduleNextFrameTask() {
+  processNextTask().catch((error) => {
+    console.error('Frames processor task dispatch failed; continuing polling', error);
+  });
 }
 
 async function processNextTask() {
@@ -1636,7 +1644,7 @@ async function processNextTask() {
 
   if (!lockedFrameGeneration) {
     childProcessesMap.delete(childCombinationKey);
-    processNextTask();
+    scheduleNextFrameTask();
     return;
   }
 
@@ -1698,8 +1706,6 @@ async function processNextTask() {
       );
       await deleteFrameGenerationAndSyncSession(error.generationId || _id, error.sessionId || sessionId);
       childProcessesMap.delete(childCombinationKey);
-      ongoingTasks--;
-      processNextTask();
       return;
     }
 
@@ -1727,10 +1733,11 @@ async function processNextTask() {
       );
       childProcessesMap.delete(childCombinationKey);
     }
+  } finally {
+    childProcessesMap.delete(childCombinationKey);
+    ongoingTasks--;
+    scheduleNextFrameTask();
   }
-
-  ongoingTasks--;
-  processNextTask();
 }
 
 async function generateFramesForSession(generationId, sessionId, layerId, branchOptions = {}) {

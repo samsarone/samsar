@@ -9,7 +9,7 @@ import {
   ELEVENLABS_MUSIC_DEFAULT_OUTPUT_FORMAT,
 } from "./ElevenLabsMusicPayload.js";
 import { isStandaloneEdition } from '../util/environmentUtils.js';
-import { createSubmissionOutcomeUnknownError } from '../utils/ProviderSubmissionSafety.js';
+import { createSubmissionOutcomeUnknownError, rethrowAudioInfrastructureError } from '../utils/ProviderSubmissionSafety.js';
 import { submitFalAudioRequest } from '../utils/FalAudioSubmission.js';
 
 export {
@@ -178,6 +178,7 @@ export async function listenToPendingElevenLabsMusicRequest(payload) {
       logs: true,
     });
 
+    rethrowAudioInfrastructureError(responseStatusData);
     const responseStatus = responseStatusData.status;
 
     if (responseStatus === 'COMPLETED') {
@@ -210,6 +211,7 @@ export async function listenToPendingElevenLabsMusicRequest(payload) {
       responseStatus: 'PENDING',
     };
   } catch (error) {
+    rethrowAudioInfrastructureError(error);
     console.error(`Failed to fetch ElevenLabs Music status for ${generationId}:`, error);
     return {
       responseStatus: 'PENDING',

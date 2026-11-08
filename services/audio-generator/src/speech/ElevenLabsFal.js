@@ -9,7 +9,7 @@ import VideoSession from "../schema/VideoSession.js";
 import AudioGeneration from "../schema/AudioGeneration.js";
 import { markAudioGenerationAsFailed } from '../music/audioUtils.js';
 import { isFalAudioAuthenticationRejection, submitFalAudioRequest } from '../utils/FalAudioSubmission.js';
-import { createSubmissionOutcomeUnknownError, isSubmissionOutcomeUnknownError } from '../utils/ProviderSubmissionSafety.js';
+import { createSubmissionOutcomeUnknownError, isSubmissionOutcomeUnknownError, rethrowAudioInfrastructureError, rethrowAudioMediaDownloadError } from '../utils/ProviderSubmissionSafety.js';
 import { resolveSpeechLayerTimingUpdate } from "./SpeechLayerTiming.js";
 import { getProcessorAssetsV2Path, toAssetsV2RelativePath } from "../utils/AssetPaths.js";
 import { uploadAudioAssetToCDN } from "../AWS.js";
@@ -148,6 +148,7 @@ export async function processElevenLabsFalSpeechRequest(payload) {
         throw err;
       }
 
+      rethrowAudioInfrastructureError(falStatus);
       if (falStatus.status === 'COMPLETED') {
         // -----------
         // Retrieve result
@@ -172,7 +173,7 @@ export async function processElevenLabsFalSpeechRequest(payload) {
         // -----------
         // Download the audio file
         // -----------
-        const audioResponse = await axios.get(audioUrl, { responseType: 'arraybuffer' });
+        const audioResponse = await axios.get(audioUrl, { responseType: 'arraybuffer', timeout: 60000 }).catch(rethrowAudioMediaDownloadError);
         const audioBuffer = Buffer.from(audioResponse.data);
 
         // -----------
@@ -372,6 +373,7 @@ export async function processElevenLabsFalSpeechRequest(payload) {
         'Fal speech submission',
       );
     }
+    rethrowAudioInfrastructureError(err);
     if ((payload.status === 'PENDING' && payload.apiRequestId) ||
         isFalAudioAuthenticationRejection(err) || isSubmissionOutcomeUnknownError(err)) {
       // The dispatcher handles a rejected key. The worker preserves pending

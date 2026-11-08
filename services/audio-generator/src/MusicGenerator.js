@@ -14,6 +14,10 @@ import path from 'path';
 import { installStructuredLogger } from './utils/StructuredLogger.js';
 import { resolveCpuUpperBound } from './utils/CpuResources.js';
 import { isSubmissionOutcomeUnknownError } from './utils/ProviderSubmissionSafety.js';
+import { recoverAudioProviderNetworkError, canDispatchAudioRequest, recoverExpiredAudioSubmissions } from './utils/AudioNetworkRecovery.js';
+import { createNetworkOutageCircuit } from './utils/NetworkOutagePolicy.js';
+
+const networkOutageCircuit = createNetworkOutageCircuit();
 
 installStructuredLogger({
   serviceName: process.env.SERVICE_NAME || 'samsar_audio_generator',
@@ -43,6 +47,8 @@ async function getTimeout(ms) {
 
 async function checkForPendingRequestsAndGenerate() {
   await getDBConnectionString();
+  await recoverExpiredAudioSubmissions({ markFailed: markAudioGenerationAsFailed });
+  const admission = await networkOutageCircuit.gate();
 
   const staleLockCutoff = new Date(Date.now() - 5 * 60 * 1000);
   await AudioGeneration.updateMany(
@@ -50,6 +56,9 @@ async function checkForPendingRequestsAndGenerate() {
       rowLocked: true,
       updatedAt: { $lt: staleLockCutoff },
       status: { $in: ['INIT', 'PENDING'] },
+      $or: [{ providerSubmissionStartedAt: null, providerSubmissionLeaseExpiresAt: null }, {
+        status: 'PENDING', providerSubmissionLeaseExpiresAt: { $lte: new Date() },
+      }],
     },
     {
       $set: { rowLocked: false },
@@ -58,14 +67,19 @@ async function checkForPendingRequestsAndGenerate() {
 
   const pendingAudioGenerationRequests = await AudioGeneration.find({
     rowLocked: false,
-    status: { $in: ['INIT', 'PENDING'] },
+    // Accepted work can poll/download even while new submissions cool down.
+    status: { $in: admission.allowed ? ['INIT', 'PENDING'] : ['PENDING'] },
+    $or: [{ nextAttemptAfter: { $exists: false } }, { nextAttemptAfter: null }, { nextAttemptAfter: { $lte: new Date() } }],
   }).limit(MAX_CONCURRENT_REQUESTS);
 
   const lockedRequests = await Promise.all(
     pendingAudioGenerationRequests.map(async (request) => {
       const lockedRequest = await AudioGeneration.findOneAndUpdate(
-        { _id: request._id, rowLocked: false },
-        { $set: { rowLocked: true } },
+        { _id: request._id, rowLocked: false, status: request.status },
+        { $set: { rowLocked: true,
+          providerSubmissionLeaseExpiresAt: new Date(Date.now() + 15 * 60 * 1000),
+          ...(request.status === 'INIT' ? { providerSubmissionStartedAt: new Date() } : {}),
+        } },
         { new: true }
       );
       return lockedRequest;
@@ -82,6 +96,14 @@ async function checkForPendingRequestsAndGenerate() {
   for (const chunk of chunks) {
     await Promise.all(chunk.map(async (audioGenerationRequest) => {
       try {
+        if (!await canDispatchAudioRequest(audioGenerationRequest)) {
+          await AudioGeneration.updateOne({ _id: audioGenerationRequest._id, rowLocked: true }, { $set: { rowLocked: false } });
+          return;
+        }
+        if (audioGenerationRequest.status === 'INIT' && !(await networkOutageCircuit.gate()).allowed) {
+          await AudioGeneration.updateOne({ _id: audioGenerationRequest._id, status: 'INIT' }, { $set: { rowLocked: false } });
+          return;
+        }
         const { generationType, isStreamGenerationPending } = audioGenerationRequest;
         
 
@@ -107,8 +129,22 @@ async function checkForPendingRequestsAndGenerate() {
 
           await processMusicEffectRequest(audioGenerationRequest);
         }
+        if (audioGenerationRequest.status === 'PENDING') {
+          networkOutageCircuit.recordSuccess();
+          if (audioGenerationRequest.providerNetworkErrorCount > 0) {
+            await AudioGeneration.updateOne({ _id: audioGenerationRequest._id, status: 'PENDING',
+              providerNetworkErrorCount: audioGenerationRequest.providerNetworkErrorCount }, { $set: {
+              providerNetworkErrorCount: 0, providerNetworkFirstErrorAt: null, nextAttemptAfter: null,
+            } });
+          }
+        }
       } catch (error) {
+        networkOutageCircuit.recordFailure(error);
         console.error(`Error processing request ${audioGenerationRequest._id}:`, error);
+        if (await recoverAudioProviderNetworkError(audioGenerationRequest, error, {
+          markFailed: markAudioGenerationAsFailed, ambiguous: isSubmissionOutcomeUnknownError(error),
+          definitive: error?.providerMediaUnavailable === true,
+        })) return;
         if (
           audioGenerationRequest.status === 'PENDING' &&
           (audioGenerationRequest.apiRequestId || audioGenerationRequest.generationId)

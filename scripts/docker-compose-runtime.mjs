@@ -9,6 +9,7 @@ import {
   splitGenBlazeComposeProfiles,
 } from '../apps/setup-wizard/genblazeCompose.mjs';
 import { runComposeWithContainerRecovery } from '../apps/setup-wizard/composeRecovery.mjs';
+import { JOB_CONSUMER_SERVICES, resolveJobsDisabledOverride } from './docker-maintenance.mjs';
 
 export const ALL_RUNTIME_COMPOSE_PROFILES = Object.freeze([
   'core',
@@ -103,12 +104,13 @@ function executeDocker(command, args, root, { capture = false } = {}) {
   });
 }
 
-async function runDockerCompose(root, rootEnvPath, composeFile, profiles, args) {
+async function runDockerCompose(root, rootEnvPath, composeFile, profiles, args, overrideFiles = []) {
   const profileArgs = profiles.flatMap((profile) => ['--profile', profile]);
   await runComposeWithContainerRecovery([
     'compose',
     '--env-file', rootEnvPath,
     '-f', composeFile,
+    ...overrideFiles.flatMap(file => ['-f', file]),
     ...profileArgs,
     ...args,
   ], {
@@ -233,8 +235,10 @@ export async function startRuntimeServices(profiles, { restart = false, runCompo
 async function main() {
   const action = process.argv[2];
   if (!['config', 'up', 'restart', 'update', 'down'].includes(action)) {
-    throw new Error('Usage: node scripts/docker-compose-runtime.mjs <config|up|restart|update|down>');
+    throw new Error('Usage: node scripts/docker-compose-runtime.mjs <config|up|restart|update|down> [--no-jobs|--enable-jobs]');
   }
+  const flags = process.argv.slice(3);
+  if (flags.some(flag => !['--no-jobs', '--enable-jobs'].includes(flag))) throw new Error('Unknown runtime option.');
 
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const configPath = path.join(root, 'runtime', 'config', 'samsar.config.json');
@@ -248,6 +252,10 @@ async function main() {
     path.join(root, 'runtime', 'secrets', 'grafana.env'),
   ];
   const composeFile = path.join(root, 'deploy', 'compose', 'docker-compose.yml');
+  const jobsDisabledFile = resolveJobsDisabledOverride(root, {
+    noJobs: flags.includes('--no-jobs'), enableJobs: flags.includes('--enable-jobs'),
+  });
+  const overrideFiles = jobsDisabledFile ? [jobsDisabledFile] : [];
   fs.mkdirSync(path.dirname(rootEnvPath), { recursive: true, mode: 0o700 });
   if (!fs.existsSync(rootEnvPath)) fs.writeFileSync(rootEnvPath, '', { mode: 0o600 });
   if (!fs.existsSync(genblazeEnvPath)) fs.writeFileSync(genblazeEnvPath, '', { mode: 0o600 });
@@ -273,17 +281,25 @@ async function main() {
   if (action === 'config') {
     // Resolved Compose output expands env_file values, including credentials.
     // Validate silently so `npm run docker:config` cannot print secrets.
-    await runDockerCompose(root, rootEnvPath, composeFile, profiles, ['config', '--quiet']);
+    await runDockerCompose(root, rootEnvPath, composeFile, profiles, ['config', '--quiet'], overrideFiles);
     return;
   }
   if (action === 'down') {
-    await runDockerCompose(root, rootEnvPath, composeFile, profiles, ['down', '--remove-orphans']);
+    await runDockerCompose(root, rootEnvPath, composeFile, profiles, ['down', '--remove-orphans'], overrideFiles);
     return;
+  }
+
+  if (jobsDisabledFile) {
+    console.log('[deploy] Maintenance mode: stopping job consumers before building; jobs remain disabled.');
+    // Compose scopes this operation to the selected project. Never bring up a
+    // recovery loop or queue consumer before its idle override is applied.
+    await runDockerCompose(root, rootEnvPath, composeFile, ALL_RUNTIME_COMPOSE_PROFILES,
+      ['stop', ...JOB_CONSUMER_SERVICES], overrideFiles);
   }
 
   if (action === 'update') {
     const contentOverride = getRuntimeContentOverride(root);
-    const overrideArgs = [];
+    const overrideArgs = overrideFiles.flatMap(file => ['-f', file]);
     if (Object.keys(contentOverride.services).length) {
       const overridePath = path.join(root, 'runtime', 'config', 'compose.bind-content.json');
       fs.mkdirSync(path.dirname(overridePath), { recursive: true, mode: 0o700 });
@@ -308,7 +324,7 @@ async function main() {
 
   await startRuntimeServices(profiles, {
     restart: action === 'restart',
-    runCompose: (selectedProfiles, args) => runDockerCompose(root, rootEnvPath, composeFile, selectedProfiles, args),
+    runCompose: (selectedProfiles, args) => runDockerCompose(root, rootEnvPath, composeFile, selectedProfiles, args, overrideFiles),
   });
 }
 

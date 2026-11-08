@@ -229,3 +229,18 @@ test('lip sync output requires the completion flag and a persisted media referen
     true,
   );
 });
+
+test('exhausted infrastructure recovery fails lip sync even while other layers remain pending', () => {
+  const layers = [
+    characterLayer('failed', { lipSyncGenerationPending: false, lipSyncVideoGenerationStatus: 'FAILED', lipSyncInfrastructureFailure: true }),
+    characterLayer('pending', { lipSyncVideoGenerationStatus: 'PENDING' }),
+  ];
+  const result = assessLipSyncFallback(assessLipSyncStage(layers, [speechLayer('a', 'failed', 0), speechLayer('b', 'pending', 1)]));
+  assert.equal(result.state, 'INFRASTRUCTURE_FAILURE');
+  assert.equal(result.assessment.layerId, 'failed');
+});
+
+test('late completed lip sync output ignores a stale infrastructure layer flag', () => {
+  const layer = characterLayer('completed', { lipSyncGenerationPending: false, lipSyncVideoGenerationStatus: 'COMPLETED', hasLipSyncVideoLayer: true, lipSyncVideoLayer: '/lip.mp4', lipSyncInfrastructureFailure: true });
+  assert.equal(assessLipSyncFallback(assessLipSyncStage([layer], [speechLayer('speech', 'completed', 0)])).state, 'COMPLETE');
+});

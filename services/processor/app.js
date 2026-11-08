@@ -58,6 +58,7 @@ import { installPrivateAssetAccess } from './src/utils/PrivateAssetAccess.js';
 import { privateAssetResponseMiddleware } from './src/utils/PrivateAssetResponse.js';
 import { requireAdminUser } from './src/middleware/requireAdminUser.js';
 import { isContainerRuntime } from './src/utils/EnvironmentUtils.js';
+import { processorMaintenanceMiddleware } from './src/utils/BackgroundJobs.js';
 
 import {
   ensureSupportedFontSamples,
@@ -210,6 +211,7 @@ const corsOptions = {
 
 // Apply CORS middleware to all requests
 app.use(cors(corsOptions));
+app.use(processorMaintenanceMiddleware());
 app.use(withRequestContext);
 app.use(privateAssetResponseMiddleware({ resolveActor: resolveRequestActorFromAuthHeaders }));
 

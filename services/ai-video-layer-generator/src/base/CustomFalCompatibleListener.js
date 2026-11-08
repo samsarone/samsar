@@ -443,10 +443,13 @@ function getVideoUrl(resultData) {
 }
 
 async function submitCustomFalCompatibleRequest(payload, adapterType) {
-  const { adapter, source } = await resolveCustomAdapterConfig(payload, adapterType);
-  const endpointPath = adapter[adapterType];
-  const submitUrl = buildCustomEndpointUrl(adapter.base_url, endpointPath);
-  const inputPayload = buildCustomInputPayload(payload, adapterType, endpointPath);
+  let adapter, source, endpointPath, submitUrl, inputPayload;
+  try {
+    ({ adapter, source } = await resolveCustomAdapterConfig(payload, adapterType));
+    endpointPath = adapter[adapterType];
+    submitUrl = buildCustomEndpointUrl(adapter.base_url, endpointPath);
+    inputPayload = buildCustomInputPayload(payload, adapterType, endpointPath);
+  } catch (error) { error.providerRequestSent = false; throw error; }
 
   const response = await axios.post(
     submitUrl,
@@ -462,8 +465,8 @@ async function submitCustomFalCompatibleRequest(payload, adapterType) {
     throw new Error(`Custom ${adapterType} submit returned no request id from ${source} adapter.`);
   }
 
-  await recordProviderUsageLog({
-    payload,
+  payload.customProviderUsage = {
+    payload: { ...payload },
     requestType: adapterType,
     callType: adapterType,
     provider: getCustomAdapterProvider(adapter),
@@ -478,16 +481,14 @@ async function submitCustomFalCompatibleRequest(payload, adapterType) {
       aspectRatio: payload?.aspectRatio,
       duration: payload?.duration,
     },
-  });
+  };
 
   const providerStatusUrl = getProviderUrl(response.data, ['status_url', 'statusUrl']);
   const providerResponseUrl = getProviderUrl(response.data, ['response_url', 'responseUrl', 'result_url', 'resultUrl']);
-  if (payload._id && (providerStatusUrl || providerResponseUrl)) {
-    await AIVideoLayerGeneration.findByIdAndUpdate(payload._id, {
-      ...(providerStatusUrl ? { customFalStatusUrl: providerStatusUrl } : {}),
-      ...(providerResponseUrl ? { customFalResponseUrl: providerResponseUrl } : {}),
-    });
-  }
+  // Return the accepted identity immediately; the dispatcher checkpoints its
+  // endpoint affinity before any secondary audit or output operation.
+  if (providerStatusUrl) payload.customFalStatusUrl = providerStatusUrl;
+  if (providerResponseUrl) payload.customFalResponseUrl = providerResponseUrl;
 
   return requestId;
 }

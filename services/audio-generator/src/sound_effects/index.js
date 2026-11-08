@@ -82,57 +82,27 @@ export async function processMusicEffectRequest(payload) {
 }
 
 async function requestSoundEffect(payload) {
-  // This function requests sound effect
-
   const { model } = payload;
+  const requestId = model === 'SDAUDIO' ? await generateSdAudioLayer(payload)
+    : model === 'CUSTOM_TEXT_TO_SOUND_EFFECT' ? await generateCustomSoundEffectLayer(payload) : null;
+  if (!requestId) return;
 
-
-  let requestId;
+  // Preserve acceptance before an optional usage-audit dependency can stall.
+  await AudioGeneration.findOneAndUpdate({ _id: payload._id }, {
+    status: 'PENDING', generationId: requestId,
+    ...(model === 'CUSTOM_TEXT_TO_SOUND_EFFECT' ? { apiRequestId: requestId } : {}),
+    rowLocked: false,
+  });
   if (model === 'SDAUDIO') {
-
-    
-    requestId = await generateSdAudioLayer(payload);
-
-    if (requestId) {
-      await recordProviderUsageLog({
-        payload,
-        requestType: 'text_to_sound_effect',
-        callType: 'text_to_sound_effect',
-        provider: 'fal',
-        model,
-        providerRequestId: requestId,
-        source: 'sound_effect_generator',
-        service: 'samsar_audio_generator',
-        status: 'requested',
-        metadata: {
-          duration: payload?.duration || payload?.secondsTotal,
-        },
-      });
-    }
-
-
-
-  } else if (model === 'CUSTOM_TEXT_TO_SOUND_EFFECT') {
-    requestId = await generateCustomSoundEffectLayer(payload);
-  }
-
-  if (requestId) {
-
-    
-    await AudioGeneration.findOneAndUpdate({
-      _id: payload._id
-    }, {
-      status: 'PENDING',
-      generationId: requestId,
-      ...(model === 'CUSTOM_TEXT_TO_SOUND_EFFECT' ? { apiRequestId: requestId } : {}),
-      rowLocked: false,
+    await recordProviderUsageLog({
+      payload, requestType: 'text_to_sound_effect', callType: 'text_to_sound_effect',
+      provider: 'fal', model, providerRequestId: requestId,
+      source: 'sound_effect_generator', service: 'samsar_audio_generator', status: 'requested',
+      metadata: { duration: payload?.duration || payload?.secondsTotal },
     });
-
-  } else {
-
   }
-
 }
+
 
 async function listenToPendingSoundEffectRequest(payload) {
   // This function listens to pending sound effect requests

@@ -3,6 +3,7 @@ import { frameCountToSeconds, secondsToFrameCount, buildFrameExtractionFilter } 
 import fs from 'fs-extra';
 import path from 'path';
 import axios from 'axios';
+import { providerRequestAxiosOptions } from './utils/ProviderNetworkTransport.js';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegPath from 'ffmpeg-static';
 import { promisify } from 'util';
@@ -122,11 +123,11 @@ async function downloadVideo(url, dest, maxRetries = 3) {
     try {
       attempt++;
       
-      const response = await axios({
+      const response = await axios(providerRequestAxiosOptions({
         method: 'GET',
         url,
         responseType: 'stream',
-      });
+      }));
 
       await fs.ensureDir(path.dirname(dest));
       await pipeline(response.data, fs.createWriteStream(dest));

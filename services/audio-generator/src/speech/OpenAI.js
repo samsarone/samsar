@@ -34,7 +34,7 @@ export async function processOpenAISpeechRequest(payload) {
       model: "tts-1",
       voice: speaker,
       input: prompt,
-    });
+    }, { maxRetries: 0 });
 
 
     const buffer = Buffer.from(await mp3.arrayBuffer());

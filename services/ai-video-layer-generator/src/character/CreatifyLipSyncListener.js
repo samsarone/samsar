@@ -1,3 +1,4 @@
+import { isProviderNetworkError, isProviderHttpFailure, completedProviderResultFailure } from '../utils/ProviderNetworkRecovery.js';
 import { fal } from "@fal-ai/client";
 const FAL_API_KEY = process.env.FAL_API_KEY;
 
@@ -38,6 +39,7 @@ export async function generateCreatifyLipSyncLayer(payload) {
 
     return request_id;
   } catch (error) {
+    if (isProviderNetworkError(error)) throw error;
 
 
     return {
@@ -55,6 +57,7 @@ export async function listenToPendingCreatifyLipSyncRequests(payload) {
 
   const { generationId, model } = payload;
 
+  let providerCompleted = false;
   try {
 
     const FAL_VIDEO_LINK = getSyncLipSyncForModel();
@@ -69,6 +72,7 @@ export async function listenToPendingCreatifyLipSyncRequests(payload) {
 
 
     if (responseStatus === 'COMPLETED') {
+      providerCompleted = true;
 
 
       const result = await fal.queue.result("creatify/lipsync", {
@@ -100,6 +104,9 @@ export async function listenToPendingCreatifyLipSyncRequests(payload) {
     }
 
   } catch (error) {
+    const executionFailure = providerCompleted ? completedProviderResultFailure(error) : null;
+    if (executionFailure) return executionFailure;
+    if (isProviderNetworkError(error) || isProviderHttpFailure(error)) throw error;
     console.error(error);
 
     return {

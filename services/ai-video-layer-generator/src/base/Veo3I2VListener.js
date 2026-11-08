@@ -1,3 +1,4 @@
+import { isProviderNetworkError, isProviderHttpFailure, completedProviderResultFailure } from '../utils/ProviderNetworkRecovery.js';
 import { fal } from "@fal-ai/client";
 const FAL_API_KEY = process.env.FAL_API_KEY;
 
@@ -46,6 +47,7 @@ export async function generateVeo3ImgToVidLayer(payload) {
 
 export async function listenToPendingVeo3ImgToVidRequests(payload) {
 
+  let providerCompleted = false;
   try {
 
     const { generationId } = payload;
@@ -60,6 +62,7 @@ export async function listenToPendingVeo3ImgToVidRequests(payload) {
 
     const responseStatus = responseStatusData.status;
     if (responseStatus === 'COMPLETED') {
+      providerCompleted = true;
 
       const result = await fal.queue.result(FA_VIDEO_LINK, {
         requestId: generationId
@@ -82,6 +85,9 @@ export async function listenToPendingVeo3ImgToVidRequests(payload) {
     }
 
   } catch (error) {
+    const executionFailure = providerCompleted ? completedProviderResultFailure(error) : null;
+    if (executionFailure) return executionFailure;
+    if (isProviderNetworkError(error) || isProviderHttpFailure(error)) throw error;
     console.error("Error in listenToPendingVeo3ImgToVidRequests:");
     console.error(error);
     return {

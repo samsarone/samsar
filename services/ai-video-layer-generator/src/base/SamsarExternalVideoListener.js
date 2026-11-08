@@ -1,3 +1,4 @@
+import { providerRequestFetch } from '../utils/ProviderNetworkTransport.js';
 import fs from 'fs';
 import { readFile } from 'fs/promises';
 import path from 'path';
@@ -177,6 +178,7 @@ function getExternalClient() {
   const baseUrl = normalizeBaseUrl(process.env.SAMSAR_JS_API_URL || process.env.SAMSAR_API_URL);
   return new SamsarClient({
     apiKey,
+    fetch: providerRequestFetch,
     baseUrl,
     timeoutMs: Number(process.env.SAMSAR_EXTERNAL_PROVIDER_TIMEOUT_MS) || 120000,
   });
@@ -792,40 +794,8 @@ export async function generateSamsarExternalVideoLayer(payload = {}) {
     requestId,
   });
 
-  await recordProviderUsageLog({
-    payload,
-    requestType: route === 'lip_sync'
-      ? 'lip_sync'
-      : route === 'sound_effect'
-        ? 'text_to_sound_effect'
-        : route,
-    callType: route,
-    provider: 'samsar',
-    model: payload?.model,
-    providerRequestId: requestId,
-    source: 'samsar_external_video',
-    service: 'samsar_ai_video_layer_generator',
-    status: 'requested',
-    metadata: {
-      route,
-      aspectRatio: payload?.aspectRatio,
-      duration: resolveExternalVideoDuration(payload, route),
-      payloadDuration: payload?.duration,
-      payloadAudioDuration: payload?.audioDuration || payload?.audio_duration,
-      originalVideoModel: payload?.originalVideoModel,
-    },
-  });
-
-  await AIVideoLayerGeneration.findOneAndUpdate(
-    { _id: payload._id },
-    {
-      $set: {
-        externalProvider: 'samsar',
-        samsarExternalProvider: true,
-        samsarExternalVideoRequestId: requestId,
-      },
-    },
-  );
+  // The dispatcher checkpoints this accepted ID before secondary DB/audit work.
+  payload.samsarExternalVideoRoute = route;
 
   return `${EXTERNAL_REQUEST_PREFIX}${requestId}`;
 }

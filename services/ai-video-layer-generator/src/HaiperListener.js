@@ -1,3 +1,4 @@
+import { isProviderNetworkError, isProviderHttpFailure, completedProviderResultFailure } from './utils/ProviderNetworkRecovery.js';
 import { fal } from "@fal-ai/client";
 const FAL_API_KEY = process.env.FAL_API_KEY;
 
@@ -54,8 +55,10 @@ export async function listenToPendingHaiperVideoRequest(payload) {
 
 
   if (responseStatus === 'COMPLETED') {
+      providerCompleted = true;
 
-    try {
+    let providerCompleted = false;
+  try {
       const result = await fal.queue.result(FA_VIDEO_LINK, {
         requestId: generationId
       });
@@ -67,6 +70,9 @@ export async function listenToPendingHaiperVideoRequest(payload) {
       };
 
     } catch (error) {
+    const executionFailure = providerCompleted ? completedProviderResultFailure(error) : null;
+    if (executionFailure) return executionFailure;
+    if (isProviderNetworkError(error) || isProviderHttpFailure(error)) throw error;
       console.error(error);
       return {
         responseStatus: 'FAILED'

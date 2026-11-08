@@ -1,3 +1,5 @@
+import AudioGeneration from '../schema/AudioGeneration.js';
+import { createSubmissionOutcomeUnknownError, rethrowAudioInfrastructureError } from '../utils/ProviderSubmissionSafety.js';
 import axios from 'axios';
 import VideoSession from '../schema/VideoSession.js';
 import User from '../schema/User.js';
@@ -267,18 +269,27 @@ export async function submitCustomAudioRequest(payload, adapterType) {
   const endpointPath = adapter[adapterType];
   const submitUrl = buildCustomEndpointUrl(adapter.base_url, endpointPath);
 
-  const response = await axios.post(
-    submitUrl,
-    { input: buildCustomInputPayload(payload, adapterType) },
-    {
-      headers: buildHeaders(adapter.api_key),
-      timeout: 60000,
-    }
-  );
+  let response;
+  try {
+    response = await axios.post(
+      submitUrl,
+      { input: buildCustomInputPayload(payload, adapterType) },
+      { headers: buildHeaders(adapter.api_key), timeout: 60000 },
+    );
+  } catch (error) {
+    throw createSubmissionOutcomeUnknownError(error, 'Custom audio submission');
+  }
 
   const requestId = getRequestId(response.data);
   if (!requestId) {
-    throw new Error(`Custom ${adapterType} submit returned no request id from ${source} adapter.`);
+    throw createSubmissionOutcomeUnknownError(new Error(`Custom ${adapterType} submit returned no request id from ${source} adapter.`), 'Custom audio submission');
+  }
+
+  // Save the accepted receipt before optional usage auditing can fail.
+  try {
+    await AudioGeneration.findByIdAndUpdate(payload._id, { status: 'PENDING', generationId: requestId, apiRequestId: requestId });
+  } catch (error) {
+    throw createSubmissionOutcomeUnknownError(new Error('Custom audio accepted the request, but saving its receipt failed.', { cause: error }), 'Custom audio submission');
   }
 
   await recordProviderUsageLog({
@@ -321,6 +332,7 @@ export async function listenToPendingCustomAudioRequest(payload, adapterType) {
     timeout: 60000,
   });
 
+  rethrowAudioInfrastructureError(statusResponse.data);
   const responseStatus = normalizeProviderStatus(statusResponse.data);
   if (responseStatus !== 'COMPLETED') {
     return { responseStatus };

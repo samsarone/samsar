@@ -43,6 +43,16 @@ const audioGenerationSchema = new Schema({
   // Immutable adapter affinity for the currently submitted provider request.
   submittedAdapter: String,
   submissionOutcomeUnknown: { type: Boolean, default: false },
+  providerSubmissionStartedAt: Date,
+  providerSubmissionLeaseExpiresAt: Date,
+  providerNetworkErrorCount: { type: Number, default: 0 },
+  providerNetworkFirstErrorAt: Date,
+  providerNetworkLastErrorAt: Date,
+  providerNetworkRecoveryExhausted: { type: Boolean, default: false },
+  providerNetworkFailureCode: String,
+  providerNetworkFailureMessage: String,
+  providerNetworkFailureFinalized: { type: Boolean, default: false },
+  nextAttemptAfter: Date,
 
   requestTimeoutUntil: Date,
   

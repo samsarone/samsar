@@ -139,7 +139,7 @@ export async function processOpenAITTSSpeechRequest(payload) {
 
     let mp3;
     try {
-      mp3 = await openai.audio.speech.create(inputPayload);
+      mp3 = await openai.audio.speech.create(inputPayload, { maxRetries: 0 });
 
 
 

@@ -45,6 +45,13 @@ const aiVideoLayerGenerationSchema = new Schema({
   retryOnFail: { type: Boolean, default: false },
 
   rowLocked: { type: Boolean, default: false },
+  requestOwner: String,
+  requestLeaseExpiresAt: Date,
+  providerSubmissionStartedAt: Date,
+  providerSubmissionAttemptId: String,
+  infrastructureFailure: Boolean,
+  infrastructureFailureCode: String,
+  infrastructureFailureFinalized: Boolean,
 
   aspectRatio: { type: String, default: '1:1' },
 

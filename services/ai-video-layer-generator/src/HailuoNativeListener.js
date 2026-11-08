@@ -1,3 +1,4 @@
+import { providerRequestAxiosOptions } from './utils/ProviderNetworkTransport.js';
 import { fal } from "@fal-ai/client";
 const HAILUO_API_KEY = process.env.HAILUO_ACCESS_KEY;
 
@@ -35,7 +36,7 @@ export async function generateHailuoNativeVideoLayer(payload) {
 
 
   await sealStaticVideoSubmission(payload, { adapter: 'hailuo', model: inputPayload.model, seconds: duration, resolution: '768P' });
-  const resData = await axios.post(`${HAILUO_VIDEO_LINK}`, inputPayload, headers);
+  const resData = await axios.post(`${HAILUO_VIDEO_LINK}`, inputPayload, providerRequestAxiosOptions(headers));
 
 
 
@@ -69,7 +70,7 @@ export async function listenToPendingHailuoNativeVideoRequest(payload) {
 
 
 
-  const responseStatusDataItem = await axios.get(queryUrl, headars);
+  const responseStatusDataItem = await axios.get(queryUrl, providerRequestAxiosOptions(headars));
 
   const responseStatusData = responseStatusDataItem.data;
 
@@ -92,7 +93,7 @@ export async function listenToPendingHailuoNativeVideoRequest(payload) {
 
     const downloadURL = `https://api.minimaxi.chat/v1/files/retrieve?GroupId=${HAILUO_GROUP_ID}&file_id=${responseFileId}`;
 
-    const result = await axios.get(downloadURL, responseDownloadHeaders);
+    const result = await axios.get(downloadURL, providerRequestAxiosOptions(responseDownloadHeaders));
 
     const videoURL = result.data.file.download_url;
 

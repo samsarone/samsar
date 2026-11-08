@@ -1,3 +1,4 @@
+import { isProviderNetworkError, isProviderHttpFailure, completedProviderResultFailure } from '../utils/ProviderNetworkRecovery.js';
 import { fal } from "@fal-ai/client";
 
 const FAL_API_KEY = process.env.FAL_API_KEY;
@@ -86,6 +87,7 @@ export async function generateCosmos3ImgToVidLayer(payload) {
 
     return request_id;
   } catch (error) {
+    if (isProviderNetworkError(error)) throw error;
     console.error("Error submitting Cosmos 3 image-to-video request:", {
       error: summarizeFalError(error),
       inputPayload: {
@@ -98,6 +100,7 @@ export async function generateCosmos3ImgToVidLayer(payload) {
 }
 
 export async function listenToPendingCosmos3ImgToVidRequests(payload) {
+  let providerCompleted = false;
   try {
     const { generationId } = payload;
 
@@ -140,6 +143,9 @@ export async function listenToPendingCosmos3ImgToVidRequests(payload) {
       responseStatus: "PENDING",
     };
   } catch (error) {
+    const executionFailure = providerCompleted ? completedProviderResultFailure(error) : null;
+    if (executionFailure) return executionFailure;
+    if (isProviderNetworkError(error) || isProviderHttpFailure(error)) throw error;
     console.error("Error in listenToPendingCosmos3ImgToVidRequests:", summarizeFalError(error));
     throw error;
   }

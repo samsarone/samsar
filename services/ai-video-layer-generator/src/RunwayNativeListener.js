@@ -1,3 +1,4 @@
+import { providerRequestAxiosOptions } from './utils/ProviderNetworkTransport.js';
 import axios from 'axios';
 import { sealStaticVideoSubmission } from './billing/StaticVideoSubmission.js';
 
@@ -51,7 +52,7 @@ export async function generateRunwayNativeVideoLayer(payload) {
   }
 
  await sealStaticVideoSubmission(payload, { adapter: 'runway', model: inputPayload.model, seconds: inputPayload.duration });
- const response = await axios.post(RUNWAY_VIDEO_LINK, inputPayload, headers);
+ const response = await axios.post(RUNWAY_VIDEO_LINK, inputPayload, providerRequestAxiosOptions(headers));
 
   const responseData = response.data;
 
@@ -98,7 +99,7 @@ export async function listenToPendingRunwayNativeVideoRequest(payload) {
     }
   }
 
-  const responseStatusDataObjectResponse = await axios.get(RUNWAY_API_REQUEST_LINK, headers);
+  const responseStatusDataObjectResponse = await axios.get(RUNWAY_API_REQUEST_LINK, providerRequestAxiosOptions(headers));
 
   const responseStatusDataObject = responseStatusDataObjectResponse.data;
 

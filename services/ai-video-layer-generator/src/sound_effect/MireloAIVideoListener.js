@@ -1,3 +1,4 @@
+import { isProviderNetworkError, getProviderResultInfrastructureCode } from '../utils/ProviderNetworkRecovery.js';
 import { fal } from "@fal-ai/client";
 import { prepareFalSoundEffectSubmission } from '../billing/FalSoundEffectSubmission.js';
 const FAL_API_KEY = process.env.FAL_API_KEY;
@@ -73,6 +74,10 @@ export async function listenToPendingSoundEffectMireloVideoRequest(payload, depe
           throw new Error("Video URL not found in response");
         }
       } catch (err) {
+        const body = err?.body || err?.response?.data || err?.data;
+        const code = getProviderResultInfrastructureCode({ providerStatus: { status: err?.status || err?.response?.status, ...body } });
+        if (Array.isArray(body?.detail) && code) return { responseStatus: 'FAILED', providerFailureCode: code, providerFailureMessage: body.detail.map(x => x.msg).join('; ') };
+        if (isProviderNetworkError(err)) throw err;
         retries++;
         if (retries >= 3) {
           return {

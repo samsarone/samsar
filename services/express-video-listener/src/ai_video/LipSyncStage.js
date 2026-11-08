@@ -1,3 +1,5 @@
+import { isLipSyncInfrastructureFailure } from './ProviderNetworkFailure.js';
+
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -180,6 +182,11 @@ export function assessLipSyncFallback(stageAssessment = {}, {
   const failed = stageAssessment.failed || [];
   const incomplete = stageAssessment.incomplete || [];
   const pending = stageAssessment.pending || [];
+  const infrastructureFailure = (stageAssessment.required || [...failed, ...incomplete, ...pending])
+    .find(assessment => assessment.state !== 'COMPLETED' && isLipSyncInfrastructureFailure(assessment.layer));
+  if (infrastructureFailure) {
+    return { state: 'INFRASTRUCTURE_FAILURE', assessment: infrastructureFailure };
+  }
   const unresolved = incomplete.filter((assessment) =>
     assessment?.status !== 'COMPLETED'
   );

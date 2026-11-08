@@ -310,7 +310,7 @@ test('INIT lip sync enqueues a preflagged character layer before any request exi
   assert.equal(generationStatus.lip_sync_generation, 'PENDING');
   assert.deepEqual(calls.map(([operation]) => operation), ['update', 'enqueue']);
   assert.equal(calls[0][1]._id, 'session-1');
-  assert.equal(calls[0][2].$set.expressGenerationStatus.lip_sync_generation, 'PENDING');
+  assert.equal(calls[0][2].$set['expressGenerationStatus.lip_sync_generation'], 'PENDING');
   assert.equal(calls[1][1], 'session-1');
 });
 
@@ -367,4 +367,46 @@ test('lip-sync skip stores one reason without changing character or audio layers
   assert.equal(recordedUpdate.$set.lipSyncGenerationPending, false);
   assert.equal(recordedUpdate.$set.layers, undefined);
   assert.equal(recordedUpdate.$set.audioLayers, undefined);
+});
+
+test('concurrent INIT ticks claim lip-sync enqueue once', async () => {
+  let currentStage = 'INIT';
+  let generated = 0;
+  const updateSession = async (_filter, update) => {
+    if (currentStage !== 'INIT') return { matchedCount: 0, modifiedCount: 0 };
+    currentStage = update.$set['expressGenerationStatus.lip_sync_generation'];
+    return { matchedCount: 1, modifiedCount: 1 };
+  };
+  const results = await Promise.all([1, 2].map(() => __testOnly__.advanceInitialLipSyncStage(
+    'session', 'session', { lip_sync_generation: 'INIT' }, 'WAIT',
+    { updateSession, generateForSession: async () => { generated++; } },
+  )));
+  assert.equal(generated, 1);
+  assert.deepEqual(results.sort(), ['DEFERRED', 'PENDING']);
+});
+
+test('terminal network failure settles only after an active guarded update wins', async () => {
+  const session = {
+    _id: 'session', expressGenerationPending: true,
+    expressGenerationStatus: { audio_generation: 'FAILED' },
+    audioLayers: [{ _id: 'speech', generationStatus: 'FAILED' }],
+    providerNetworkFailure: { stage: 'audio_generation', audioLayerId: 'speech', requestId: 'request', code: 'PROVIDER_NETWORK_RETRY_EXHAUSTED', message: 'Connection recovery exhausted' },
+  };
+  let settled = 0;
+  let recorded;
+  const completeFailure = async () => { settled++; };
+  assert.equal(await __testOnly__.failSessionForProviderNetworkFailure(session, {
+    updateSession: async (filter, update) => { recorded = { filter, update }; return { modifiedCount: 0 }; }, completeFailure,
+  }), true);
+  assert.equal(settled, 0);
+  await __testOnly__.failSessionForProviderNetworkFailure(session, {
+    updateSession: async () => ({ modifiedCount: 1 }), completeFailure,
+  });
+  assert.equal(settled, 1);
+  assert.equal(recorded.filter['providerNetworkFailure.requestId'], 'request');
+  assert.equal(recorded.filter.audioLayers.$elemMatch._id, 'speech');
+  assert.equal(recorded.update.$set['expressGenerationStatus.audio_generation'], 'FAILED');
+  assert.equal(recorded.update.$set.expressGenerationPending, false);
+  assert.equal(recorded.update.$set.audioGenerationPending, false);
+  assert.equal(recorded.update.$set.undefined, undefined);
 });

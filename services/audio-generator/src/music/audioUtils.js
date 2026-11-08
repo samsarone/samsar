@@ -1,3 +1,4 @@
+import { rethrowAudioMediaDownloadError } from '../utils/ProviderSubmissionSafety.js';
 import fs from 'fs';
 import path from 'path';
 import { writeFile } from 'fs/promises';
@@ -244,7 +245,7 @@ export async function downloadAudioAsBuffer(audioUrl) {
   const response = await axios.get(audioUrl, {
     responseType: 'arraybuffer',
     timeout: 60000 // or as needed
-  });
+  }).catch(rethrowAudioMediaDownloadError);
   return Buffer.from(response.data);
 }
 

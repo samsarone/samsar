@@ -63,7 +63,7 @@ test('terminal lip sync failure persists its reason and keeps the base AI video'
   assert.equal(deletedGenerationId.toString(), generationId.toString());
 });
 
-test('an expired accepted Sync job clears only its layer and leaves the express session able to continue', async (t) => {
+test('an expired accepted Sync job persists a mandatory session failure without deleting its provider identity', async (t) => {
   Object.defineProperty(mongoose.connection, 'readyState', { configurable: true, value: 1 });
   t.after(() => { delete mongoose.connection.readyState; });
   t.mock.method(console, 'error', () => {});
@@ -100,8 +100,22 @@ test('an expired accepted Sync job clears only its layer and leaves the express 
   t.mock.method(VideoSession, 'findById', async () => session);
   t.mock.method(session, 'save', async () => session);
   t.mock.method(AIVideoLayerGeneration, 'findByIdAndDelete', async (id) => { deletedGenerationId = id; });
-  t.mock.method(AIVideoLayerGeneration, 'findByIdAndUpdate', async () => {
-    assert.fail('An expired accepted request must not create another provider attempt');
+  let retainedQueueUpdate;
+  t.mock.method(AIVideoLayerGeneration, 'findByIdAndUpdate', async (_id, update) => { retainedQueueUpdate = update.$set; });
+  const originalUpdateOne = VideoSession.updateOne.bind(VideoSession);
+  t.mock.method(VideoSession, 'updateOne', async (filter, update, options) => {
+    assert.equal(filter.expressGenerationPaused.$ne, true);
+    assert.equal(filter.expressGenerationCancelled.$ne, true);
+    assert.equal(filter.expressGenerationPending, true);
+    assert.equal(options.strict, false);
+    // Exercise the real Mongoose update caster before simulating persistence.
+    const query = originalUpdateOne(filter, update, options);
+    const cast = query._castUpdate(query.getUpdate());
+    for (const [key, value] of Object.entries(cast.$set)) {
+      if (key.startsWith('layers.$.')) session.layers[0].set(key.slice(9), value, { strict: false });
+      else session.set(key, value, { strict: false });
+    }
+    return { matchedCount: 1, modifiedCount: 1 };
   });
   t.mock.method(fal.queue, 'status', async () => {
     assert.fail('The deadline must stop polling the expired request');
@@ -127,5 +141,12 @@ test('an expired accepted Sync job clears only its layer and leaves the express 
   assert.equal(session.expressGenerationPending, true);
   assert.equal(session.expressGenerationFailed, false);
   assert.equal(JSON.stringify(session.toObject().layers.slice(1)), completedLayersBefore);
-  assert.equal(deletedGenerationId.toString(), generationId.toString());
+  assert.equal(deletedGenerationId, undefined);
+  assert.equal(retainedQueueUpdate.infrastructureFailureFinalized, true);
+  assert.equal(retainedQueueUpdate.infrastructureFailureCode, 'PROVIDER_NETWORK_WAIT_EXPIRED');
+  const persisted = session.toObject();
+  assert.equal(persisted.layers[0].lipSyncInfrastructureFailure, true);
+  assert.equal(persisted.layers[0].lipSyncVideoGenerationErrorCode, 'PROVIDER_NETWORK_WAIT_EXPIRED');
+  assert.equal(persisted.providerNetworkFailure.providerRequestId, 'accepted-provider-request');
+  assert.equal(persisted.providerNetworkFailure.requestId, generationId.toString());
 });
