@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { BrowserRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -89,6 +89,7 @@ beforeEach(() => {
   scenario.user = null;
   scenario.userFetching = false;
   scenario.userInitiated = true;
+  scenario.userLoadFailed = false;
   scenario.mobile = false;
   scenario.standalone = false;
   scenario.colorMode = 'dark';
@@ -110,6 +111,52 @@ beforeEach(() => {
 });
 
 describe('routing lifecycle and single-use handoff regressions', () => {
+  it.each(['/video/existing-project', '/vidgenie/existing-project'])('preserves %s after profile loading fails and allows retry', async (path) => {
+    scenario.authToken = 'valid-token';
+    scenario.userLoadFailed = true;
+    const view = await mount(path);
+    expect(location()).toBe(path);
+    expect(screen.getByRole('alert')).toBeVisible();
+    const callsBeforeRetry = scenario.getUserAPI.mock.calls.length;
+    scenario.getUserAPI.mockImplementation(async () => {
+      scenario.user = { _id: 'recovered-user' };
+      scenario.userLoadFailed = false;
+      return scenario.user;
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await settle();
+    view.rerender(homeTree());
+    await settle();
+    expect(location()).toBe(path);
+    expect(scenario.getUserAPI).toHaveBeenCalledTimes(callsBeforeRetry + 1);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('retries failed root authentication without redirecting valid credentials to login', async () => {
+    scenario.authToken = 'valid-token';
+    scenario.userInitiated = false;
+    scenario.getUserAPI.mockImplementation(async () => {
+      scenario.userInitiated = true;
+      scenario.userLoadFailed = true;
+      return null;
+    });
+    const view = await mount('/');
+    view.rerender(homeTree());
+    await settle();
+    expect(location()).toBe('/');
+    expect(screen.getByRole('alert')).toBeVisible();
+    expect(scenario.getUserAPI).toHaveBeenCalledOnce();
+    scenario.getUserAPI.mockImplementation(async () => {
+      scenario.userLoadFailed = false;
+      scenario.user = { _id: 'recovered-user' };
+      return scenario.user;
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await settle();
+    expect(scenario.getUserAPI).toHaveBeenCalledTimes(2);
+    expect(location()).toBe('/vidgenie/default-project');
+  });
+
   it.each(['/video/project-123', '/vidgemie/project-123'])('preserves public options without forwarding credentials from %s', async (path) => {
     scenario.mobile = true;
     await mount(`${path}?authToken=secret&theme=watercolor`);
@@ -525,6 +572,7 @@ describe('authenticated root bootstrap', () => {
   it('returns an expired root token to login', async () => {
     scenario.authToken = 'expired-token';
     scenario.userInitiated = false;
+    scenario.getUserAPI.mockImplementation(async () => { scenario.authToken = null; return null; });
     await mount('/');
     expect(location()).toBe('/login');
     expect(scenario.resolvePostAuthDestination).not.toHaveBeenCalled();
@@ -549,6 +597,7 @@ describe('login token handoff', () => {
     await mount('/login?loginToken=handoff-token&redirect=%2Faccount%2Fsettings');
     expect(axios.get).toHaveBeenCalledWith(expect.stringMatching(/\/users\/verify_token$/), {
       params: { loginToken: 'handoff-token', _: expect.any(Number) },
+      timeout: 30000, signal: expect.any(AbortSignal),
     });
     expect(scenario.persistAuthToken).toHaveBeenCalledWith('new-auth-token');
     expect(location()).toBe('/account/settings');

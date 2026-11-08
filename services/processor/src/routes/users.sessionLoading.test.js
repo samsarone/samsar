@@ -43,3 +43,12 @@ test('invalid tokens fail before reading user data', async (t) => {
   assert.equal(res.code, 400);
   assert.equal(lookup.mock.callCount(), 0);
 });
+
+test('a database failure during token verification is a server failure, not invalid credentials', async (t) => {
+  setup(t);
+  t.mock.method(User, 'findOne', async () => { throw new Error('Database temporarily unavailable'); });
+  const res = response();
+  await handler({ query: {}, headers: { authorization: `Bearer ${generateAuthToken('owner')}` } }, res);
+  assert.equal(res.code, 500);
+  assert.match(res.headers['Cache-Control'], /no-store/);
+});

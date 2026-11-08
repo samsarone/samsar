@@ -419,15 +419,15 @@ export default function ListVideoSessions() {
 
   // Navigation
   const gotoPage = (event, session) => {
-    const sessionIdentifier = session?.id ?? session?._id;
-    if (!sessionIdentifier) {
-      return;
-    }
-
-    const newSessionId = sessionIdentifier.toString();
+    const newSessionId = getSessionIdentifier(session);
+    if (!newSessionId) return;
     rememberSessionLoadingLayout(session);
-    localStorage.setItem('sessionId', newSessionId);
-    localStorage.setItem('videoSessionId', newSessionId);
+    try {
+      localStorage.setItem('sessionId', newSessionId);
+      localStorage.setItem('videoSessionId', newSessionId);
+    } catch {
+      // A full/blocked browser store must not prevent opening the selected URL.
+    }
 
     if (event?.metaKey || event?.ctrlKey) {
       window.open(`/video/${newSessionId}`, '_blank', 'noopener,noreferrer');

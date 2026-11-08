@@ -66,11 +66,11 @@ function CurrentLocation() {
   return <output aria-label="Current route">{location.pathname}</output>;
 }
 
-async function mountEditor({ path = '/vidgenie/project-1', state } = {}) {
+async function mountEditor({ path = '/vidgenie/project-1', state, initialSessionRequestRef } = {}) {
   let view;
   await act(async () => { view = render(<MemoryRouter initialEntries={[{ pathname: path, state }]}>
     <LocalizationProvider><CurrentLocation /><Routes>
-      <Route path="/vidgenie/:id" element={<OneshotEditor />} />
+      <Route path="/vidgenie/:id" element={<OneshotEditor initialSessionRequestRef={initialSessionRequestRef} />} />
       <Route path="*" element={<div>Destination page</div>} />
     </Routes></LocalizationProvider>
   </MemoryRouter>); });
@@ -84,6 +84,16 @@ async function submitPrompt(prompt = 'A river flowing through an ancient city.')
 }
 
 describe('VidGenie project loading and wizard requests', () => {
+  it('renders a completed project from the route preload without requesting it again', async () => {
+    const session = { ...harness.session, inputPrompt: 'Preloaded story', isExpressGeneration: true, videoLink: 'https://media.example/final.mp4' };
+    const initialSessionRequestRef = { current: { sessionId: 'project-1', authorization: 'Bearer integration-token', promise: Promise.resolve({ data: session }) } };
+    await mountEditor({ initialSessionRequestRef });
+    expect(screen.getByText('Video ready')).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Preview result' })).toHaveAttribute('href', session.videoLink);
+    expect(axios.get).not.toHaveBeenCalled();
+    expect(initialSessionRequestRef.current).toBeNull();
+  });
+
   it('loads the route project with authorization and restores its prompt', async () => {
     harness.session.inputPrompt = 'Saved story';
     await mountEditor();

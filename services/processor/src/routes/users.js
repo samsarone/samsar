@@ -140,7 +140,11 @@ router.get('/verify_token', async (req, res) => {
 
     res.send(formatUserClientProfile(user));
   } catch (e) {
-    res.status(400).send({ error: e.message });
+    const invalidCredentials = ['JsonWebTokenError', 'TokenExpiredError', 'NotBeforeError'].includes(e?.name)
+      || ['User not found', 'External user not found', 'Invalid login token', 'authToken is required', 'loginToken is required'].includes(e?.message);
+    // Transient database/configuration errors must not tell clients to erase a
+    // valid login. Preserve explicit auth failures and their existing contract.
+    res.status(e?.statusCode || e?.status || (invalidCredentials ? 400 : 500)).send({ error: e.message });
   }
 });
 

@@ -1,3 +1,4 @@
+import { boundedGet } from '../utils/deduplicatedGet.mjs';
 import { useState, useContext, createContext, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { getHeaders, getAuthToken, clearAuthData } from '../utils/web'; // Adjust the path if needed
@@ -27,6 +28,7 @@ const UserContext = createContext({
   getUserAPI: () => null,
   userFetching: false,
   userInitiated: false,
+  userLoadFailed: false,
 });
 
 export const UserProvider = ({ children }) => {
@@ -35,14 +37,18 @@ export const UserProvider = ({ children }) => {
   const [userFetching, setUserFetching] = useState(initialAuthState.userFetching);
   const [userInitiated, setUserInitiated] = useState(initialAuthState.userInitiated);
   const authRequestSequence = useRef(0);
+  const profileAuthTokenRef = useRef(null);
+  const [userLoadFailed, setUserLoadFailed] = useState(false);
 
   const setUserApi = () => {
     // Placeholder for future use
   };
 
-  const setUser = (profile) => {
+  const setUser = useCallback((profile) => {
+    profileAuthTokenRef.current = profile ? getAuthToken() : null;
+    setUserLoadFailed(false);
     setUserState(profile);
-  };
+  }, []);
 
   const getUser = () => user;
 
@@ -50,6 +56,8 @@ export const UserProvider = ({ children }) => {
     authRequestSequence.current += 1;
     setUserState(null);
     clearAuthData();
+    profileAuthTokenRef.current = null;
+    setUserLoadFailed(false);
     setUserFetching(false);
     setUserInitiated(true);
   }, []);
@@ -58,6 +66,7 @@ export const UserProvider = ({ children }) => {
     const requestSequence = ++authRequestSequence.current;
     const isLatestRequest = () => authRequestSequence.current === requestSequence;
     const authToken = getAuthToken();
+    setUserLoadFailed(false);
 
     if (!authToken || authToken === 'undefined') {
       setUserFetching(false);
@@ -69,20 +78,27 @@ export const UserProvider = ({ children }) => {
 
     try {
       const authHeaders = getHeaders();
-      const res = await axios.get(`${PROCESSOR_SERVER}/users/verify_token`, {
+      const res = await boundedGet(axios, `${PROCESSOR_SERVER}/users/verify_token`, {
         ...(authHeaders || {}),
         params: { _: Date.now() },
       });
       if (!isLatestRequest()) return null;
       const userProfile = res.data;
+      profileAuthTokenRef.current = authToken;
       setUserState(userProfile);
       setUserInitiated(true);
       return userProfile;
     } catch (error) {
       if (!isLatestRequest()) return null;
-      setUserState(null);
       if ([400, 401, 403].includes(error?.response?.status)) {
+        setUserState(null);
+        profileAuthTokenRef.current = null;
         clearAuthData();
+      } else {
+        // Keep an already verified profile for this credential during a
+        // transient refresh failure; never retain one from another account.
+        if (profileAuthTokenRef.current !== authToken) setUserState(null);
+        setUserLoadFailed(true);
       }
       setUserInitiated(true);
       return null;
@@ -102,6 +118,7 @@ export const UserProvider = ({ children }) => {
         setUser,
         userFetching,
         userInitiated,
+        userLoadFailed,
       }}
     >
       {children}
