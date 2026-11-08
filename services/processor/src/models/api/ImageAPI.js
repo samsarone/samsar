@@ -24,7 +24,7 @@ import { createCompatibleChatCompletion } from '../ai_utils/OpenAICompat.js';
 import { getReasoningModelBase, isGPTModel } from '../../inference/ReasoningModels.js';
 import { isClaudeModel } from '../../inference/AnthropicChatAdapter.js';
 import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
-import { getRetiredGPTImageModelError } from '../../consts/GPTImageModelKeys.js';
+import { getRetiredGPTImageModelError, normalizeGPTImageRequestModelKey } from '../../consts/GPTImageModelKeys.js';
 import {
   QWEN_IMAGE_3_PRO_MODEL_KEY,
   isAlibabaQwenImage3ProAvailable,
@@ -234,7 +234,7 @@ export function normalizeTextToImageRequestOptions(payload = {}) {
   const model = isCustomModel
     ? rawModel
     : rawModel
-      ? rawModel.toUpperCase()
+      ? normalizeGPTImageRequestModelKey(rawModel.toUpperCase())
       : DEFAULT_TEXT_TO_IMAGE_MODEL;
   if (isCustomModel && !isStandaloneEdition()) {
     throw createBadRequestError('Custom text-to-image models are only available in standalone deployments.');
@@ -395,7 +395,7 @@ export async function updateImageSet(payload = {}) {
     apiEditStatus: 'INIT',
     rowLocked: false,
     operationType: 'EDIT',
-    model: payload?.mode || 'NANOBANANA2EDIT',
+    model: normalizeGPTImageRequestModelKey(payload?.mode) || 'NANOBANANA2EDIT',
     requestType: 'API',
     prompt: generatedPrompt,
     aspectRatio: normalizedAspectRatio,
@@ -668,7 +668,7 @@ export async function enhanceImage(payload = {}) {
     apiEditStatus: 'INIT',
     rowLocked: false,
     operationType: 'EDIT',
-    model: mode || 'NANOBANANA2EDIT',
+    model: normalizeGPTImageRequestModelKey(mode) || 'NANOBANANA2EDIT',
     requestType: 'API',
  
     aspectRatio: normalizedAspectRatio,

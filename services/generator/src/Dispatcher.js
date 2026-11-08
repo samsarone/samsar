@@ -1,3 +1,4 @@
+import { normalizeStoredGPTImageModelKey } from './consts/GPTImageModelKeys.js';
 import { IMAGE_GENERAITON_MODEL_TYPES, IMAGE_EDIT_MODEL_TYPES } from './constants.js';
 import axios from 'axios';
 import path from 'path';
@@ -36,6 +37,7 @@ export async function getImageFromText(payload) {
 }
 
 export async function getEditImageFromText(payload) {
+  payload = { ...payload, model: normalizeStoredGPTImageModelKey(payload.model) };
 
   const { prompt, model, image, maskImage, guidanceScale, numInferenceSteps, strength } = payload;
 

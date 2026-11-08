@@ -1,5 +1,5 @@
 import { normalizeKlingModelKey } from '../../utils/KlingModel.js';
-import { getRetiredGPTImageModelError, normalizeStoredGPTImageModelKey } from '../../consts/GPTImageModelKeys.js';
+import { getRetiredGPTImageModelError, normalizeStoredGPTImageModelKey, normalizeGPTImageRequestModelKey } from '../../consts/GPTImageModelKeys.js';
 import mongoose from 'mongoose';
 
 import {
@@ -211,6 +211,7 @@ export function resolveNarrativeToVideoModels({
   requestedVideoModel = normalizeKlingModelKey(requestedVideoModel);
   const retiredModelError = getRetiredGPTImageModelError(requestedImageModel);
   if (retiredModelError) throw buildError(retiredModelError, 400, 'INVALID_IMAGE_MODEL');
+  requestedImageModel = normalizeGPTImageRequestModelKey(requestedImageModel);
   assertProvidedModelIsValid(
     requestedImageModel,
     isValidExpressImageModel,

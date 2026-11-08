@@ -121,7 +121,7 @@ The adapter policy is shared by the processor, generator, audio generator, AI vi
 
 ## Model Groups Used by Video APIs
 
-Use the stable keys `GPTIMAGE2.5` for GPTImage 2.6 Sunburst (High) and `GPTIMAGE2.5EDIT` for editing. OpenAI generation and editing use `gpt-image-2.6-sunburst`; fal generation uses `openai/gpt-image-2.6/sunburst/text-to-image`. The request keys and Studio price tables are unchanged. Queued 2.5 jobs keep their submitted model or endpoint. Retired `GPTIMAGE2` and `GPTIMAGE2EDIT` keys are rejected for new requests. Other model keys remain stable: `SEEDREAM` → Seedream 5 Pro; `HAPPYHORSEI2V` → Happy Horse 1.1 I2V.
+Use `GPTIMAGE2.6` for GPTImage 2.6 Sunburst (High) and `GPTIMAGE2.6EDIT` for editing. The API also accepts `GPTIMAGE2.5` and `GPTIMAGE2.5EDIT`; both versions normalize to the existing internal routing and pricing keys. OpenAI generation and editing use `gpt-image-2.6-sunburst`; fal generation uses `openai/gpt-image-2.6/sunburst/text-to-image`. Existing request keys and Studio price tables remain supported. Queued 2.5 jobs keep their submitted model or endpoint. Retired `GPTIMAGE2` and `GPTIMAGE2EDIT` keys are rejected for new requests. Other model keys remain stable: `SEEDREAM` → Seedream 5 Pro; `HAPPYHORSEI2V` → Happy Horse 1.1 I2V.
 
 | Workflow | Selection rule | Reference |
 | --- | --- | --- |

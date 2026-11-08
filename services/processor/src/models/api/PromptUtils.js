@@ -12,7 +12,7 @@ import {
   isAlibabaQwenImage3ProAvailable,
 } from '../../consts/DockerProviderPriority.js';
 import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
-import { getRetiredGPTImageModelError } from '../../consts/GPTImageModelKeys.js';
+import { getRetiredGPTImageModelError, normalizeGPTImageRequestModelKey } from '../../consts/GPTImageModelKeys.js';
 
 export const MAX_MOVIE_PROMPT_LENGTH = 4000;
 export const CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX = 'CUSTOM_TEXT_TO_IMAGE:';
@@ -23,7 +23,7 @@ export const DEPRECATED_VIDEO_MODEL_SUBTYPE_PAYLOAD_KEYS = [
 ];
 
 function resolveImageModelAlias(modelKey) {
-  return modelKey;
+  return normalizeGPTImageRequestModelKey(modelKey);
 }
 
 export function isCustomTextToImageModelKey(modelKey) {

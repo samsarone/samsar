@@ -1,3 +1,4 @@
+import { normalizeGPTImageRequestModelKey } from '../../consts/GPTImageModelKeys.js';
 import VideoSession from "../../schema/VideoSession.js";
 import { beginHostedAgentBilling, settleHostedAgentBilling } from '../HostedAgentBilling.js';
 import ExpressGenerationBuilderRequest from '../../schema/ExpressGenerationBuilderRequest.js';
@@ -456,7 +457,10 @@ async function requestCreateVideoInternal(userId, payload = {}, webhookUrl, {
   preparedNarrativeArtifacts = null,
 } = {}) {
 
-  payload = applyDockerSubtitleAvailability(payload);
+  payload = applyDockerSubtitleAvailability({ ...payload,
+    ...(payload.image_model !== undefined ? { image_model: normalizeGPTImageRequestModelKey(payload.image_model) } : {}),
+    ...(payload.imageModel !== undefined ? { imageModel: normalizeGPTImageRequestModelKey(payload.imageModel) } : {}),
+  });
 
   await getDBConnectionString();
   const existingAdmission = await existingHostedAdmissionResponse(userId, payload);
@@ -1001,7 +1005,10 @@ export async function requestCreateVideoFromImageListAndMetadata(userId, payload
   const existingAdmission = await existingHostedAdmissionResponse(userId, payload);
   if (existingAdmission) return existingAdmission;
 
-  payload = applyDockerSubtitleAvailability(payload);
+  payload = applyDockerSubtitleAvailability({ ...payload,
+    ...(payload.image_model !== undefined ? { image_model: normalizeGPTImageRequestModelKey(payload.image_model) } : {}),
+    ...(payload.imageModel !== undefined ? { imageModel: normalizeGPTImageRequestModelKey(payload.imageModel) } : {}),
+  });
 
   logImageListToVideoPayload(payload);
 
