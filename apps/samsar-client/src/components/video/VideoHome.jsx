@@ -1,5 +1,6 @@
-import StudioPostProcessingPreview from './StudioPostProcessingPreview.jsx';
-import { hasStudioPreviewMedia, readStudioPostProcessingHandoff } from './util/studioPostProcessingPreview.js';
+import { consumeInitialSessionDetails, sessionAuthorization } from '../../utils/sessionDetailsRequest.js';
+import SessionLoadError from '../common/SessionLoadError.jsx';
+import { readStudioPostProcessingHandoff } from './util/studioPostProcessingHandoff.js';
 import { canFallbackToVideoStatus } from '../../utils/sessionLoadingPolicy.mjs';
 import ExpressPostProcessingDialog from './advanced/ExpressPostProcessingDialog.jsx';
 import { studioAssistantView } from '../../utils/assistantContext.js';
@@ -761,7 +762,7 @@ function mergePreviewAudioLayers(sessionAudioLayers, workingAudioLayers) {
   return mergedAudioLayers;
 }
 
-export default function VideoHome() {
+export default function VideoHome({ initialSessionRequestRef } = {}) {
   useUiLanguage();
   const {
     setZoomCanvasIn,
@@ -874,7 +875,12 @@ export default function VideoHome() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { user } = useUser();
+  const { user, userFetching, userInitiated } = useUser();
+  const sessionAuthKey = sessionAuthorization(getHeaders());
+  const shouldWaitForSessionAuth = !isReadOnlyShareView && !sessionAuthKey
+    && (userInitiated === false || (userFetching && !user?._id));
+  const [sessionLoadError, setSessionLoadError] = useState('');
+  const [sessionLoadAttempt, setSessionLoadAttempt] = useState(0);
   const { t } = useLocalization();
   const { colorMode } = useColorMode();
 
@@ -884,16 +890,12 @@ export default function VideoHome() {
   );
   const studioPostProcessingHandoffRef = useRef(null);
   studioPostProcessingHandoffRef.current = studioPostProcessingHandoff;
-  const showPostProcessingPreview = Boolean(
-    studioPostProcessingHandoff?.previewVideoUrl &&
-    (isVideoGenerating || isSessionRenderPending(videoSessionDetails)) &&
-    !hasStudioPreviewMedia(videoSessionDetails, import.meta.env.VITE_PROCESSOR_API, import.meta.env.VITE_STATIC_CDN_URL)
-  );
+  const isExpressStudioSession = Boolean(videoSessionDetails?.isExpressGeneration || studioPostProcessingHandoff);
 
   useEffect(() => {
-    // A freshly opened preparation session has no VideoCanvas to initialize the nav.
-    if (showPostProcessingPreview) setNavIsExpressGeneration?.(true);
-  }, [showPostProcessingPreview, setNavIsExpressGeneration]);
+    // Keep Express navigation available before the target session has its first scene.
+    setNavIsExpressGeneration?.(isExpressStudioSession);
+  }, [isExpressStudioSession, setNavIsExpressGeneration]);
 
   const [isUpdateLayerPending, setIsUpdateLayerPending] = useState(false);
 
@@ -911,7 +913,6 @@ export default function VideoHome() {
           userId: user?._id,
           sourceSessionId: id,
           requestId: postProcessing.requestId || nextSessionId,
-          previewVideoUrl: renderedVideoPath || downloadLink || resolveCompletedSessionVideoUrl(videoSessionDetails),
         } : {}),
       })
     );
@@ -1025,6 +1026,7 @@ export default function VideoHome() {
     }
     setSharedSessionId(null);
     setVideoSessionDetails(null);
+    setSessionLoadError('');
     setSelectedLayerIndex(0);
     setCurrentLayer({});
     setLayers([]);
@@ -1634,20 +1636,19 @@ export default function VideoHome() {
   };
 
   useEffect(() => {
+    if (shouldWaitForSessionAuth) return undefined;
     let isCancelled = false;
     const headers = getHeaders();
+    setSessionLoadError('');
 
     const sessionDetailsRequest = isReadOnlyShareView
-      ? axios.get(`${PROCESSOR_API_URL}/video_sessions/share/${encodeURIComponent(shareToken)}`, headers || undefined)
+      ? deduplicatedGet(axios, `${PROCESSOR_API_URL}/video_sessions/share/${encodeURIComponent(shareToken)}`, headers || undefined)
       : isEditableShareView
-        ? axios.get(
+        ? deduplicatedGet(axios,
           `${PROCESSOR_API_URL}/video_sessions/editable_share/${encodeURIComponent(editableShareToken)}`,
           headers || undefined
         )
-        : deduplicatedGet(axios,
-          `${PROCESSOR_API_URL}/video_sessions/session_details?id=${encodeURIComponent(routeSessionId)}&cacheBust=${Date.now()}`,
-          headers
-        );
+        : consumeInitialSessionDetails(PROCESSOR_API_URL, routeSessionId, headers, initialSessionRequestRef);
 
     const previewableSessionDetailsRequest = isSharedSessionView
       ? sessionDetailsRequest
@@ -1669,6 +1670,9 @@ export default function VideoHome() {
     previewableSessionDetailsRequest.then((dataRes) => {
       if (isCancelled) {
         return;
+      }
+      if (!dataRes?.data || typeof dataRes.data !== 'object' || !dataRes.data._id) {
+        throw new Error(uiText("The project could not be loaded. Please try again."));
       }
       const sessionDetails = normalizeGuestSessionForStudio(dataRes.data);
       const resolvedSessionId = sessionDetails?._id?.toString?.() || sessionDetails?._id || routeSessionId;
@@ -1723,6 +1727,7 @@ export default function VideoHome() {
       if (isCancelled) {
         return;
       }
+      setSessionLoadError(err?.response?.data?.error || err?.message || uiText("The project could not be loaded. Please try again."));
       if (isReadOnlyShareView) {
         toast.error(uiText("This shared session link is unavailable."), {
           position: 'bottom-center',
@@ -1775,6 +1780,9 @@ export default function VideoHome() {
     navigate,
     routeSessionId,
     shareToken,
+    sessionAuthKey,
+    shouldWaitForSessionAuth,
+    sessionLoadAttempt,
   ]);
 
   useEffect(() => {
@@ -3783,7 +3791,7 @@ export default function VideoHome() {
     }
 
     startVideoRenderPoll();
-  }, [closeAlertDialog, id, navigate, user?._id, renderedVideoPath, downloadLink, videoSessionDetails]);
+  }, [closeAlertDialog, id, navigate, user?._id]);
 
   const openAdvancedVideoEditDialog = useCallback(() => {
     if (isSharedSessionView && !requestEditableSharedSession()) {
@@ -4022,6 +4030,7 @@ export default function VideoHome() {
   }, [videoSessionDetails]);
 
   if (!videoSessionDetails) {
+    if (sessionLoadError) return <SessionLoadError message={sessionLoadError} onRetry={() => setSessionLoadAttempt(attempt => attempt + 1)} />;
     return <StudioSkeletonLoader />;
   }
 
@@ -4427,7 +4436,7 @@ export default function VideoHome() {
         setIsCanvasDirty={setIsCanvasDirty}
         updateCurrentLayer={updateCurrentLayer}
         applyAnimationToAllLayers={applyAnimationToAllLayers}
-        isExpressGeneration={videoSessionDetails.isExpressGeneration}
+        isExpressGeneration={isExpressStudioSession}
         aspectRatio={videoSessionDetails.aspectRatio}
         displayZoomType={displayZoomType}
         toggleStageZoom={toggleStageZoom}
@@ -4532,7 +4541,7 @@ export default function VideoHome() {
           showLoginDialog={showLoginDialog}
         />
       )}
-      {!showPostProcessingPreview && <PreviewPlaybackController
+      <PreviewPlaybackController
         applyAudioDucking={applyAudioDucking}
         audioLayers={previewAudioLayers}
         isVisualReady={isVisualReady}
@@ -4545,7 +4554,7 @@ export default function VideoHome() {
         setIsVideoPreviewPlaying={setIsVideoPreviewPlaying}
         suspendAudioPreview={isRecordSpeechRecording}
         totalDuration={totalDuration}
-      />}
+      />
       <div
         className='relative box-border h-[100dvh] overflow-hidden px-4 pb-4'
         style={{ paddingTop: 'calc(var(--app-nav-height) + var(--workspace-inset))' }}
@@ -4633,7 +4642,7 @@ export default function VideoHome() {
                 requestRealignLayers={requestRealignLayers}
                 restartExpressRenderFromCheckpoint={restartExpressRenderFromCheckpoint}
                 cancelPendingRender={cancelPendingRender}
-                isExpressSession={Boolean(videoSessionDetails?.isExpressGeneration)}
+                isExpressSession={isExpressStudioSession}
                 framesPerSecond={videoSessionDetails?.framesPerSecond ?? 24}
               />
             </div>
@@ -4647,14 +4656,7 @@ export default function VideoHome() {
                     <ScreenLoader />
                   </div>
                 )}
-                {showPostProcessingPreview ? (
-                  <StudioPostProcessingPreview
-                    key={id}
-                    src={studioPostProcessingHandoff.previewVideoUrl}
-                    isPlaying={isVideoPreviewPlaying}
-                    setIsPlaying={setIsVideoPreviewPlaying}
-                  />
-                ) : editorContainerDisplay}
+                {editorContainerDisplay}
               </div>
             </div>
             <AssistantHome

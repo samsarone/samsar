@@ -64,6 +64,31 @@ it('preserves stored authentication after a transient server failure', async () 
   await act(async () => { await result.current.getUserAPI(); });
   expect(clearAuthData).not.toHaveBeenCalled();
   expect(result.current.userFetching).toBe(false);
+  expect(result.current.userLoadFailed).toBe(true);
+  axios.get.mockResolvedValue({ data: { _id: 'user-a' } });
+  await act(async () => { await result.current.getUserAPI(); });
+  expect(result.current.userLoadFailed).toBe(false);
+  expect(result.current.user).toEqual({ _id: 'user-a' });
+});
+
+it('keeps the same authenticated profile when a background refresh temporarily fails', async () => {
+  axios.get.mockResolvedValueOnce({ data: { _id: 'user-a' } }).mockRejectedValueOnce({ response: { status: 500 } });
+  const { result } = renderHook(useUser, { wrapper: UserProvider });
+  await act(async () => { await result.current.getUserAPI(); });
+  await act(async () => { await result.current.getUserAPI(); });
+  expect(result.current.user).toEqual({ _id: 'user-a' });
+  expect(clearAuthData).not.toHaveBeenCalled();
+});
+
+it('does not retain a different account when verification of a changed credential fails', async () => {
+  axios.get.mockResolvedValueOnce({ data: { _id: 'user-a' } }).mockRejectedValueOnce({ response: { status: 500 } });
+  const { result } = renderHook(useUser, { wrapper: UserProvider });
+  await act(async () => { await result.current.getUserAPI(); });
+  getAuthToken.mockReturnValue('other-account-token');
+  await act(async () => { await result.current.getUserAPI(); });
+  expect(result.current.user).toBeNull();
+  expect(result.current.userLoadFailed).toBe(true);
+  expect(clearAuthData).not.toHaveBeenCalled();
 });
 
 it('does not restore a user from an outstanding request after logout', async () => {

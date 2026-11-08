@@ -1,3 +1,6 @@
+import SessionLoadError from '../common/SessionLoadError.jsx';
+import { boundedGet } from '../../utils/deduplicatedGet.mjs';
+import useSessionDetailsPreload from '../../hooks/useSessionDetailsPreload.js';
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { translateText as uiText } from '../../utils/localization.js';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -175,9 +178,10 @@ function DefaultAuthenticatedRoute({ user, isMobile, search }) {
 
 export default function Home() {
   useUiLanguage();
-  const { user, getUserAPI, resetUser, userFetching, userInitiated } = useUser();
+  const { user, getUserAPI, resetUser, userFetching, userInitiated, userLoadFailed } = useUser();
   const navigate = useNavigate();
-  const location = useLocation(); 
+  const location = useLocation();
+  const initialSessionRequestRef = useSessionDetailsPreload(location.pathname, PROCESSOR_SERVER);
   const isMobile = useMediaQuery({ query: '(max-width: 767px)' });
 
   const { colorMode } = useColorMode();
@@ -203,6 +207,7 @@ export default function Home() {
     Boolean(initialEntryRef.current?.hasAuthToken) &&
     !initialEntryRef.current?.hasLoginToken &&
     initialEntryRef.current?.pathname === '/';
+  const [authRetryAttempt, setAuthRetryAttempt] = useState(0);
   const [initialAuthenticatedRootStatus, setInitialAuthenticatedRootStatus] = useState(
     shouldResolveInitialAuthenticatedRoot ? 'pending' : 'done'
   );
@@ -261,7 +266,7 @@ export default function Home() {
   })();
 
   useEffect(() => {
-    if (hasPendingLoginToken) return;
+    if (hasPendingLoginToken || userLoadFailed) return;
     if (initialAuthenticatedRootStatus === 'pending') return;
     if (!userInitiated || userFetching) return;
     if (location.pathname === '/') return;
@@ -285,6 +290,7 @@ export default function Home() {
     }
   }, [
     hasPendingLoginToken,
+    userLoadFailed,
     initialAuthenticatedRootStatus,
     userInitiated,
     userFetching,
@@ -334,7 +340,7 @@ export default function Home() {
     if (!operation.promise) {
       operation.promise = (async () => {
         let resolvedUser = user;
-        if (!userInitiated || userFetching) {
+        if (!userInitiated || userFetching || userLoadFailed) {
           if (initialRootHydrationRef.current?.authToken !== authToken) {
             initialRootHydrationRef.current = {
               authToken,
@@ -350,7 +356,9 @@ export default function Home() {
         if (!operation.active) return null;
 
         if (!resolvedUser?._id) {
-          return '/login';
+          // An unreachable profile endpoint leaves credentials intact. Keep
+          // this route available for retry instead of redirecting as a guest.
+          return getAuthToken() ? null : '/login';
         }
 
         if (resolvedUser.isExternalUser) {
@@ -389,6 +397,8 @@ export default function Home() {
     };
   }, [
     getUserAPI,
+    authRetryAttempt,
+    userLoadFailed,
     initialAuthenticatedRootStatus,
     isMobile,
     location.pathname,
@@ -448,7 +458,7 @@ export default function Home() {
     if (operation?.token !== loginToken) {
       operation = {
         token: loginToken,
-        verification: Promise.resolve().then(() => axios.get(`${PROCESSOR_SERVER}/users/verify_token`, {
+        verification: Promise.resolve().then(() => boundedGet(axios, `${PROCESSOR_SERVER}/users/verify_token`, {
           params: { loginToken, _: Date.now() },
         })),
         authentication: null,
@@ -555,6 +565,19 @@ export default function Home() {
     !user?._id &&
     !STANDALONE_PUBLIC_AUTH_PATHS.has(location.pathname);
 
+  if (userLoadFailed && !user?._id && !hasPendingLoginToken) {
+    return <SessionLoadError
+      message={uiText("The project could not be loaded. Please try again.")}
+      onRetry={() => {
+        initialSessionRequestRef.current = null;
+        initialRootHydrationRef.current = null;
+        initialRootResolutionRef.current = null;
+        if (initialAuthenticatedRootStatus === 'pending') setAuthRetryAttempt(attempt => attempt + 1);
+        else void getUserAPI();
+      }}
+    />;
+  }
+
   if (initialAuthenticatedRootStatus === 'pending') {
     return (
       <div className={bodyBGColor}>
@@ -573,7 +596,10 @@ export default function Home() {
 
   return (
     <div className={bodyBGColor}>
-      <Suspense fallback={routeLoadingFallback}>
+      <Suspense
+        key={/^\/(?:video|vidgenie|vidgpt|videogpt|vidgemie)\//.test(location.pathname) ? location.pathname : 'workspace'}
+        fallback={routeLoadingFallback}
+      >
         <Routes>
           <Route
             path="/"
@@ -590,23 +616,23 @@ export default function Home() {
           <Route path="/generations" element={<GenerationsHome />} />
           <Route path="/session/:id" element={<EditorHome />} />
           <Route path="/video" element={isMobile ? <MobileVideoLandingHome /> : <VideoEditorLandingHome />} />
-          <Route path="/video/share/:shareToken" element={isMobile ? <SharedVideoDesktopOnlyMessage /> : <VideoHome />} />
-          <Route path="/video/collab/:editableShareToken" element={isMobile ? <SharedVideoDesktopOnlyMessage /> : <VideoHome />} />
-          <Route path="/video/:id" element={isMobile ? <MobileStudioSessionRedirect /> : <VideoHome />} />
+          <Route path="/video/share/:shareToken" element={isMobile ? <SharedVideoDesktopOnlyMessage /> : <VideoHome initialSessionRequestRef={initialSessionRequestRef} />} />
+          <Route path="/video/collab/:editableShareToken" element={isMobile ? <SharedVideoDesktopOnlyMessage /> : <VideoHome initialSessionRequestRef={initialSessionRequestRef} />} />
+          <Route path="/video/:id" element={isMobile ? <MobileStudioSessionRedirect /> : <VideoHome initialSessionRequestRef={initialSessionRequestRef} />} />
           <Route path="/image/studio" element={<ImageStudioLandingHome />} />
           <Route path="/image/studio/:id" element={<ImageStudioHome />} />
           <Route path="/audio/studio" element={<AudioStudioHome />} />
           <Route path="/iamge/studio" element={<ImageStudioLandingHome />} />
           <Route path="/iamge/studio/:id" element={<ImageStudioHome />} />
           <Route path="/external/studio" element={<ExternalStudioDashboard />} />
-          <Route path="/quick_video/:id" element={isMobile ? <OneshotEditorContainer /> : <QuickEditorContainer />} />
-          <Route path="/quick_video" element={isMobile ? <OneshotEditorContainer /> : <QuickEditorLandingHome />} />
-          <Route path="/vidgpt" element={<OneshotEditorContainer />} />
-          <Route path="/vidgpt/:id" element={<OneshotEditorContainer />} />
+          <Route path="/quick_video/:id" element={isMobile ? <OneshotEditorContainer initialSessionRequestRef={initialSessionRequestRef} /> : <QuickEditorContainer />} />
+          <Route path="/quick_video" element={isMobile ? <OneshotEditorContainer initialSessionRequestRef={initialSessionRequestRef} /> : <QuickEditorLandingHome />} />
+          <Route path="/vidgpt" element={<OneshotEditorContainer initialSessionRequestRef={initialSessionRequestRef} />} />
+          <Route path="/vidgpt/:id" element={<OneshotEditorContainer initialSessionRequestRef={initialSessionRequestRef} />} />
           <Route path="/vidgemie" element={<VidgenieRouteRedirect />} />
           <Route path="/vidgemie/:id" element={<VidgenieRouteRedirect />} />
-          <Route path="/vidgenie" element={<OneshotEditorContainer />} />
-          <Route path="/vidgenie/:id" element={<OneshotEditorContainer />} />
+          <Route path="/vidgenie" element={<OneshotEditorContainer initialSessionRequestRef={initialSessionRequestRef} />} />
+          <Route path="/vidgenie/:id" element={<OneshotEditorContainer initialSessionRequestRef={initialSessionRequestRef} />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/forgot_password" element={<ForgotPasswordPage />} />
           <Route path="/register" element={<RegisterPage />} />
@@ -614,8 +640,8 @@ export default function Home() {
           <Route path="/adcreator" element={<AdVideoCreatorContainer />} />
           <Route path="/adcreator/:id" element={<AdVideoCreatorContainer />} />
           <Route path="/reset_password" element={<ResetPasswordPage />} />
-          <Route path="/videogpt" element={<OneshotEditorContainer />} />
-          <Route path="/videogpt/:id" element={<OneshotEditorContainer />} />
+          <Route path="/videogpt" element={<OneshotEditorContainer initialSessionRequestRef={initialSessionRequestRef} />} />
+          <Route path="/videogpt/:id" element={<OneshotEditorContainer initialSessionRequestRef={initialSessionRequestRef} />} />
           <Route path="/movie_maker" element={<MovieGeneratorContainer />} />
           <Route path="/movie_maker/:id" element={<MovieGeneratorContainer />} />
           <Route path="/my_sessions" element={<ListVideoSessions />} />
