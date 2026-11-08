@@ -55,7 +55,7 @@ it('plays, pauses and resumes with the toolbar and Space, retaining the preloade
   const playbackButton = screen.getByRole('button', { name: 'Play', exact: true });
   await page.getByRole('button', { name: 'Play', exact: true }).click();
   await waitFor(() => expect(boundary.timeline.currentLayerSeek).toBeGreaterThan(1));
-  expect(firstVideo.paused).toBe(false);
+  await waitFor(() => expect(firstVideo.paused).toBe(false));
   const playingFrame = boundary.timeline.currentLayerSeek;
   await waitFor(() => expect(boundary.timeline.currentLayerSeek).toBeGreaterThan(playingFrame));
   expect(screen.getByRole('button', { name: 'Pause', exact: true })).toBe(playbackButton);
@@ -90,7 +90,7 @@ it('previews generated scenes while an Express render is pending', async () => {
   await page.getByRole('button', { name: 'Play', exact: true }).click();
   await waitFor(() => expect(boundary.timeline.currentLayerSeek).toBeGreaterThan(1));
   await page.getByRole('button', { name: 'Pause', exact: true }).click();
-  expect(activeVideo(container).paused).toBe(true);
+  await waitFor(() => expect(activeVideo(container).paused).toBe(true));
   const pausedFrame = boundary.timeline.currentLayerSeek;
   fireEvent.keyDown(window, { code: 'Space', key: ' ' });
   await waitFor(() => expect(boundary.timeline.currentLayerSeek).toBeGreaterThan(pausedFrame));
