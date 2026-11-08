@@ -2,6 +2,7 @@ import './App.css';
 import { UserProvider } from './contexts/UserContext';
 import { LocalizationProvider } from './contexts/LocalizationContext.jsx';
 import { AlertDialogProvider } from './contexts/AlertDialogContext';
+import { WorkspaceNavigationProvider } from './components/common/WorkspaceNavigation.jsx';
 import Home from './components/landing/Home.tsx';
 import { NavCanvasControlProvider } from './contexts/NavCanvasControlContext.jsx';
 import { ColorModeProvider } from './contexts/ColorMode.jsx';
@@ -19,7 +20,9 @@ function App() {
               <ColorModeProvider>
                 <NavCanvasControlProvider>
                   <AppErrorBoundary>
-                    <Home />
+                    <WorkspaceNavigationProvider>
+                      <Home />
+                    </WorkspaceNavigationProvider>
                   </AppErrorBoundary>
                 </NavCanvasControlProvider>
               </ColorModeProvider>

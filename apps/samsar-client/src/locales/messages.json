@@ -1,4 +1,19 @@
 {
+  "Previous render preview": {
+    "en": "Previous render preview",
+    "th": "ตัวอย่างวิดีโอก่อนหน้า",
+    "ja": "前のレンダリングのプレビュー"
+  },
+  "Preparing scene previews. Showing the previous render while your changes are processed.": {
+    "en": "Preparing scene previews. Showing the previous render while your changes are processed.",
+    "th": "กำลังเตรียมตัวอย่างฉาก แสดงวิดีโอก่อนหน้าระหว่างประมวลผลการเปลี่ยนแปลงของคุณ",
+    "ja": "シーンのプレビューを準備中です。変更の処理中は、前のレンダリングを表示しています。"
+  },
+  "The previous preview is unavailable. Scene previews will appear when ready.": {
+    "en": "The previous preview is unavailable. Scene previews will appear when ready.",
+    "th": "ไม่สามารถแสดงตัวอย่างก่อนหน้าได้ ตัวอย่างฉากจะแสดงเมื่อพร้อม",
+    "ja": "前のプレビューを表示できません。準備ができ次第、シーンのプレビューを表示します。"
+  },
   "Express edits": {
     "en": "Express edits",
     "th": "แก้ไขวิดีโอ Express",

@@ -5,7 +5,7 @@ vi.hoisted(() => { vi.stubEnv('VITE_PROCESSOR_API', 'https://processor.example')
 const boundary = vi.hoisted(() => ({ frame: null, editor: null, playback: null }));
 const mock = vi.hoisted(() => ({ navigate: vi.fn(), toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() }, headers: { headers: { Authorization: 'test' } } }));
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
-vi.mock('react-router-dom', () => ({ useParams: () => ({ id: 'project' }), useNavigate: () => mock.navigate, useLocation: () => ({ pathname: '/video/project', search: '' }) }));
+vi.mock('react-router-dom', async (importOriginal) => ({ ...await importOriginal(), useParams: () => ({ id: 'project' }), useNavigate: () => mock.navigate, useLocation: () => ({ pathname: '/video/project', search: '' }) }));
 vi.mock('../../src/utils/web.jsx', () => ({ getHeaders: () => mock.headers }));
 vi.mock('../../src/contexts/UserContext.jsx', () => ({ useUser: () => ({ user: { _id: 'owner' } }) }));
 vi.mock('../../src/components/common/CommonContainer.tsx', () => ({ default: p => <div>{p.children}</div> }));

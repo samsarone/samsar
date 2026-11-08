@@ -95,3 +95,28 @@ it('previews generated scenes while an Express render is pending', async () => {
   fireEvent.keyDown(window, { code: 'Space', key: ' ' });
   await waitFor(() => expect(boundary.timeline.currentLayerSeek).toBeGreaterThan(pausedFrame));
 });
+
+it('plays the previous render during a Studio post-processing handoff and switches to the arriving scene media', async () => {
+  sessionStorage.setItem('advancedVideoEditPendingSession', JSON.stringify({
+    origin: 'studio-express-post-processing', sessionId: 'preview', sourceSessionId: 'source',
+    requestId: 'preview', userId: 'owner', startedAt: Date.now(), previewVideoUrl: clipUrl,
+  }));
+  axios.get.mockResolvedValue({ data: { _id: 'preview', aspectRatio: '16:9', layers: [], audioLayers: [] } });
+  axios.post.mockResolvedValue({ data: { status: 'PENDING', session: { _id: 'preview', layers: [], expressGenerationPending: true } } });
+  const { container } = render(<NavCanvasControlProvider><VideoHome /></NavCanvasControlProvider>);
+  const preview = await screen.findByLabelText('Previous render preview');
+  await waitFor(() => expect(preview.readyState).toBeGreaterThanOrEqual(2));
+  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await waitFor(() => expect(preview.currentTime).toBeGreaterThan(0));
+  await page.getByRole('button', { name: 'Pause', exact: true }).click();
+  await waitFor(() => expect(preview.paused).toBe(true));
+  fireEvent.keyDown(window, { code: 'Space', key: ' ' });
+  await waitFor(() => expect(preview.paused).toBe(false));
+  axios.post.mockResolvedValue({ data: { status: 'PENDING', session: { _id: 'preview', aspectRatio: '16:9',
+    isExpressGeneration: true, expressGenerationPending: true, framesPerSecond: 24,
+    layers: [layer('new-one', 0), layer('new-two', 2)], audioLayers: [] } } });
+  await waitFor(() => expect(screen.queryByLabelText('Previous render preview')).not.toBeInTheDocument(), { timeout: 4500 });
+  await waitFor(() => expect(activeVideo(container)?.readyState).toBeGreaterThanOrEqual(2));
+  expect(activeVideo(container).src).toContain('scene=new-one');
+  expect(boundary.timeline.layers[0]._id).toBe('new-one');
+});

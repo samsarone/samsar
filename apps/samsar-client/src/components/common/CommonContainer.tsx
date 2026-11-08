@@ -1,7 +1,6 @@
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { useEffect } from "react";
-import TopNav from "./TopNav.tsx";
-import { AlertDialog } from "./AlertDialog.tsx";
+import WorkspaceNavigation from "./WorkspaceNavigation.jsx";
 import { useColorMode } from "../../contexts/ColorMode.jsx";
 
 
@@ -100,7 +99,7 @@ export default function CommonContainer(props) {
 
   return (
     <div className={`workspace-page h-[100dvh] min-h-[100dvh] overflow-hidden ${shellBg}`}>
-      <TopNav
+      <WorkspaceNavigation
         resetCurrentSession={resetCurrentSession}
         isVideoPreviewPlaying={isVideoPreviewPlaying}
         setIsVideoPreviewPlaying={setIsVideoPreviewPlaying}
@@ -132,7 +131,6 @@ export default function CommonContainer(props) {
         openAudioActions={openAudioActions}
       />
       <div>
-        <AlertDialog />
         {children}
       </div>
     </div>

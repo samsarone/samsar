@@ -9,10 +9,10 @@ import { LocalizationProvider } from '../../src/contexts/LocalizationContext.jsx
 import axios from 'axios';
 import { createStudioSession } from '../../src/utils/studioSessionApi.js';
 
-const mocks = vi.hoisted(() => ({ openAlertDialog: vi.fn(), closeAlertDialog: vi.fn() }));
-vi.mock('../../src/contexts/UserContext.jsx', () => ({ useUser: () => ({ user: { _id: 'user', generationCredits: 1000 } }) }));
+const mocks = vi.hoisted(() => ({ openAlertDialog: vi.fn(), closeAlertDialog: vi.fn(), userState: {} }));
+vi.mock('../../src/contexts/UserContext.jsx', () => ({ useUser: () => mocks.userState }));
 vi.mock('../../src/contexts/AlertDialogContext.jsx', () => ({ useAlertDialog: () => mocks }));
-vi.mock('../../src/components/video/toolbars/CanvasControlBar.jsx', () => ({ default: () => null }));
+vi.mock('../../src/components/video/toolbars/CanvasControlBar.jsx', () => ({ default: () => <div data-testid="session-controls" /> }));
 vi.mock('../../src/utils/web.jsx', () => ({ getHeaders: () => ({ headers: {} }) }));
 vi.mock('../../src/utils/studioSessionApi.js', () => ({ createStudioSession: vi.fn() }));
 vi.mock('axios', () => ({ default: { post: vi.fn() } }));
@@ -35,6 +35,7 @@ function renderNav(Nav, path, props = {}) {
 }
 
 beforeEach(() => {
+  mocks.userState = { user: { _id: 'user', generationCredits: 1000 }, userFetching: false, userInitiated: true };
   localStorage.setItem('videoSessionId', 'video-1');
   localStorage.setItem('imageSessionId', 'image-1');
   localStorage.setItem('defaultImageAspectRatio', '1:1');
@@ -121,4 +122,19 @@ it('keeps Audio Studio actions separate from navigation', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Audio actions' }));
   expect(openAudioActions).toHaveBeenCalledOnce();
   expect(screen.getByLabelText('Current route')).toHaveTextContent('/audio/studio');
+});
+
+
+it('keeps session controls out of the loading navigation, even with a previous canvas in context', async () => {
+  const { rerender } = renderNav(TopNav, '/video/video-1', { isWorkspaceLoading: true });
+  expect(screen.queryByTestId('session-controls')).toBeNull();
+  rerender(<MemoryRouter initialEntries={['/video/video-1']}><LocalizationProvider><NavCanvasControlContext.Provider value={{}}><TopNav isWorkspaceLoading={false} /><Location /></NavCanvasControlContext.Provider></LocalizationProvider></MemoryRouter>);
+  expect(await screen.findByTestId('session-controls')).toBeVisible();
+});
+
+it.each([TopNav, MobileTopNav])('does not flash a login action before authentication resolves', Nav => {
+  mocks.userState = { user: null, userFetching: true, userInitiated: false };
+  renderNav(Nav, '/vidgenie/video-1');
+  expect(screen.queryByRole('button', { name: 'Login' })).toBeNull();
+  expect(document.querySelector('[data-app-top-nav]')).not.toBeNull();
 });

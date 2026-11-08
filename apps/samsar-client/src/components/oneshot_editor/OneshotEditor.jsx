@@ -6153,10 +6153,10 @@ export default function OneshotEditor() {
   //  JSX
   // ─────────────────────────────────────────────────────────
   return (
-    <div className={VIDGENIE_EDITOR_CLASS}>
+    <div className={`${VIDGENIE_EDITOR_CLASS} vidgenie-content-ready`}>
       {isGuestPreview && (
         <div
-          className={`mt-2 flex flex-col gap-3 rounded-2xl border px-4 py-3 sm:mt-6 sm:flex-row sm:items-center sm:justify-between ${
+          className={`mb-4 flex flex-col gap-3 rounded-2xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${
             colorMode === 'dark'
               ? 'border-[#f6c453]/25 bg-[#f6c453]/[0.08] text-[#fff1c8]'
               : 'border-blue-200 bg-blue-50 text-blue-950'
@@ -6909,7 +6909,7 @@ export default function OneshotEditor() {
 
       {/* Progress indicator / result */}
       {showResultDisplay && (
-        <div className="mt-5 transition-all duration-500 ease-out">
+        <div className="mt-4">
           {renderState === 'complete' && postProcessingAction === 'reroll_layers' ? (
             <>
               <ProgressIndicator
@@ -7400,7 +7400,6 @@ export default function OneshotEditor() {
 
       {/* ───────── Assistant Chat ───────── */}
       {shouldShowOriginalRequestInputs && (
-      <div className={`vidgenie-assistant-anchor mt-6 rounded-2xl p-3 sm:p-4 ring-1 transition-shadow hover:shadow-sm bg-surface text-fg ${colorMode === 'dark' ? 'ring-[#3a4050]' : 'ring-slate-200'}`}>
         <AssistantHome
           submitAssistantQuery={submitAssistantQuery}
           onSessionCleared={assistantRequestGuard.invalidate}
@@ -7414,7 +7413,6 @@ export default function OneshotEditor() {
           isAssistantQueryGenerating={isAssistantQueryGenerating}
           getSessionImageLayers={getSessionImageLayers}
         />
-      </div>
       )}
       <ToastContainer
         position="bottom-center"

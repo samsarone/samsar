@@ -31,13 +31,13 @@ function mount(pending = false) {
 it.each([768, 1024, 1280, 1440, 1920])('fits completed Express controls at %s px without overlapping the logo or account controls', async width => {
   await page.viewport(width, 800);
   mount();
+  await expect.element(page.getByRole('button', { name: 'Express edits', exact: true })).toBeVisible();
   const nav = document.querySelector('[data-app-top-nav]');
   const columns = [...nav.firstElementChild.children].map(node => node.getBoundingClientRect());
   const controls = document.querySelector('[data-studio-controls]').getBoundingClientRect();
   expect(controls.left).toBeGreaterThanOrEqual(columns[0].right);
   expect(controls.right).toBeLessThanOrEqual(columns[2].left);
   expect(nav.scrollWidth).toBeLessThanOrEqual(width);
-  await expect.element(page.getByRole('button', { name: 'Express edits', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'More controls', exact: true }).click();
   await expect.element(page.getByRole('button', { name: 'Zoom in', exact: true })).toBeVisible();
   await expect.element(page.getByRole('button', { name: 'Download current frame', exact: true })).toBeVisible();

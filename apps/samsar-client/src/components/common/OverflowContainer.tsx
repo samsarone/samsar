@@ -1,11 +1,6 @@
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 
-import { useMediaQuery } from 'react-responsive';
-import TopNav from "./TopNav.tsx";
-
-import MobileTopNav from "./MobileTopNav.tsx";
-import { AlertDialog } from "./AlertDialog.tsx";
-
+import WorkspaceNavigation from './WorkspaceNavigation.jsx';
 
 import { getHeaders } from "../../utils/web.jsx";
 import { useNavigate } from "react-router-dom";
@@ -37,26 +32,17 @@ export default function OverflowContainer(props) {
 
 
 
-  const isMobile = useMediaQuery({ maxWidth: 767 });
 
   // Pages normally scroll with the document. Bounded account panels own their
   // scrolling and must fit the viewport without the document's bottom padding.
   return (
     <div className={`workspace-page ${bounded ? 'h-[100dvh] overflow-hidden' : 'min-h-[100dvh] pb-8'}`} >
-      {isMobile ? (
-        <MobileTopNav
-          resetCurrentSession={resetCurrentSession}
-          addNewVidGPTSession={addNewVidGPTSession}
-        />
-      ) : (
-        <TopNav
-          resetCurrentSession={resetCurrentSession}
-
-
-        />
-      )}
+      <WorkspaceNavigation
+        responsive
+        resetCurrentSession={resetCurrentSession}
+        addNewVidGPTSession={addNewVidGPTSession}
+      />
       <div>
-        <AlertDialog />
         {children}
       </div>
     </div>

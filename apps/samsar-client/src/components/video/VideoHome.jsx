@@ -1,3 +1,5 @@
+import StudioPostProcessingPreview from './StudioPostProcessingPreview.jsx';
+import { hasStudioPreviewMedia, readStudioPostProcessingHandoff } from './util/studioPostProcessingPreview.js';
 import { canFallbackToVideoStatus } from '../../utils/sessionLoadingPolicy.mjs';
 import ExpressPostProcessingDialog from './advanced/ExpressPostProcessingDialog.jsx';
 import { studioAssistantView } from '../../utils/assistantContext.js';
@@ -47,6 +49,7 @@ import {
 import {
   buildStudioSessionDetailsFromStatus,
   fetchDetailedVideoGenerationStatus,
+  resolveVideoGenerationErrorMessage,
 } from '../../utils/videoGenerationStatus.mjs';
 import {
   hasBlockingLayerGenerationForRender,
@@ -767,6 +770,7 @@ export default function VideoHome() {
     setCanvasZoomPercent,
     setCanZoomInCanvas,
     setCanZoomOutCanvas,
+    setIsExpressGeneration: setNavIsExpressGeneration,
   } = useContext(NavCanvasControlContext);
   const [videoSessionDetails, setVideoSessionDetails] = useState(null);
   const studioFramesPerSecond = resolveStudioFramesPerSecond(videoSessionDetails?.framesPerSecond);
@@ -874,17 +878,42 @@ export default function VideoHome() {
   const { t } = useLocalization();
   const { colorMode } = useColorMode();
 
+  const studioPostProcessingHandoff = useMemo(
+    () => isSharedSessionView ? null : readStudioPostProcessingHandoff(id, user?._id),
+    [id, user?._id, isSharedSessionView, isVideoGenerating, renderCompletedThisSession]
+  );
+  const studioPostProcessingHandoffRef = useRef(null);
+  studioPostProcessingHandoffRef.current = studioPostProcessingHandoff;
+  const showPostProcessingPreview = Boolean(
+    studioPostProcessingHandoff?.previewVideoUrl &&
+    (isVideoGenerating || isSessionRenderPending(videoSessionDetails)) &&
+    !hasStudioPreviewMedia(videoSessionDetails, import.meta.env.VITE_PROCESSOR_API, import.meta.env.VITE_STATIC_CDN_URL)
+  );
+
+  useEffect(() => {
+    // A freshly opened preparation session has no VideoCanvas to initialize the nav.
+    if (showPostProcessingPreview) setNavIsExpressGeneration?.(true);
+  }, [showPostProcessingPreview, setNavIsExpressGeneration]);
+
   const [isUpdateLayerPending, setIsUpdateLayerPending] = useState(false);
 
 
   const [canvasProcessLoading, setCanvasProcessLoading] = useState(false);
 
   const PROCESSOR_API_URL = import.meta.env.VITE_PROCESSOR_API;
-  const setAdvancedVideoEditPendingSession = (nextSessionId) => {
+  const setAdvancedVideoEditPendingSession = (nextSessionId, postProcessing = null) => {
     if (!nextSessionId || typeof window === 'undefined') return;
     sessionStorage.setItem(
       ADVANCED_VIDEO_EDIT_PENDING_SESSION_KEY,
-      JSON.stringify({ sessionId: nextSessionId, startedAt: Date.now() })
+      JSON.stringify({ sessionId: nextSessionId, startedAt: Date.now(),
+        ...(postProcessing ? {
+          origin: 'studio-express-post-processing',
+          userId: user?._id,
+          sourceSessionId: id,
+          requestId: postProcessing.requestId || nextSessionId,
+          previewVideoUrl: renderedVideoPath || downloadLink || resolveCompletedSessionVideoUrl(videoSessionDetails),
+        } : {}),
+      })
     );
   };
 
@@ -2120,8 +2149,13 @@ export default function VideoHome() {
       clearRenderPollTimer(renderPollTimerRef.current);
     }
 
+    let postProcessingHandoff = studioPostProcessingHandoff;
     let isStatusRequestInFlight = false;
     const timer = setInterval(async () => {
+      // Authentication can hydrate after the initial session request on reload.
+      if (!postProcessingHandoff && studioPostProcessingHandoffRef.current?.sessionId === id) {
+        postProcessingHandoff = studioPostProcessingHandoffRef.current;
+      }
       if (isStatusRequestInFlight) {
         return;
       }
@@ -2130,7 +2164,27 @@ export default function VideoHome() {
       try {
         const dataRes = await axios.post(`${PROCESSOR_API_URL}/video_sessions/get_render_video_status`, { id: id }, headers);
         const renderData = dataRes.data || {};
-        const renderStatus = renderData.status;
+        let renderStatus = renderData.status;
+        if (postProcessingHandoff) {
+          if (sessionIdRef.current !== id || renderPollTimerRef.current !== timer) return;
+          // Subtitle/retranslation requests create a blank session before their
+          // background job copies the layers. The request can be queued while
+          // get_render_video_status still returns IDLE for that session.
+          if (renderStatus === 'IDLE') {
+            const requestId = postProcessingHandoff.requestId || id;
+            const { data: requestStatus } = await axios.get(
+              `${PROCESSOR_API_URL}/v2/status?request_id=${encodeURIComponent(requestId)}`, headers
+            );
+            if (sessionIdRef.current !== id || renderPollTimerRef.current !== timer) return;
+            const status = String(requestStatus?.status || '').toUpperCase();
+            if (['PENDING', 'INIT', 'QUEUED', 'PROCESSING', 'RUNNING', 'IN_PROGRESS', 'COMPLETED', 'SUCCESS'].includes(status)) {
+              renderStatus = 'PENDING';
+            } else if (['FAILED', 'ERROR', 'CANCELLED', 'CANCELED', 'PAUSED'].includes(status)) {
+              renderStatus = status === 'ERROR' ? 'FAILED' : status === 'CANCELED' ? 'CANCELLED' : status;
+              renderData.generationError = resolveVideoGenerationErrorMessage(requestStatus);
+            }
+          }
+        }
         const sessionData = renderData.session;
 
         if (sessionData) {
@@ -2216,6 +2270,7 @@ export default function VideoHome() {
           return;
         }
 
+        if (postProcessingHandoff) clearAdvancedVideoEditPendingSession(id);
         if (renderStatus === 'FAILED') {
           clearAdvancedVideoEditPendingSession(id);
           toast.error(renderData.generationError || sessionData?.generationError || uiText("Video render failed."), {
@@ -3720,7 +3775,7 @@ export default function VideoHome() {
     setIsVideoGenerating(true);
 
     if (nextSessionId && nextSessionId !== id) {
-      setAdvancedVideoEditPendingSession(nextSessionId);
+      setAdvancedVideoEditPendingSession(nextSessionId, requestInfo?.studioPostProcessing ? requestInfo : null);
       localStorage.setItem('sessionId', nextSessionId);
       localStorage.setItem('videoSessionId', nextSessionId);
       navigate(`/video/${nextSessionId}`);
@@ -3728,7 +3783,7 @@ export default function VideoHome() {
     }
 
     startVideoRenderPoll();
-  }, [closeAlertDialog, id, navigate]);
+  }, [closeAlertDialog, id, navigate, user?._id, renderedVideoPath, downloadLink, videoSessionDetails]);
 
   const openAdvancedVideoEditDialog = useCallback(() => {
     if (isSharedSessionView && !requestEditableSharedSession()) {
@@ -4471,13 +4526,13 @@ export default function VideoHome() {
           onClose={() => setIsExpressPostProcessingOpen(false)}
           onRequestAccepted={result => {
             setIsExpressPostProcessingOpen(false);
-            handleAdvancedVideoEditAccepted(result);
+            handleAdvancedVideoEditAccepted({ ...result, studioPostProcessing: true });
           }}
           openAdvancedVideoEditDialog={openAdvancedVideoEditDialog}
           showLoginDialog={showLoginDialog}
         />
       )}
-      <PreviewPlaybackController
+      {!showPostProcessingPreview && <PreviewPlaybackController
         applyAudioDucking={applyAudioDucking}
         audioLayers={previewAudioLayers}
         isVisualReady={isVisualReady}
@@ -4490,7 +4545,7 @@ export default function VideoHome() {
         setIsVideoPreviewPlaying={setIsVideoPreviewPlaying}
         suspendAudioPreview={isRecordSpeechRecording}
         totalDuration={totalDuration}
-      />
+      />}
       <div
         className='relative box-border h-[100dvh] overflow-hidden px-4 pb-4'
         style={{ paddingTop: 'calc(var(--app-nav-height) + var(--workspace-inset))' }}
@@ -4592,7 +4647,14 @@ export default function VideoHome() {
                     <ScreenLoader />
                   </div>
                 )}
-                {editorContainerDisplay}
+                {showPostProcessingPreview ? (
+                  <StudioPostProcessingPreview
+                    key={id}
+                    src={studioPostProcessingHandoff.previewVideoUrl}
+                    isPlaying={isVideoPreviewPlaying}
+                    setIsPlaying={setIsVideoPreviewPlaying}
+                  />
+                ) : editorContainerDisplay}
               </div>
             </div>
             <AssistantHome

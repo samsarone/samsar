@@ -7,7 +7,7 @@ import ExpressPostProcessingDialog from '../../src/components/video/advanced/Exp
 import CanvasControlBar from '../../src/components/video/toolbars/CanvasControlBar.jsx';
 import { NavCanvasControlProvider } from '../../src/contexts/NavCanvasControlContext.jsx';
 
-const mock = vi.hoisted(() => ({ accepted: vi.fn(), close: vi.fn(), login: vi.fn(), standalone: false, subtitles: true, header: null, frame: null }));
+const mock = vi.hoisted(() => ({ accepted: vi.fn(), close: vi.fn(), login: vi.fn(), standalone: false, subtitles: true, header: null, frame: null, editor: null }));
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 vi.mock('../../src/utils/web.jsx', () => ({ getHeaders: () => ({ headers: { Authorization: 'test' } }) }));
 vi.mock('../../src/contexts/UserContext.jsx', () => ({ useUser: () => ({ user: { _id: 'owner', selectedInferenceModel: 'claude-fable-5.1', selectedInferenceEffort: 'xhigh' }, getUserAPI: vi.fn() }) }));
@@ -15,7 +15,7 @@ vi.mock('../../src/hooks/useDeploymentModelAvailability.js', () => ({ useDeploym
 vi.mock('../../src/components/common/TopNav.tsx', () => ({ default: props => { mock.header = props; return <CanvasControlBar {...props} isExpressGeneration />; } }));
 vi.mock('../../src/components/video/toolbars/frame_toolbar/index.jsx', () => ({ default: props => { mock.frame = props; return null; } }));
 vi.mock('../../src/components/video/toolbars/frame_toolbar/FrameToolbarHorizontal.jsx', () => ({ default: () => null }));
-vi.mock('../../src/components/video/VideoEditorContainer.jsx', () => ({ default: () => null }));
+vi.mock('../../src/components/video/VideoEditorContainer.jsx', () => ({ default: props => { mock.editor = props; return null; } }));
 vi.mock('../../src/components/video/PreviewPlaybackController.jsx', () => ({ default: () => null }));
 vi.mock('../../src/components/video/workers/imagePreloaderWorkerSingleton.jsx', () => ({ getImagePreloaderWorker: () => ({ postMessage() {} }) }));
 vi.mock('react-toastify', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() }, ToastContainer: () => null }));
@@ -27,6 +27,8 @@ beforeEach(() => {
   mock.standalone = false; mock.subtitles = true; mock.header = mock.frame = null;
   axios.get.mockReset(); axios.post.mockReset().mockResolvedValue({ data: { session_id: 'new-session', request_id: 'new-request', status: 'PENDING' } });
   vi.spyOn(window, 'confirm').mockReturnValue(true);
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
 });
 function mountDialog(extra = {}) {
   return render(<ExpressPostProcessingDialog session={session(extra)} onClose={mock.close} onRequestAccepted={mock.accepted} showLoginDialog={mock.login} openAdvancedVideoEditDialog={vi.fn()} />);
@@ -144,4 +146,87 @@ it.each([{ isExpressGeneration: false }, { expressGenerationPending: true }, { r
   expect(mock.header).toBeTruthy();
   expect(mock.header.openExpressPostProcessingDialog).toBeUndefined();
   expect(screen.queryByRole('button', { name: 'Express edits', exact: true })).not.toBeInTheDocument();
+});
+
+
+it('previews the source render during asynchronous Studio post-processing without copying its layers into the new session', async () => {
+  const blank = session({ _id: 'new-session', remoteURL: null, layers: [], expressGenerationPending: false, videoGenerationPending: false });
+  axios.get.mockImplementation(async url => ({ data: url.includes('/v2/status?') ? { status: 'PENDING' } : url.includes('id=new-session') ? blank : session() }));
+  await act(async () => render(<MemoryRouter initialEntries={['/video/original']}><NavCanvasControlProvider><Routes><Route path="/video/:id" element={<VideoHome />} /></Routes><Location /></NavCanvasControlProvider></MemoryRouter>));
+  click('Express edits'); click('Subtitles'); click('Generate / regenerate subtitles');
+  await waitFor(() => expect(screen.getByLabelText('Route')).toHaveTextContent('/video/new-session'));
+  expect(screen.getByLabelText('Previous render preview')).toHaveAttribute('src', 'https://media.example/original.mp4');
+  expect(mock.frame.layers).toEqual([]);
+  expect(mock.header.isRenderPending).toBe(true);
+  expect(mock.header.downloadLink).toBeNull();
+  const sourcePreview = screen.getByLabelText('Previous render preview');
+  click('Play'); expect(sourcePreview.play).toHaveBeenCalled();
+  click('Pause'); expect(sourcePreview.pause).toHaveBeenCalled();
+  fireEvent.keyDown(window, { code: 'Space', key: ' ' });
+  expect(mock.header.isVideoPreviewPlaying).toBe(true);
+});
+
+
+const pendingHandoff = extra => ({ origin: 'studio-express-post-processing', sessionId: 'new-session',
+  sourceSessionId: 'original', requestId: 'new-request', userId: 'owner', startedAt: Date.now(),
+  previewVideoUrl: 'https://media.example/original.mp4', ...extra });
+const mountPending = async (handoff = pendingHandoff()) => {
+  if (handoff) sessionStorage.setItem('advancedVideoEditPendingSession', JSON.stringify(handoff));
+  await act(async () => render(<MemoryRouter initialEntries={['/video/new-session']}><NavCanvasControlProvider><Routes><Route path="/video/:id" element={<VideoHome />} /></Routes></NavCanvasControlProvider></MemoryRouter>));
+};
+
+it('survives a long queued preparation after reload, then switches to the new layers and final render', async () => {
+  vi.useFakeTimers();
+  let current = session({ _id: 'new-session', remoteURL: null, layers: [], expressGenerationPending: false });
+  let status = 'IDLE';
+  axios.get.mockImplementation(async url => ({ data: url.includes('/v2/status?') ? { status: 'PENDING' } : current }));
+  axios.post.mockImplementation(async () => ({ data: { status, session: current } }));
+  await mountPending();
+  expect(screen.getByLabelText('Previous render preview')).toBeVisible();
+  await act(async () => { await vi.advanceTimersByTimeAsync(24_000); });
+  expect(mock.header.isRenderPending).toBe(true);
+  expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('/v2/status?request_id=new-request'), expect.anything());
+  expect(screen.getByLabelText('Previous render preview')).toBeVisible();
+  expect(mock.frame.layers).toEqual([]);
+
+  status = 'PENDING';
+  current = session({ _id: 'new-session', remoteURL: null, expressGenerationPending: true,
+    layers: [{ _id: 'new-scene', duration: 4, hasAiVideoLayer: true, aiVideoRemoteLink: 'https://media.example/new-scene.mp4', imageSession: { activeItemList: [] } }] });
+  await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+  expect(screen.queryByLabelText('Previous render preview')).not.toBeInTheDocument();
+  expect(mock.editor.currentLayer.aiVideoRemoteLink).toBe('https://media.example/new-scene.mp4');
+  expect(mock.frame.layers[0]._id).toBe('new-scene');
+  expect(mock.header.isRenderPending).toBe(true);
+  expect(mock.header.isVideoPreviewPlaying).toBe(false);
+  status = 'COMPLETED'; current = { ...current, expressGenerationPending: false, remoteURL: 'https://media.example/new-final.mp4' };
+  await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+  expect(mock.header.isRenderPending).toBe(false);
+  expect(mock.header.downloadLink).toBe('https://media.example/new-final.mp4');
+  expect(sessionStorage.getItem('advancedVideoEditPendingSession')).toBeNull();
+});
+
+it.each(['FAILED', 'CANCELLED', 'PAUSED'])('ends the source preview when queued post-processing becomes %s', async status => {
+  vi.useFakeTimers();
+  const blank = session({ _id: 'new-session', remoteURL: null, layers: [] });
+  axios.get.mockImplementation(async url => ({ data: url.includes('/v2/status?') ? { status, error: 'Preparation stopped' } : blank }));
+  axios.post.mockResolvedValue({ data: { status: 'IDLE', session: blank } });
+  await mountPending();
+  await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+  expect(mock.header.isRenderPending).toBe(false);
+  expect(screen.queryByLabelText('Previous render preview')).not.toBeInTheDocument();
+  expect(sessionStorage.getItem('advancedVideoEditPendingSession')).toBeNull();
+});
+
+it.each([
+  null,
+  { sessionId: 'new-session', startedAt: Date.now() },
+  pendingHandoff({ sessionId: 'different-session' }),
+  pendingHandoff({ userId: 'different-owner' }),
+  pendingHandoff({ startedAt: Date.now() - 11 * 60 * 1000 }),
+])('does not show a source preview for an unrelated or expired handoff: %j', async handoff => {
+  const blank = session({ _id: 'new-session', remoteURL: null, layers: [], expressGenerationPending: true });
+  axios.get.mockResolvedValue({ data: blank });
+  await mountPending(handoff);
+  expect(screen.queryByLabelText('Previous render preview')).not.toBeInTheDocument();
+  expect(mock.editor.videoSessionDetails.layers).toEqual([]);
 });
