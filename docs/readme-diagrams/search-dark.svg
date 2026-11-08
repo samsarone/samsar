@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="268" viewBox="0 0 1200 268" role="img" aria-labelledby="title desc">
+<title id="title">Search and embeddings</title>
+<desc id="desc">Index creation prepares and embeds records into a reusable MongoDB template. Later queries reuse that template, filter candidates and optionally rerank.</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L8 4L0 8Z" fill="#9198a1"/></marker>
+</defs>
+<rect width="1200" height="268" rx="12" fill="#0d1117"/>
+<g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif">
+<rect x="12" y="22" width="211.2" height="188" rx="10" fill="#151b23" stroke="#3d444d"/>
+<text x="28" y="49" font-size="12" font-weight="650" fill="#79c0ff" text-anchor="start">INDEX / 01</text>
+<text x="28" y="81" font-size="23" font-weight="650" fill="#f0f6fc" text-anchor="start">Prepare</text>
+<text x="28" y="111" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">JSON, text or URLs</text>
+<text x="28" y="134" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Normalize record fields</text>
+<text x="28" y="157" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Crawl URLs if supplied</text>
+<path d="M28 173 H207.2" stroke="#3d444d"/>
+<text x="28" y="196" font-size="14" font-weight="400" fill="#b1bac4" text-anchor="start">processor / Firecrawl</text>
+<path d="M223.2 120 H253.2" fill="none" stroke="#9198a1" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="253.2" y="22" width="211.2" height="188" rx="10" fill="#151b23" stroke="#3d444d"/>
+<text x="269.2" y="49" font-size="12" font-weight="650" fill="#d2a8ff" text-anchor="start">INDEX / 02</text>
+<text x="269.2" y="81" font-size="23" font-weight="650" fill="#f0f6fc" text-anchor="start">Embed</text>
+<text x="269.2" y="111" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Encode source content</text>
+<text x="269.2" y="134" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Preserve record IDs</text>
+<text x="269.2" y="157" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Attach filter metadata</text>
+<path d="M269.2 173 H448.4" stroke="#3d444d"/>
+<text x="269.2" y="196" font-size="14" font-weight="400" fill="#b1bac4" text-anchor="start">OpenAI embeddings</text>
+<path d="M464.4 120 H494.4" fill="none" stroke="#9198a1" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="494.4" y="22" width="211.2" height="188" rx="10" fill="#151b23" stroke="#3d444d"/>
+<text x="510.4" y="49" font-size="12" font-weight="650" fill="#7ee787" text-anchor="start">SHARED / 03</text>
+<text x="510.4" y="81" font-size="23" font-weight="650" fill="#f0f6fc" text-anchor="start">Store</text>
+<text x="510.4" y="111" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Reusable template</text>
+<text x="510.4" y="134" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Vectors + source records</text>
+<text x="510.4" y="157" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Return template ID</text>
+<path d="M510.4 173 H689.6" stroke="#3d444d"/>
+<text x="510.4" y="196" font-size="14" font-weight="400" fill="#b1bac4" text-anchor="start">MongoDB</text>
+<path d="M705.6 120 H735.6" fill="none" stroke="#9198a1" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+<rect x="735.6" y="22" width="211.2" height="188" rx="10" fill="#151b23" stroke="#3d444d"/>
+<text x="751.6" y="49" font-size="12" font-weight="650" fill="#e3b341" text-anchor="start">QUERY / 04</text>
+<text x="751.6" y="81" font-size="23" font-weight="650" fill="#f0f6fc" text-anchor="start">Search</text>
+<text x="751.6" y="111" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Query + template ID</text>
+<text x="751.6" y="134" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Embed query and filter</text>
+<text x="751.6" y="157" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Retrieve candidates</text>
+<path d="M751.6 173 H930.8" stroke="#3d444d"/>
+<text x="751.6" y="196" font-size="14" font-weight="400" fill="#b1bac4" text-anchor="start">processor + MongoDB</text>
+<path d="M946.8 120 H976.8" fill="none" stroke="#9198a1" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="976.8" y="22" width="211.2" height="188" rx="10" fill="#151b23" stroke="#3d444d"/>
+<text x="992.8" y="49" font-size="12" font-weight="650" fill="#79c0ff" text-anchor="start">QUERY / 05</text>
+<text x="992.8" y="81" font-size="23" font-weight="650" fill="#f0f6fc" text-anchor="start">Rank</text>
+<text x="992.8" y="111" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Similarity scores</text>
+<text x="992.8" y="134" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Optional LLM rerank</text>
+<text x="992.8" y="157" font-size="16" font-weight="400" fill="#f0f6fc" text-anchor="start">Return matching records</text>
+<path d="M992.8 173 H1172" stroke="#3d444d"/>
+<text x="992.8" y="196" font-size="14" font-weight="400" fill="#b1bac4" text-anchor="start">processor</text>
+<text x="16" y="248" font-size="16" font-weight="400" fill="#b1bac4" text-anchor="start">Index once, query many times. Retrieval uses vector search when available, with an in-memory cosine fallback.</text>
+</g>
+</svg>

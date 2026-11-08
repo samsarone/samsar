@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="268" viewBox="0 0 1200 268" role="img" aria-labelledby="title desc">
+<title id="title">Recommendations</title>
+<desc id="desc">A text or structured reference is matched against an existing embedding template through the shared search implementation, returning compact ID and score pairs.</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L8 4L0 8Z" fill="#818b98"/></marker>
+</defs>
+<rect width="1200" height="268" rx="12" fill="#ffffff"/>
+<g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif">
+<rect x="12" y="22" width="271.5" height="188" rx="10" fill="#f6f8fa" stroke="#d1d9e0"/>
+<text x="28" y="49" font-size="12" font-weight="650" fill="#0969da" text-anchor="start">01 / INPUT</text>
+<text x="28" y="81" font-size="23" font-weight="650" fill="#1f2328" text-anchor="start">Reference</text>
+<text x="28" y="111" font-size="16" font-weight="400" fill="#1f2328" text-anchor="start">Text or structured item</text>
+<text x="28" y="134" font-size="16" font-weight="400" fill="#1f2328" text-anchor="start">Existing template ID</text>
+<text x="28" y="157" font-size="16" font-weight="400" fill="#1f2328" text-anchor="start">Limit and filters</text>
+<path d="M28 173 H267.5" stroke="#d1d9e0"/>
+<text x="28" y="196" font-size="14" font-weight="400" fill="#59636e" text-anchor="start">API client</text>
+<path d="M283.5 120 H313.5" fill="none" stroke="#818b98" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="313.5" y="22" width="271.5" height="188" rx="10" fill="#f6f8fa" stroke="#d1d9e0"/>
+<text x="329.5" y="49" font-size="12" font-weight="650" fill="#8250df" text-anchor="start">02 / CONSTRAIN</text>
+<text x="329.5" y="81" font-size="23" font-weight="650" fill="#1f2328" text-anchor="start">Match rules</text>
+<text x="329.5" y="111" font-size="16" font-weight="400" fill="#1f2328" text-anchor="start">Normalize the reference</text>
+<text x="329.5" y="134" font-size="16" font-weight="400" fill="#1f2328" text-anchor="start">Apply configured filters</text>
+<text x="329.5" y="157" font-size="16" font-weight="400" fill="#1f2328" text-anchor="start">Choose candidate count</text>
+<path d="M329.5 173 H569" stroke="#d1d9e0"/>
+<text x="329.5" y="196" font-size="14" font-weight="400" fill="#59636e" text-anchor="start">processor</text>
+<path d="M585 120 H615" fill="none" stroke="#818b98" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="615" y="22" width="271.5" height="188" rx="10" fill="#f6f8fa" stroke="#d1d9e0"/>
+<text x="631" y="49" font-size="12" font-weight="650" fill="#1a7f37" text-anchor="start">03 / REUSE</text>
+<text x="631" y="81" font-size="23" font-weight="650" fill="#1f2328" text-anchor="start">Shared search</text>
+<text x="631" y="111" font-size="16" font-weight="400" fill="#1f2328" text-anchor="start">Embed the reference</text>
+<text x="631" y="134" font-size="16" font-weight="400" fill="#1f2328" text-anchor="start">Retrieve similar records</text>
+<text x="631" y="157" font-size="16" font-weight="400" fill="#1f2328" text-anchor="start">Reuse the stored corpus</text>
+<path d="M631 173 H870.5" stroke="#d1d9e0"/>
+<text x="631" y="196" font-size="14" font-weight="400" fill="#59636e" text-anchor="start">embeddings + MongoDB</text>
+<path d="M886.5 120 H916.5" fill="none" stroke="#818b98" stroke-width="1.6" marker-end="url(#arrow)"/>
+<rect x="916.5" y="22" width="271.5" height="188" rx="10" fill="#f6f8fa" stroke="#d1d9e0"/>
+<text x="932.5" y="49" font-size="12" font-weight="650" fill="#9a6700" text-anchor="start">04 / RETURN</text>
+<text x="932.5" y="81" font-size="23" font-weight="650" fill="#1f2328" text-anchor="start">Matches</text>
+<text x="932.5" y="111" font-size="16" font-weight="400" fill="#1f2328" text-anchor="start">Compact ID + score pairs</text>
+<text x="932.5" y="134" font-size="16" font-weight="400" fill="#1f2328" text-anchor="start">No LLM reranking</text>
+<text x="932.5" y="157" font-size="16" font-weight="400" fill="#1f2328" text-anchor="start">Related items / products</text>
+<path d="M932.5 173 H1172" stroke="#d1d9e0"/>
+<text x="932.5" y="196" font-size="14" font-weight="400" fill="#59636e" text-anchor="start">processor</text>
+<text x="16" y="248" font-size="16" font-weight="400" fill="#59636e" text-anchor="start">Uses the same embedding templates as search. A recommendation request does not rebuild the index.</text>
+</g>
+</svg>
