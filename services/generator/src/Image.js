@@ -329,7 +329,7 @@ function resolveApplicableImageGenerationProvider(model, provider, payload = {})
 }
 
 function resolveImageProviderForModel(model, payload = {}) {
-  const normalizedModel = normalizeString(model).toUpperCase();
+  const normalizedModel = normalizeString(normalizeStoredGPTImageModelKey(model)).toUpperCase();
   if (!normalizedModel) {
     return '';
   }
@@ -455,7 +455,7 @@ function getPinnedImageEditAdapterProvider(payload = {}) {
 }
 
 function resolveImageEditProviderForModel(model, payload = {}) {
-  const normalizedModel = normalizeString(model).toUpperCase();
+  const normalizedModel = normalizeString(normalizeStoredGPTImageModelKey(model)).toUpperCase();
   if (!normalizedModel) {
     return '';
   }

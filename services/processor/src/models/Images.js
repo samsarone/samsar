@@ -11,7 +11,7 @@ import {
   isAlibabaQwenImage3ProAvailable,
 } from '../consts/DockerProviderPriority.js';
 
-import { getRetiredGPTImageModelError } from '../consts/GPTImageModelKeys.js';
+import { getRetiredGPTImageModelError, normalizeGPTImageRequestModelKey } from '../consts/GPTImageModelKeys.js';
 
 
 import { uploadFrameLayerImageToCDN, primeCDNCache } from './AWS.js';
@@ -36,7 +36,7 @@ function resolveNanoBananaModelAlias(modelKey) {
   if (modelKey === 'GPTIMAGE1EDIT') {
     return 'GPTIMAGE2.5EDIT';
   }
-  return modelKey;
+  return normalizeGPTImageRequestModelKey(modelKey);
 }
 
 export function assertImageGenerationModelAvailable(modelKey, env = process.env) {

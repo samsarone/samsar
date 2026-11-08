@@ -199,7 +199,7 @@ console.log(available.data); // Check models enabled for this deployment.
 
 const job = await samsar.createVideoFromText({
   prompt: 'A cinematic product launch in a sunlit gallery.',
-  image_model: 'GPTIMAGE2.5', // Compatibility key for GPTImage 2.6.
+  image_model: 'GPTIMAGE2.6',
   video_model: 'RUNWAYML',
   duration: 30,
   aspect_ratio: '16:9',
