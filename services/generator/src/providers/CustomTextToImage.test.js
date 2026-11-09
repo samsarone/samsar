@@ -145,3 +145,18 @@ test('normalizes asynchronous provider states and common image payloads', () => 
   assert.equal(getImageUrl({ data: { images: [{ url: 'https://images.example/result.png' }] } }),
     'https://images.example/result.png');
 });
+
+test('reads image URLs from OpenAI-compatible data and asynchronous result.data arrays', () => {
+  const url = 'https://images.example/generated.png';
+  assert.equal(getImageUrl({ data: [{ url }] }), url);
+  assert.equal(getImageUrl({ status: 'completed', result: { data: [{ url }] } }), url);
+  assert.equal(getImageUrl({ data: [] }), null);
+  assert.equal(getImageUrl({ result: { data: [null] } }), null);
+  assert.equal(getImageUrl({ result: { data: [{ b64_json: 'not-a-url' }] } }), null);
+});
+
+test('keeps existing image URL precedence with an added result.data array', () => {
+  assert.equal(getImageUrl({ image: { url: 'https://images.example/original.png' },
+    result: { data: [{ url: 'https://images.example/fallback.png' }] } }),
+  'https://images.example/original.png');
+});
