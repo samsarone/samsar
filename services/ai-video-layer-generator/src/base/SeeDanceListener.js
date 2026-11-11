@@ -1,4 +1,5 @@
 import { fal } from "@fal-ai/client";
+import { readProviderVideoResult } from '../utils/ProviderNetworkRecovery.js';
 const FAL_API_KEY = process.env.FAL_API_KEY;
 
 fal.config({
@@ -151,9 +152,9 @@ async function listenToPendingSeeDanceRequests(payload, modelLink) {
   const responseStatus = responseStatusData.status;
   if (responseStatus === 'COMPLETED') {
 
-    const result = await fal.queue.result(modelLink, {
+    const result = await readProviderVideoResult(() => fal.queue.result(modelLink, {
       requestId: generationId
-    });
+    }));
 
     const videoURL = result.data.video.url;
 

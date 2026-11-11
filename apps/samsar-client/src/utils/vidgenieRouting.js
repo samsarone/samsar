@@ -1,3 +1,4 @@
+import { boundedGet } from './deduplicatedGet.mjs';
 import axios from 'axios';
 import { rememberSessionLoadingLayout } from './sessionLoadingLayout.js';
 import { getDefaultAuthenticatedPath } from './defaultRoutes.js';
@@ -89,10 +90,11 @@ async function fetchLatestSession(apiServer, headers) {
   if (!apiServer || !headers) return null;
 
   try {
-    const { data } = await axios.get(`${apiServer}/video_sessions/get_session`, headers);
+    const { data } = await boundedGet(axios, `${apiServer}/video_sessions/get_session`, headers);
     return data || null;
-  } catch {
-    return null;
+  } catch (error) {
+    if (error?.response?.status === 404) return null;
+    throw error;
   }
 }
 
@@ -107,7 +109,7 @@ export async function fetchGuestVidgenieSession(apiServer) {
   if (IS_STANDALONE_DEPLOYMENT || !apiServer) return null;
 
   try {
-    const { data } = await axios.get(`${apiServer}/video_sessions/fetch_guest_session`);
+    const { data } = await boundedGet(axios, `${apiServer}/video_sessions/fetch_guest_session`);
     return data || null;
   } catch {
     return null;

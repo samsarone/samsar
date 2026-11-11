@@ -1,4 +1,5 @@
 import { fal } from "@fal-ai/client";
+import { readProviderVideoResult } from './utils/ProviderNetworkRecovery.js';
 import { isKlingV4Model, validateKlingV4Duration } from './utils/KlingModel.js';
 const FAL_API_KEY = process.env.FAL_API_KEY;
 
@@ -86,9 +87,9 @@ export async function listenToPendingKlingVideoRequest(payload, dependencies = {
 
   if (responseStatus === 'COMPLETED') {
 
-    const result = await client.queue.result(KLING_VIDEO_LINK, {
+    const result = await readProviderVideoResult(() => client.queue.result(KLING_VIDEO_LINK, {
       requestId: generationId
-    });
+    }));
 
     const videoURL = result.data.video.url;
     return {

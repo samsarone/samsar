@@ -99,7 +99,7 @@ describe('Vidgenie container authentication and project entry integration', () =
     expect(await screen.findByText('Project: owner-project')).toBeVisible();
     expect(screen.getByLabelText('Current route')).toHaveTextContent('/vidgenie/owner-project?tab=audio');
     const latestCall = api.get.mock.calls.find(([url]) => url.endsWith('/video_sessions/get_session'));
-    expect(latestCall[1]).toEqual({ headers: { 'Content-Type': 'application/json', Authorization: 'Bearer private-owner-token' } });
+    expect(latestCall[1]).toEqual({ headers: { 'Content-Type': 'application/json', Authorization: 'Bearer private-owner-token' }, timeout: 30000, signal: expect.any(AbortSignal) });
     expect(api.post).not.toHaveBeenCalled();
     expect(localStorage.getItem('videoSessionId')).toBe('owner-project');
   });
@@ -107,7 +107,7 @@ describe('Vidgenie container authentication and project entry integration', () =
   it('opens a public sample for a guest without creating or requesting a private project', async () => {
     mount({ path: '/vidgenie?tab=images' });
     expect(await screen.findByText('Project: sample-project')).toBeVisible();
-    expect(api.get).toHaveBeenCalledExactlyOnceWith('https://processor.test/video_sessions/fetch_guest_session');
+    expect(api.get).toHaveBeenCalledExactlyOnceWith('https://processor.test/video_sessions/fetch_guest_session', { timeout: 30000, signal: expect.any(AbortSignal) });
     expect(api.post).not.toHaveBeenCalled();
     expect(screen.getByLabelText('Current route')).toHaveTextContent('/vidgenie/sample-project?tab=images');
     expect(JSON.parse(screen.getByLabelText('Navigation state').textContent)).toEqual({ guestSession: guest() });
@@ -302,4 +302,24 @@ describe('Vidgenie entry failures, retries, and stale work', () => {
     mount({ path: '/vidgenie/preloaded' });
     expect(await screen.findByText('Project: preloaded')).toBeVisible();
   });
+});
+
+
+it('does not create a blank project after a transient entry lookup failure and retries the lookup', async () => {
+  persistAuthToken('owner-token');
+  let fail = true;
+  api.get.mockImplementation(async url => {
+    if (url.endsWith('/verify_token')) return { data: { _id: 'owner' } };
+    if (url.endsWith('/get_session')) {
+      if (fail) throw { response: { status: 503 } };
+      return { data: pending('recovered') };
+    }
+    throw new Error(`Unexpected GET ${url}`);
+  });
+  mount();
+  const retry = await screen.findByRole('button', { name: 'Try again' });
+  fail = false;
+  fireEvent.click(retry);
+  expect(await screen.findByText('Project: recovered')).toBeVisible();
+  expect(api.post).not.toHaveBeenCalled();
 });

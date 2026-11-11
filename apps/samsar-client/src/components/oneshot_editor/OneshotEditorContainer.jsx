@@ -26,7 +26,7 @@ export function preloadOneshotEditor() {
   return loadOneshotEditor();
 }
 
-export default function OneshotEditorContainer() {
+export default function OneshotEditorContainer({ initialSessionRequestRef } = {}) {
   useUiLanguage();
 
   const { id } = useParams();
@@ -35,6 +35,7 @@ export default function OneshotEditorContainer() {
 
   const { user, userFetching, userInitiated } = useUser();
   const [routeError, setRouteError] = useState('');
+  const [routeRetryAttempt, setRouteRetryAttempt] = useState(0);
   const routeResolutionStartedRef = useRef(false);
   const shouldWaitForProjectAuth = shouldDeferVidgenieProjectLoad({
     sessionId: id,
@@ -114,7 +115,7 @@ export default function OneshotEditorContainer() {
       isCancelled = true;
       routeResolutionStartedRef.current = false;
     };
-  }, [id, location.search, navigate, user, userFetching, userInitiated]);
+  }, [id, location.search, navigate, user, userFetching, userInitiated, routeRetryAttempt]);
 
   let content;
   if (shouldWaitForProjectAuth || (!id && !routeError)) {
@@ -125,6 +126,7 @@ export default function OneshotEditorContainer() {
         <div className="w-full rounded-2xl border border-line bg-surface p-6 text-center shadow-sm">
           <h1 className="text-xl font-semibold">{uiText("VidGenie sample unavailable")}</h1>
           <p className="mt-2 text-sm text-fg-muted">{routeError}</p>
+          <button type="button" onClick={() => setRouteRetryAttempt(attempt => attempt + 1)} className="mt-4 mr-2 inline-flex min-h-10 items-center justify-center rounded-xl border border-line px-5 py-2 text-sm font-semibold">{uiText("Try again")}</button>
           <button
             type="button"
             onClick={() => navigate('/login?redirect=%2Fvidgenie')}
@@ -136,7 +138,7 @@ export default function OneshotEditorContainer() {
   } else {
     content = (
       <Suspense fallback={<VidgenieSkeletonLoader embedded />}>
-        <OneshotEditor />
+        <OneshotEditor initialSessionRequestRef={initialSessionRequestRef} />
       </Suspense>
     );
   }

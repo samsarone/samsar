@@ -345,7 +345,8 @@ for (const status of [401, 403]) {
     });
     for (let attempt = 0; attempt < 6; attempt++) { f.job.nextAttemptAfter = null; await generatePendingAiVideoLayerRequests(); }
     assert.equal(f.job.status, 'FAILED');
-    assert.equal(f.job.infrastructureFailureCode, 'PROVIDER_NETWORK_RETRY_EXHAUSTED');
+    assert.equal(f.job.infrastructureFailureCode, 'PROVIDER_POLL_REJECTED');
+    assert.equal(f.job.transientProviderErrorCount, 0);
     assert.equal(shouldRetryBaseGeneration({ generation: f.job, videoSession: { isExpressGeneration: true } }), false);
     await generatePendingAiVideoLayerRequests();
     assert.equal(f.layer.aiVideoGenerationStatus, 'FAILED');

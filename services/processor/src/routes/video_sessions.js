@@ -276,39 +276,23 @@ router.get('/layer_frame', async function (req, res) {
 });
 
 router.get('/session_details', async function (req, res) {
-  const headers = req.headers;
-  const { id, isGuest } = req.query;
-  const userId = verifyUserAuth(headers);
+  const { id } = req.query;
+  let userId;
   res.setHeader('Cache-Control', 'private, no-store');
-  if (!userId) {
-    const payload = {
-      id,
-    }
-    const sessionData = await getGuestSessionDetails(payload);
-    res.send(sessionData);
-    return;
-  }
-  const payload = {
-    userId,
-    id,
-  }
-
   try {
-    const sessionData = await getSessionDetails(payload);
-    res.send(sessionData);
-
-  } catch (e) {
-    console.error('Error getting session details', {
-      sessionId: id,
-      userId,
-      statusCode: e?.statusCode || e?.status || 400,
-      message: e?.message,
-    });
-    res.status(e?.statusCode || e?.status || 400).send({
-      error: e?.message || "Error getting session details",
-    });
+    userId = verifyUserAuth(req.headers);
+    const sessionData = userId
+      ? await getSessionDetails({ userId, id })
+      : await getGuestSessionDetails({ id });
+    if (!sessionData) {
+      return res.status(404).send({ error: 'Video session not found.' });
+    }
+    return res.send(sessionData);
+  } catch (error) {
+    const statusCode = error?.statusCode || error?.status || (error?.name === 'CastError' ? 400 : 500);
+    console.error('Error getting session details', { sessionId: id, userId, statusCode, message: error?.message });
+    return res.status(statusCode).send({ error: error?.message || 'Error getting session details' });
   }
-
 });
 
 async function streamGuestSessionMedia(req, res, payload) {

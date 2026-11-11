@@ -1,3 +1,4 @@
+import { boundedGet } from './deduplicatedGet.mjs';
 import { translateText as uiText } from "./localization.js";
 import axios from 'axios';
 
@@ -115,7 +116,7 @@ export async function fetchStudioSessionDetails({
 } = {}) {
   if (!processorServer || !sessionId) return null;
 
-  const { data } = await httpClient.get(
+  const { data } = await boundedGet(httpClient,
     `${processorServer}/video_sessions/session_details`,
     {
       ...(headers || {}),

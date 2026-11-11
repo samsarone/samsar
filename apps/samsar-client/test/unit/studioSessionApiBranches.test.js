@@ -31,7 +31,7 @@ describe('Studio initial-scene lifecycle', () => {
   it('uses an explicitly requested session id when fetching partial session details', async () => {
     const client = { post: vi.fn(), get: vi.fn().mockResolvedValue({ data: withFirstLayer }) };
     await expect(ensureInitialLayerForNewStudioSession(options(client, { sessionId: 'project' }))).resolves.toBe(withFirstLayer);
-    expect(client.get).toHaveBeenCalledExactlyOnceWith('/api/video_sessions/session_details', { ...headers, params: { id: 'project', cacheBust: expect.any(Number) } });
+    expect(client.get).toHaveBeenCalledExactlyOnceWith('/api/video_sessions/session_details', { timeout: 30000, signal: expect.any(AbortSignal), ...headers, params: { id: 'project', cacheBust: expect.any(Number) } });
     expect(client.post).not.toHaveBeenCalled();
   });
 
@@ -102,11 +102,11 @@ describe('Studio session detail fetches', () => {
     vi.spyOn(Date, 'now').mockReturnValue(123456);
     const client = { get: vi.fn().mockResolvedValue({ data: withFirstLayer }) };
     await expect(fetchStudioSessionDetails(options(client, { sessionId: 'project' }))).resolves.toBe(withFirstLayer);
-    expect(client.get).toHaveBeenCalledWith('/api/video_sessions/session_details', { ...headers, params: { id: 'project', cacheBust: 123456 } });
+    expect(client.get).toHaveBeenCalledWith('/api/video_sessions/session_details', { timeout: 30000, signal: expect.any(AbortSignal), ...headers, params: { id: 'project', cacheBust: 123456 } });
   });
   it('returns null for an empty response without requiring request headers', async () => {
     const client = { get: vi.fn().mockResolvedValue({ data: null }) };
     await expect(fetchStudioSessionDetails({ processorServer: '/api', sessionId: 'project', httpClient: client })).resolves.toBeNull();
-    expect(client.get).toHaveBeenCalledWith('/api/video_sessions/session_details', { params: { id: 'project', cacheBust: expect.any(Number) } });
+    expect(client.get).toHaveBeenCalledWith('/api/video_sessions/session_details', { timeout: 30000, signal: expect.any(AbortSignal), params: { id: 'project', cacheBust: expect.any(Number) } });
   });
 });

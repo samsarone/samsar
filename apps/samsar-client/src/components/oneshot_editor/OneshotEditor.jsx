@@ -1,3 +1,4 @@
+import { consumeInitialSessionDetails } from '../../utils/sessionDetailsRequest.js';
 import { canFallbackToVideoStatus, getTimelineVideoRevision } from '../../utils/sessionLoadingPolicy.mjs';
 import { VIDGENIE_EDITOR_CLASS, VIDGENIE_CARD_CLASS } from './vidgenieLayout.js';
 import ExpressPostProcessingPanel from './ExpressPostProcessingPanel.jsx';
@@ -2353,7 +2354,7 @@ function getDetailedGenerationErrorMessage(data, failureStatus = '') {
     : uiText("Video generation failed.");
 }
 
-export default function OneshotEditor() {
+export default function OneshotEditor({ initialSessionRequestRef } = {}) {
   const uiLanguage = useUiLanguage();
   // ─────────────────────────────────────────────────────────
   //  Context / Router hooks
@@ -4613,10 +4614,7 @@ export default function OneshotEditor() {
       } else if (headers) {
         let sessionResponse;
         try {
-          sessionResponse = await deduplicatedGet(axios,
-            `${API_SERVER}/video_sessions/session_details?id=${encodeURIComponent(id)}&cacheBust=${Date.now()}`,
-            headers
-          );
+          sessionResponse = await consumeInitialSessionDetails(API_SERVER, id, headers, initialSessionRequestRef);
         } catch (sessionDetailsError) {
           if (!isCurrentSession()) return null;
           if (sessionDetailsError?.response?.status === 401) {
