@@ -4,6 +4,7 @@ import { decideNetworkOutageAction } from './utils/NetworkOutagePolicy.js';
 import { providerNetworkCircuit, blockedProviderNetworkGateError, recordProviderNetworkFailure } from './utils/ProviderNetworkTransport.js';
 import { fal } from '@fal-ai/client';
 import { isProviderNetworkError, getInfrastructureFailureCode, getProviderResultInfrastructureCode,
+  completedProviderResultFailure, getProviderExecutionRejection,
   buildProviderInfrastructureFailure, isUsableCompletedRequestLayer, buildExpiredProviderLeaseRecovery, providerRequestFetch,
 } from './utils/ProviderNetworkRecovery.js';
 import { supportsInferenceEffort, getReasoningModelBase } from './utils/ReasoningModels.js';
@@ -1370,7 +1371,7 @@ export function buildBaseGenerationTerminalFailureUpdate(currentLayer = {}, fail
 }
 
 function getProviderErrorStatus(error) {
-  const status = error?.response?.status ?? error?.status;
+  const status = error?.response?.status ?? error?.statusCode ?? error?.status;
   const numericStatus = Number(status);
   return Number.isFinite(numericStatus) ? numericStatus : null;
 }
@@ -1694,8 +1695,9 @@ function getErrorLogPayload(error) {
   return {
     name: error.name,
     message: error.message,
-    status: error.status,
-    body: error.body,
+    status: getProviderErrorStatus(error),
+    body: error.body || error.response?.data || error.data,
+    providerOperation: error.providerOperation,
     code: error.code,
     googleStatus: error.googleStatus,
     stack: error.stack,
@@ -1978,8 +1980,20 @@ export async function generatePendingAiVideoLayerRequests() {
         throw e;
       }
       console.error('Error while polling request:', getErrorLogPayload(e));
+      // Billing/download/delivery errors belong to an existing paid output,
+      // even when a local or storage endpoint responds with HTTP 422.
+      if (e.videoBillingPending || e.providerOutputCompleted || request.videoBillingSavedResult) {
+        if (request.status === 'PENDING' && isTransientProviderError(e)) {
+          await deferTransientProviderError(request, e, 'output');
+        } else {
+          await AIVideoLayerGeneration.findByIdAndUpdate(request._id, { $set: {
+            rowLocked: false, nextAttemptAfter: new Date(Date.now() + 15000),
+            videoBillingError: e.message, expireAt: null } });
+        }
+        continue;
+      }
       const resultCode = getProviderResultInfrastructureCode({ providerStatus: {
-        status: e?.status || e?.response?.status, ...(e?.body || e?.response?.data || e?.data),
+        ...(e?.body || e?.response?.data || e?.data), status: getProviderErrorStatus(e),
       } });
       if (resultCode === 'PROVIDER_MEDIA_DOWNLOAD_FAILED') {
         await AIVideoLayerGeneration.findByIdAndUpdate(request._id, { $set: {
@@ -1989,18 +2003,37 @@ export async function generatePendingAiVideoLayerRequests() {
         } });
         continue;
       }
-      if (request.status === 'PENDING' && (isTransientProviderError(e) || getProviderErrorStatus(e) >= 400)) {
-        await deferTransientProviderError(request, e, request.videoBillingSavedResult ? 'output' : 'poll');
-        continue;
-      }
-      if (e.videoBillingPending || e.providerOutputCompleted || request.videoBillingSavedResult) {
+      const executionRejection = getProviderExecutionRejection(e);
+      if (request.status === 'PENDING' && executionRejection) {
+        // Keep the original retry policy so the normal failure handler can
+        // choose an alternate image or regenerate the prompt within its cap.
         await AIVideoLayerGeneration.findByIdAndUpdate(request._id, { $set: {
-          rowLocked: false, nextAttemptAfter: new Date(Date.now() + 15000),
-          videoBillingError: e.message, expireAt: null } });
+          status: 'FAILED', rowLocked: false, nextAttemptAfter: null, expireAt: null,
+          providerFailureDefinitive: true, submissionOutcomeUnknown: false,
+          infrastructureFailure: false, infrastructureFailureCode: null,
+          transientProviderErrorExhausted: false, transientProviderErrorCount: 0,
+          lastProviderFailureMessage: executionRejection.providerFailureMessage,
+          lastProviderFailureDetail: executionRejection.providerStatus,
+        } });
         continue;
       }
       if (request.status === 'PENDING' && isTransientProviderError(e)) {
         await deferTransientProviderError(request, e, 'poll');
+        continue;
+      }
+      if (request.status === 'PENDING' && getProviderErrorStatus(e) >= 400) {
+        // A failed status lookup or an authorization error does not prove the
+        // accepted execution failed. Retain its ID and prevent replacement jobs.
+        const detail = completedProviderResultFailure(e);
+        const operation = e.providerOperation === 'result' ? 'result retrieval' : 'status check';
+        await AIVideoLayerGeneration.findByIdAndUpdate(request._id, { $set: {
+          status: 'FAILED', rowLocked: false, nextAttemptAfter: null, expireAt: null,
+          retryOnFail: false, dockerAdapterFailoverDisabled: true,
+          providerFailureDefinitive: false, submissionOutcomeUnknown: false,
+          infrastructureFailure: true, infrastructureFailureCode: 'PROVIDER_POLL_REJECTED',
+          lastProviderFailureMessage: `Provider ${operation} rejected (HTTP ${getProviderErrorStatus(e)}): ${detail?.providerFailureMessage || e.message}`,
+          lastProviderFailureDetail: getErrorLogPayload(e),
+        } });
         continue;
       }
       if (

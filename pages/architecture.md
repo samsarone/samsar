@@ -6,10 +6,8 @@ Start with [hosted Samsar.js](https://docs.samsar.one/) if you want managed work
 
 ## Runtime Shape
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="../docs/readme-diagrams/architecture-dark.svg">
-  <img src="../docs/readme-diagrams/architecture.svg" alt="Studio and SDK call the processor; workers consume MongoDB-backed jobs and call providers. Direct inference and embeddings also run through the processor. State and media storage are shared." width="1200">
-</picture>
+<img src="../docs/readme-diagrams/architecture.svg#gh-light-mode-only" alt="Studio and SDK call the processor; workers consume MongoDB-backed jobs and call providers. Direct inference and embeddings also run through the processor. State and media storage are shared." width="1200">
+  <img src="../docs/readme-diagrams/architecture-dark.svg#gh-dark-mode-only" alt="Studio and SDK call the processor; workers consume MongoDB-backed jobs and call providers. Direct inference and embeddings also run through the processor. State and media storage are shared." width="1200">
 
 The default Docker deployment keeps the Studio client, processor API, workers, local infrastructure, and optional logging inside the Compose runtime. The client uses REST and assistant SSE streams; the processor and workers consume rendered configuration, persist state through MongoDB, and write media through the configured object storage adapter.
 
