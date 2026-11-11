@@ -28,7 +28,7 @@ for (const mediaMode of ['docker-local', 's3-cloudfront']) {
     let resolveCount = 0;
     let captured;
     await createCompatibleChatCompletion({}, {
-      model: 'claude-fable-5.1', bypassSamsarExternalInference: true,
+      model: 'claude-fable-5.2', bypassSamsarExternalInference: true,
       messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: source } }] }],
     }, {
       resolveMediaUrl: async (value) => {

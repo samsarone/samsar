@@ -7,7 +7,7 @@ import { inlineAnthropicVisionImages, usesLocalAnthropicVisionImages } from './A
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZlSAAAAAASUVORK5CYII=', 'base64');
 const image = url => ({ type: 'image', source: { type: 'url', url } });
-const bodyFor = (...content) => ({ model: 'claude-fable-5-1', messages: [{ role: 'user', content }] });
+const bodyFor = (...content) => ({ model: 'claude-fable-5-2', messages: [{ role: 'user', content }] });
 
 async function fixture(t) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'samsar-claude-local-'));

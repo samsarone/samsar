@@ -13,7 +13,7 @@ All prices are **credits per one million tokens**. Each row applies to the speci
 | `gpt-6.1-sol` | OpenAI | ≤ 272k input tokens | 240 | 12 | 1,200 |
 | `gpt-6.1-sol` | OpenAI | > 272k input tokens | 480 | 24 | 1,800 |
 | `claude-opus-5.5` | Anthropic | Standard | 480 | 24 | 2,400 |
-| `claude-fable-5.1` | Anthropic / OpenRouter | Standard | 1,200 | 30 | 6,000 |
+| `claude-fable-5.2` | Anthropic / OpenRouter | Standard | 960 | 24 | 4,800 |
 | `gemini-4-carbon` | Google global | Through Nov 30, 2026 | 240 | 12 | 1,200 |
 | `gemini-4-carbon` | Google global | From Dec 1, 2026 | 480 | 24 | 2,400 |
 | `gemini-4-carbon` | Google regional | Through Nov 30, 2026 | 264 | 13.2 | 1,320 |

@@ -7,7 +7,7 @@ import OpenAI from 'openai';
 import { sendAssistantMessageRequest, sendAssistantStructuredMessageRequest } from './OpenAI.js';
 import { sendAssistantMessageRequest as sendAlternatePromptRequest } from './AIUtils.js';
 
-for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1']) {
+for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
   for (const effort of ['high', 'xhigh']) {
     for (const stage of ['vision', 'structured', 'alternate']) {
       test(`${stage} preserves native ${model}/${effort}`, async (t) => {
@@ -90,7 +90,7 @@ for (const stage of ['vision', 'structured', 'alternate']) {
     const messages = [{ role: 'user', content: [{
       type: 'image_url', image_url: { url: '/assets_v2/generations/session/frame.png' },
     }] }];
-    const model = 'claude-fable-5.1';
+    const model = 'claude-fable-5.2';
     const context = { selectedInferenceModelAuthorization: 'native' };
     if (stage === 'structured') {
       assert.deepEqual(await sendAssistantStructuredMessageRequest(messages, model, context), { useEndFrame: true });

@@ -243,7 +243,7 @@ export function normalizeInferenceModelFromPayload(payload = {}) {
   if (!normalizedModel) {
     throw makeValidationError(
       'inference_model must be one of: gpt-6-astra, gpt-6.1-sol, claude-opus-5.5, ' +
-      'claude-fable-5.1, gemini-4-carbon, QWEN3.8, kimi-k3. ' +
+      'claude-fable-5.2, gemini-4-carbon, QWEN3.8, kimi-k3. ' +
       'GPT and Claude models accept high and xhigh effort.'
     );
   }

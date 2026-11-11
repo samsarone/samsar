@@ -53,12 +53,12 @@ export const modalities = [
 ];
 
 const inference = new Map(INFERENCE_MODEL_OPTIONS.filter(row => row.exposeInCatalog !== false).map(row => [row.availabilityModel, row]));
-const native = { 'gpt-6-astra': 'openai', 'gpt-6.1-sol': 'openai', 'claude-opus-5.5': 'anthropic', 'claude-fable-5.1': 'anthropic', 'gemini-4-carbon': 'googleCloud', KIMIK3: 'kimi', 'QWEN3.8': 'alibabaCloud' };
+const native = { 'gpt-6-astra': 'openai', 'gpt-6.1-sol': 'openai', 'claude-opus-5.5': 'anthropic', 'claude-fable-5.2': 'anthropic', 'gemini-4-carbon': 'googleCloud', KIMIK3: 'kimi', 'QWEN3.8': 'alibabaCloud' };
 const notes = {
   'gpt-6-astra': 'Default GPT model. Supports high and xhigh effort. Legacy gpt-5.6-sol choices still normalize to Astra; GPT 6.1 Sol is a separate choice. GenBlaze requires an exact validated mapping.',
   'gpt-6.1-sol': 'Supports text inference and vision with high or xhigh effort. Native OpenAI, OpenRouter, and Samsar adapters.',
   'claude-opus-5.5': 'Supports text inference and vision with high or xhigh effort. Native Anthropic, OpenRouter, and Samsar adapters.',
-  'claude-fable-5.1': 'Supports text inference and vision with high or xhigh effort. Native Anthropic uses claude-fable-5-1; OpenRouter uses anthropic/claude-fable-5.1.',
+  'claude-fable-5.2': 'Supports text inference and vision with high or xhigh effort. Native Anthropic uses claude-fable-5-2; OpenRouter uses anthropic/claude-fable-5.2.',
   KIMIK3: 'Setup key KIMIK3; inference requests use kimi-k3. Native Kimi first, then Samsar; OpenRouter is not in this chain.',
   'QWEN3.8': 'Native Alibaba is a Docker option. Hosted Qwen uses OpenRouter internally; callers still use Samsar.js.',
   'GPTIMAGE2.5': 'Stable internal key for GPTImage 2.6 Sunburst; requests also accept GPTIMAGE2.6. Legacy GenBlaze GPT Image 2 routes are excluded from this model.',

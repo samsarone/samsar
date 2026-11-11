@@ -1,4 +1,5 @@
-import { readAssistantSSE, assistantMessagesFromSnapshot } from '../utils/assistantSSE.js';
+import { readAssistantSSE, assistantMessagesFromSnapshot, isTerminalAssistantDeliveryError,
+  assistantDeliveryErrorMessage } from '../utils/assistantSSE.js';
 import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 
@@ -41,11 +42,11 @@ export function useAssistantRequestGuard(sessionId) {
       retry: () => { setError(null); state.current.retry?.(); },
       reportError: (failure, retry) => {
         state.current.retry = retry;
-        setError({ message: failure?.response?.data?.error || failure?.message || 'Unable to load. Please try again.',
+        setError({ message: assistantDeliveryErrorMessage(failure),
           retryable: Boolean(retry), sessionId: state.current.sessionId, version: state.current.version });
       },
       stopOnAccessError: (error) => {
-        if (![400, 401, 403, 404].includes(error?.response?.status)) return false;
+        if (!isTerminalAssistantDeliveryError(error)) return false;
         guard.current.invalidate();
         return true;
       },
@@ -102,7 +103,7 @@ export function useAssistantRequestGuard(sessionId) {
         state.current.timers.forEach(clearInterval);
         state.current.timers.clear();
       },
-      subscribe: ({ url, headers, onSnapshot }) => {
+      subscribe: ({ url, headers, onSnapshot, onActivity, onError }) => {
         state.current.streamController?.abort();
         const controller = new AbortController();
         state.current.streamController = controller;
@@ -113,21 +114,35 @@ export function useAssistantRequestGuard(sessionId) {
             let settled = false, rotate = false;
             try {
               await withTimeout(async signal => {
-                const response = await fetch(url, { headers: { ...headers, Accept: 'text/event-stream' }, signal });
+                const response = await fetch(url, { headers: { ...headers, Accept: 'text/event-stream' }, signal, cache: 'no-store' });
                 await readAssistantSSE(response, (event, snapshot) => {
                   if (!active()) return;
                   if (event === 'settled') settled = true;
                   if (event === 'reconnect') rotate = true;
-                  if (event === 'error' && [401, 403, 404].includes(snapshot.status)) controller.abort();
+                  if (event === 'error') {
+                    const failure = { status: snapshot.status, response: { status: snapshot.status, data: snapshot } };
+                    if (isTerminalAssistantDeliveryError(failure)) {
+                      controller.abort();
+                      onError?.(failure);
+                    }
+                  }
                   if (event === 'snapshot' && guard.current.acceptSession(snapshot)) {
                     onSnapshot({ ...snapshot, sessionMessages: assistantMessagesFromSnapshot(snapshot) });
                   }
-                }, signal);
+                }, signal, () => { if (active()) onActivity?.(); });
               }, controller.signal, 45000);
               if (settled) break;
               if (rotate) attempt = -1; // Only explicit server rotation resets the retry budget.
             } catch (error) {
-              if ([400, 401, 403, 404, 405].includes(error.status)) break;
+              if (isTerminalAssistantDeliveryError(error)) {
+                // Older servers may omit the SSE endpoint while REST remains usable.
+                const data = error.response?.data;
+                const hasApplicationError = [data?.error, data?.error?.message, data?.message, data?.detail, data?.code]
+                  .some(value => typeof value === 'string' && value.trim());
+                if (error.status !== 404 || hasApplicationError) onError?.(error);
+                break;
+              }
+              if (error.status === 405) break;
             }
             if (active()) await new Promise(resolve => {
               const done = () => { clearTimeout(timer); controller.signal.removeEventListener('abort', done); resolve(); };
@@ -214,19 +229,26 @@ export function useAssistantRequestGuard(sessionId) {
           clearTimeout(timer);
           inFlight = true;
           try {
-            const response = await withTimeout(signal => axios.get(statusUrl, { headers, signal, timeout: 10000 }), controller.signal, 10000);
+            const response = await withTimeout(signal => axios.get(statusUrl, { headers, signal, timeout: 10000,
+              validateStatus: status => status >= 200 && status < 300 || status === 304 }), controller.signal, 10000);
+            if (response.status === 304) {
+              lastContact = Date.now();
+              return; // Conditional reads retain the existing snapshot and progress deadline.
+            }
             const data = response.data;
             // Keep older REST contracts usable when SSE is unavailable.
             const snapshot = data.sessionDetails || data;
             apply({ ...snapshot, sessionMessageGenerationPending: snapshot.sessionMessageGenerationPending ?? (data.status !== 'COMPLETED') });
           } catch (failure) {
-            if ([400, 401, 403, 404].includes(failure?.response?.status)) fail(failure, false);
+            if (isTerminalAssistantDeliveryError(failure)) fail(failure, false);
           } finally {
             inFlight = false;
             if (active()) timer = setTimeout(poll, 1000);
           }
         };
-        const connect = () => { stream = guard.current.subscribe({ url, headers, onSnapshot: apply }); };
+        const connect = () => { stream = guard.current.subscribe({ url, headers, onSnapshot: apply,
+          onActivity: () => { if (active()) lastContact = Date.now(); },
+          onError: failure => fail(failure, false) }); };
         const wake = () => { if (active() && !document.hidden) { connect(); void poll(); } };
         state.current.stopDelivery = stop;
         // Healthy reasoning may take minutes without visible text. A dead

@@ -560,7 +560,7 @@ test('VisionUtils resolves and rebuilds its image payload on every provider retr
   assert.notEqual(payloads[0], payloads[1]);
 });
 
-for (const model of ['gemini-4-carbon', 'claude-fable-5.1']) {
+for (const model of ['gemini-4-carbon', 'claude-fable-5.2']) {
 test(`VisionUtils keeps the canonical mounted reference for native ${model} inline images`, async () => {
   const { getDescriptionForImageToCreateImageList } = await import('./VisionUtils.js');
   const sourceReference = 'http://localhost:3002/assets_v2/generations/session-id/frame.png';
@@ -595,7 +595,7 @@ test('VisionUtils keeps public image resolution for Claude in S3 mode', async ()
   const sourceReference = '/assets_v2/generations/session-id/frame.png';
   const publicUrl = 'https://cdn.example/assets_v2/generations/session-id/frame.png';
   let resolverCalls = 0;
-  const result = await getDescriptionForImageToCreateImageList(sourceReference, 'claude-fable-5.1', {
+  const result = await getDescriptionForImageToCreateImageList(sourceReference, 'claude-fable-5.2', {
     resolveImageUrl: async (value) => {
       assert.equal(value, sourceReference);
       resolverCalls += 1;
@@ -647,7 +647,7 @@ test('AdUtils refreshes every image and rebuilds the list payload on provider re
   assert.notEqual(payloads[0], payloads[1]);
 });
 
-for (const model of ['gemini-4-carbon', 'claude-fable-5.1']) {
+for (const model of ['gemini-4-carbon', 'claude-fable-5.2']) {
 test(`AdUtils keeps mounted image references canonical for native ${model} inline images`, async () => {
   const { processThemesFromStartImages } = await import('../movie_session/ad_creator/AdUtils.js');
   const sourceReferences = [

@@ -19,7 +19,7 @@ OpenRouter enables these supported inference selections through one credential:
 | Stable model | OpenRouter coverage |
 | --- | --- |
 | `gpt-6-astra`, `gpt-6.1-sol` | Text, assistant, and corresponding vision-input calls; High or XHigh effort. |
-| `claude-opus-5.5`, `claude-fable-5.1` | Native Anthropic, OpenRouter, or Samsar text, assistant, and vision calls; High or XHigh effort. |
+| `claude-opus-5.5`, `claude-fable-5.2` | Native Anthropic, OpenRouter, or Samsar text, assistant, and vision calls; High or XHigh effort. |
 | `gemini-4-carbon` | Text, assistant, and corresponding vision-input calls; defaults to OpenRouter model `google/gemini-4-carbon`. |
 | `QWEN3.8` | Qwen 3.8 Max text, assistant, and vision inference through Alibaba Cloud, OpenRouter, GMICloud, or Samsar. |
 

@@ -327,7 +327,7 @@ test('request TTS model suppresses custom text-to-speech adapter only', () => {
   );
 });
 
-for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1']) {
+for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
   test(`${model} supports both effort levels at request ingestion`, () => {
     for (const effort of ['high', 'xhigh']) {
       assert.deepEqual(resolveEffectiveInferenceSettings({ inference_model: model, effort }), {

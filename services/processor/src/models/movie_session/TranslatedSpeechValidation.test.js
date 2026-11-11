@@ -35,10 +35,10 @@ test('one character beyond tolerance repairs only the offending item with source
   const result = await validateTranslatedSpeech({
     session, originalTexts: ['Marie visits Paris.', 'Hello.'],
     translatedTexts: ['x'.repeat(58), 'Bonjour.'], targetLanguage: 'French',
-    inferenceModel: 'claude-fable-5.1', inferenceEffort: 'xhigh', sessionId: 'translated',
+    inferenceModel: 'claude-fable-5.2', inferenceEffort: 'xhigh', sessionId: 'translated',
   }, { rewriteSpeechItem: async (request) => {
     assert.equal(request.maxCharacters, 57);
-    assert.equal(request.inferenceModel, 'claude-fable-5.1');
+    assert.equal(request.inferenceModel, 'claude-fable-5.2');
     assert.equal(request.options.reasoningEffort, 'xhigh');
     assert.equal(request.options.translationContext.originalText, 'Marie visits Paris.');
     assert.equal(request.options.translationContext.translatedText.length, 58);

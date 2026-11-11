@@ -49,7 +49,7 @@ test('local Docker native Claude describes mounted images without a tunnel reque
     });
     return new Response(JSON.stringify({ content: [{ type: 'text', text: 'A local frame.' }] }));
   });
-  for (const model of ['claude-fable-5.1-xhigh', 'claude-opus-5.5']) {
+  for (const model of ['claude-fable-5.2-xhigh', 'claude-opus-5.5']) {
     assert.equal(await __testOnly__.getDescriptionForImage('/assets_v2/frame.png', 'cinematic', model, '16:9', '', 'native'), 'A local frame.');
   }
   assert.equal(requests.length, 2);

@@ -297,7 +297,7 @@ test('standalone Samsar advertises inference and Seedance video models', () => {
     'gpt-6-astra',
     'gpt-6.1-sol',
     'claude-opus-5.5',
-    'claude-fable-5.1',
+    'claude-fable-5.2',
     'gemini-4-carbon',
     'QWEN3.8',
     'KIMIK3',
@@ -335,13 +335,13 @@ test('OpenRouter runtime credentials advertise all inference models without medi
 
   const result = mergeRuntimeInferenceDeploymentAvailability({});
   assert.deepEqual(result.providers, ['openrouter']);
-  assert.deepEqual(result.models, ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1', 'gemini-4-carbon', 'QWEN3.8']);
+  assert.deepEqual(result.models, ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2', 'gemini-4-carbon', 'QWEN3.8']);
   assert.deepEqual(result.actions, ['chat', 'assistant']);
   assert.deepEqual(result.modelProviders, {
     'gpt-6-astra': 'openrouter',
     'gpt-6.1-sol': 'openrouter',
     'claude-opus-5.5': 'openrouter',
-    'claude-fable-5.1': 'openrouter',
+    'claude-fable-5.2': 'openrouter',
     'gemini-4-carbon': 'openrouter',
     'QWEN3.8': 'openrouter',
   });

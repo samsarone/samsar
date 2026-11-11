@@ -1066,7 +1066,7 @@ test('non-Mongo application errors are not treated as transient DB errors', () =
   assert.equal(isTransientMongoError(error), false);
 });
 
-for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1']) {
+for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
   test(`${model} keeps explicit and persisted effort for video vision retries`, async () => {
     assert.deepEqual(await getInferenceSettingsForSession({
       inferenceModel: model, inferenceEffort: 'xhigh',
