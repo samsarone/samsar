@@ -380,11 +380,11 @@ test('Infinitezoom retries retain the resolved swirl and zoom strategy', () => {
 test('session inference override wins for express generation retries', async () => {
   assert.equal(await getInferenceModelForSession({
     expressGenerationInferenceModel: 'Qwen 3.8 Max',
-    inferenceModel: 'gemini-4-argon',
+    inferenceModel: 'gemini-4-carbon',
   }), 'QWEN3.8');
   assert.equal(await getInferenceModelForSession({
-    inferenceModel: 'gemini-4-argon',
-  }), 'gemini-4-argon');
+    inferenceModel: 'gemini-4-carbon',
+  }), 'gemini-4-carbon');
   assert.equal(await getInferenceModelForSession({
     expressGenerationInferenceModel: 'Kimi K3',
   }), 'kimi-k3');
@@ -392,7 +392,7 @@ test('session inference override wins for express generation retries', async () 
 
 test('request inference settings win over express session and account fallbacks', async () => {
   assert.deepEqual(await getInferenceSettingsForSession({
-    expressGenerationInferenceModel: 'gemini-4-argon',
+    expressGenerationInferenceModel: 'gemini-4-carbon',
     expressGenerationInferenceModelAuthorization: 'deployed',
   }, {
     inferenceModel: 'Qwen 3.8 Max',
@@ -406,7 +406,7 @@ test('request inference settings win over express session and account fallbacks'
 test('express session authorization wins over generic session authorization', async () => {
   assert.deepEqual(await getInferenceSettingsForSession({
     expressGenerationInferenceModel: 'Qwen 3.8 Max',
-    inferenceModel: 'gemini-4-argon',
+    inferenceModel: 'gemini-4-carbon',
     expressGenerationInferenceModelAuthorization: 'deployed',
     inferenceModelAuthorization: 'native',
   }), {

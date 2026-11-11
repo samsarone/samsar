@@ -24,7 +24,7 @@ for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fa
   }
 }
 
-for (const model of ['gemini-4-argon', 'kimi-k3', 'QWEN3.8']) {
+for (const model of ['gemini-4-carbon', 'kimi-k3', 'QWEN3.8']) {
   test(`translation forwards ${model} without unsupported generic reasoning effort`, async () => {
     let request;
     await translateTextContent(['Hello.'], 'French', model, {

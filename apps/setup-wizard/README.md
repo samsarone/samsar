@@ -20,10 +20,10 @@ OpenRouter enables these supported inference selections through one credential:
 | --- | --- |
 | `gpt-6-astra`, `gpt-6.1-sol` | Text, assistant, and corresponding vision-input calls; High or XHigh effort. |
 | `claude-opus-5.5`, `claude-fable-5.1` | Native Anthropic, OpenRouter, or Samsar text, assistant, and vision calls; High or XHigh effort. |
-| `gemini-4-argon` | Text, assistant, and corresponding vision-input calls; defaults to OpenRouter model `google/gemini-4-argon`. |
+| `gemini-4-carbon` | Text, assistant, and corresponding vision-input calls; defaults to OpenRouter model `google/gemini-4-carbon`. |
 | `QWEN3.8` | Qwen 3.8 Max text, assistant, and vision inference through Alibaba Cloud, OpenRouter, GMICloud, or Samsar. |
 
-Gemini 4 Argon is configured automatically when OpenRouter, Samsar API, or native Google Cloud credentials are supplied, either directly or through environment references. The wizard saves the OpenRouter model as `google/gemini-4-argon` and the native Google model as `gemini-4-argon`; runtime rendering shares the corresponding model settings with every inference worker. A music-only Gemini API key enables Lyria without enabling Gemini inference. Run `npm run test:argon-migration` to verify the wizard, generated configuration, and text/vision adapter contracts without paid inference calls.
+Gemini 4 Carbon is configured automatically when OpenRouter, Samsar API, or native Google Cloud credentials are supplied, either directly or through environment references. The wizard saves the OpenRouter model as `google/gemini-4-carbon` and the native Google model as `gemini-4-carbon`; runtime rendering sets High thinking and shares the corresponding model settings with every inference worker. A music-only Gemini API key enables Lyria without enabling Gemini inference. Run `npm run test:carbon-migration` to verify the wizard, generated configuration, and text/vision adapter contracts without paid inference calls.
 
 `KIMIK3` is available from the native Kimi K3 credential or the Samsar universal fallback; it is intentionally not routed through OpenRouter. The native route uses the exact `kimi-k3` model for text, assistants, strict structured output, and vision, with high reasoning on every request.
 

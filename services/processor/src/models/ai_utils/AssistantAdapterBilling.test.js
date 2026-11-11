@@ -4,7 +4,7 @@ import { createOpenRouterChatCompletion, shouldUseSamsarExternalInference,
   unwrapSamsarExternalChatCompletionResponse } from './SamsarExternalInferenceAdapter.js';
 import { calculateAssistantRequestBilling } from '../api/AssistantBilling.js';
 
-for (const [model, credits] of [['gpt-6-astra', 0.951], ['gemini-4-argon', 0.1776], ['qwen3.8-max', 0.147], ['claude-opus-5.5', 0.3612]]) {
+for (const [model, credits] of [['gpt-6-astra', 0.951], ['gemini-4-carbon', 0.1776], ['qwen3.8-max', 0.147], ['claude-opus-5.5', 0.3612]]) {
   test(`OpenRouter ${model} retains reported costs for audit and prices measured cache usage at the fixed tariff`, async () => {
     const response = await createOpenRouterChatCompletion({ model, maxRetries: 0,
       messages: [{ role: 'user', content: 'Hello' }], assistantBillingRequestId: 'request' }, {

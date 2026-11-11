@@ -3,8 +3,8 @@ import test from 'node:test';
 
 import {
   DEFAULT_INFERENCE_MODEL,
-  DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL,
-  GEMINI_4_ARGON_INFERENCE_MODEL,
+  DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL,
+  GEMINI_4_CARBON_INFERENCE_MODEL,
   GPT_56_SOL_INFERENCE_MODEL,
   GPT_56_SOL_REASONING_EFFORT,
   KIMI_K3_INFERENCE_MODEL,
@@ -37,7 +37,7 @@ test('defaults assistant inference to GPT 6 Astra', () => {
 
 test('keeps Gemini reasoning settings separate from the GPT 6 Astra default', () => {
   assert.equal(
-    getAssistantReasoningEffort('gemini-4-argon', {
+    getAssistantReasoningEffort('gemini-4-carbon', {
       reasoningEffort: 'medium',
       effort: 'xhigh',
     }),
@@ -70,39 +70,39 @@ test('bills GPT 6 Astra usage at long-context rates above 272K input tokens', ()
   assert.equal(result.tokenPricingUsdPerMillion.longContextInputThreshold, 272_000);
 });
 
-test('normalizes Gemini 4 Argon label to the assistant inference model', () => {
-  assert.equal(normalizeInferenceModel('gemini-4-argon'), GEMINI_4_ARGON_INFERENCE_MODEL);
-  assert.equal(DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL, 'gemini-4-argon');
-  assert.equal(getProviderModelForInferenceModel('gemini-4-argon'), DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL);
+test('normalizes Gemini 4 Carbon label to the assistant inference model', () => {
+  assert.equal(normalizeInferenceModel('gemini-4-carbon'), GEMINI_4_CARBON_INFERENCE_MODEL);
+  assert.equal(DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL, 'gemini-4-carbon');
+  assert.equal(getProviderModelForInferenceModel('gemini-4-carbon'), DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL);
 });
 
 test('maps stale Gemini 3 provider aliases to the current Vertex model', () => {
-  assert.equal(normalizeInferenceModel('gemini-4-argon'), GEMINI_4_ARGON_INFERENCE_MODEL);
-  assert.equal(normalizeInferenceModel('gemini-4'), GEMINI_4_ARGON_INFERENCE_MODEL);
-  assert.equal(normalizeInferenceModel('gemini-4-argon'), GEMINI_4_ARGON_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('gemini-4-carbon'), GEMINI_4_CARBON_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('gemini-4'), GEMINI_4_CARBON_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('gemini-4-carbon'), GEMINI_4_CARBON_INFERENCE_MODEL);
 
-  assert.equal(normalizeGeminiProviderModel('gemini-4-argon'), DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL);
-  assert.equal(normalizeGeminiProviderModel('gemini-4'), DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL);
-  assert.equal(normalizeGeminiProviderModel('gemini-4-argon'), DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL);
+  assert.equal(normalizeGeminiProviderModel('gemini-4-carbon'), DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL);
+  assert.equal(normalizeGeminiProviderModel('gemini-4'), DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL);
+  assert.equal(normalizeGeminiProviderModel('gemini-4-carbon'), DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL);
 });
 
 test('passes through explicit custom Gemini provider models', () => {
   assert.equal(
-    getProviderModelForInferenceModel('gemini-4-argon-custom'),
-    'gemini-4-argon-custom',
+    getProviderModelForInferenceModel('gemini-4-carbon-custom'),
+    'gemini-4-carbon-custom',
   );
 });
 
-test('uses the processor Gemini provider model for Gemini 4 Argon even with stale env override', () => {
-  const previousModel = process.env.GOOGLE_GEMINI_4_ARGON_MODEL;
-  process.env.GOOGLE_GEMINI_4_ARGON_MODEL = 'gemini-4-argon';
+test('uses the processor Gemini provider model for Gemini 4 Carbon even with stale env override', () => {
+  const previousModel = process.env.GOOGLE_GEMINI_4_CARBON_MODEL;
+  process.env.GOOGLE_GEMINI_4_CARBON_MODEL = 'gemini-4-carbon';
   try {
-    assert.equal(getProviderModelForInferenceModel('gemini-4-argon'), DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL);
+    assert.equal(getProviderModelForInferenceModel('gemini-4-carbon'), DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL);
   } finally {
     if (previousModel === undefined) {
-      delete process.env.GOOGLE_GEMINI_4_ARGON_MODEL;
+      delete process.env.GOOGLE_GEMINI_4_CARBON_MODEL;
     } else {
-      process.env.GOOGLE_GEMINI_4_ARGON_MODEL = previousModel;
+      process.env.GOOGLE_GEMINI_4_CARBON_MODEL = previousModel;
     }
   }
 });

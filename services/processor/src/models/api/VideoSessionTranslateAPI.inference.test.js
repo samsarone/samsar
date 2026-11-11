@@ -61,7 +61,7 @@ test('translation request selection overrides saved settings for every supported
       assert.equal(preview.inferenceEffort, effort);
     }
   }
-  for (const model of ['gemini-4-argon', 'kimi-k3', 'QWEN3.8']) {
+  for (const model of ['gemini-4-carbon', 'kimi-k3', 'QWEN3.8']) {
     const preview = await getTranslateVideoBillingPreview('owner', {
       session_id: 'source-session', language: 'FR', inferenceModel: model,
     });
@@ -75,7 +75,7 @@ test('translation validates model and effort overrides before generation', async
   for (const overrides of [
     { inference_model: 'not-a-model' },
     { inference_model: 'claude-fable-5.1', effort: 'invalid' },
-    { inference_model: 'gemini-4-argon', effort: 'xhigh' },
+    { inference_model: 'gemini-4-carbon', effort: 'xhigh' },
   ]) {
     await assert.rejects(getTranslateVideoBillingPreview('owner', {
       session_id: 'source-session', language: 'FR', ...overrides,

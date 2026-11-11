@@ -406,7 +406,7 @@ test("Docker prefers Google for Gemini text-to-video when Google and OpenAI are 
       GOOGLE_APPLICATION_CREDENTIALS_JSON_B64: GOOGLE_CREDENTIALS_B64,
       GOOGLE_CLOUD_PROJECT: "docker-project",
     },
-    inferenceModel: "gemini-4-argon",
+    inferenceModel: "gemini-4-carbon",
     routeType: "text_to_video",
   }), MODERATION_PROVIDERS.GOOGLE);
 });
@@ -478,7 +478,7 @@ test("Docker explicit provider is honored only when its credential is configured
 test("production Gemini text-to-video prompts retain Google moderation routing", () => {
   assert.equal(resolveModerationProvider({
     env: { CURRENT_ENV: "production" },
-    inferenceModel: "gemini-4-argon",
+    inferenceModel: "gemini-4-carbon",
     routeType: "text_to_video",
   }), MODERATION_PROVIDERS.GOOGLE);
 });
@@ -513,7 +513,7 @@ test("isGoogleOnlyDeploymentProviderConfig accepts environment provider lists", 
 
 test("shouldUseGoogleModerationForInferenceContext recognizes Gemini text-to-video aliases", () => {
   assert.equal(shouldUseGoogleModerationForInferenceContext({
-    inferenceModel: "gemini-4-argon",
+    inferenceModel: "gemini-4-carbon",
     routeType: "T2V",
   }), true);
 });

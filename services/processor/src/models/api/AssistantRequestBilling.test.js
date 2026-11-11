@@ -216,7 +216,7 @@ test('native tariff dates are frozen on the receipt across billing recovery', as
   for (const [pricingTimestampMs, expected] of [[Date.UTC(2026, 10, 30), 0.36], [Date.UTC(2026, 11, 1), 0.72]]) {
     const h = harness();
     await h.store.ensure(h.options.id, { fingerprint: h.options.fingerprint, status: 'BILLING_PENDING', pricingTimestampMs,
-      providerResponse: { model: 'gemini-4-argon', usage: { input_tokens: 1000, output_tokens: 100 } } });
+      providerResponse: { model: 'gemini-4-carbon', usage: { input_tokens: 1000, output_tokens: 100 } } });
     const result = await runAssistantRequest(h.options);
     assert.equal(result.creditsCharged, expected);
     assert.equal(h.providerCalls, 0);

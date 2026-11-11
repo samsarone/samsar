@@ -31,7 +31,7 @@ const INFERENCE_MODEL_KEYS = Object.freeze([
   'gpt-6.1-sol',
   'claude-opus-5.5',
   'claude-fable-5.1',
-  'gemini-4-argon',
+  'gemini-4-carbon',
   'KIMIK3',
   'QWEN3.8',
 ]);
@@ -112,7 +112,7 @@ test('Samsar exposes every supported inference model, including Kimi K3', () => 
 
   assert.deepEqual(
     getAvailableInferenceModels(available),
-    ['KIMIK3', 'QWEN3.8', 'claude-fable-5.1', 'claude-opus-5.5', 'gemini-4-argon', 'gpt-6-astra', 'gpt-6.1-sol'],
+    ['KIMIK3', 'QWEN3.8', 'claude-fable-5.1', 'claude-opus-5.5', 'gemini-4-carbon', 'gpt-6-astra', 'gpt-6.1-sol'],
   );
   for (const model of INFERENCE_MODEL_KEYS) {
     assert.equal(available.modelProviders[model], DOCKER_PROVIDER.SAMSAR);
@@ -125,10 +125,10 @@ test('OpenRouter alone exposes GPT, Claude, Gemini, and Qwen inference', () => {
   ]);
   assert.deepEqual(
     getAvailableInferenceModels(available),
-    ['QWEN3.8', 'claude-fable-5.1', 'claude-opus-5.5', 'gemini-4-argon', 'gpt-6-astra', 'gpt-6.1-sol'],
+    ['QWEN3.8', 'claude-fable-5.1', 'claude-opus-5.5', 'gemini-4-carbon', 'gpt-6-astra', 'gpt-6.1-sol'],
   );
   assert.deepEqual(available.actions, ['assistant', 'chat']);
-  for (const model of ['gpt-6-astra', 'claude-opus-5.5', 'gemini-4-argon', 'QWEN3.8']) {
+  for (const model of ['gpt-6-astra', 'claude-opus-5.5', 'gemini-4-carbon', 'QWEN3.8']) {
     assert.equal(available.modelProviders[model], DOCKER_PROVIDER.OPENROUTER);
   }
   assert.equal(available.modelProviders.KIMIK3, undefined);
@@ -168,8 +168,8 @@ test('GMICloud exposes only credential-scoped compatible mappings', () => {
   assert.deepEqual(available.models, ['QWEN3.8', 'VEO3.1', 'gpt-6-astra']);
   assert.deepEqual(available.actions, ['assistant', 'chat', 'video']);
   assert.equal(available.modelProviders['QWEN3.8'], DOCKER_PROVIDER.GMI_CLOUD);
-  assert.equal(available.modelProviders['gemini-4-argon'], undefined);
-  assert.equal(available.modelProviderPriority['gemini-4-argon'], undefined);
+  assert.equal(available.modelProviders['gemini-4-carbon'], undefined);
+  assert.equal(available.modelProviderPriority['gemini-4-carbon'], undefined);
   assert.equal(
     getDockerModelDisplayName('QWEN3.8', DOCKER_PROVIDER.GMI_CLOUD),
     'Qwen 3.8 Max',
@@ -182,7 +182,7 @@ test('GMICloud inference is not advertised until both text and vision routes are
   ], {
     gmiCloudModelMappings: {
       'gpt-6-astra': { text: { modelId: 'openai/gpt-6-astra' } },
-      'gemini-4-argon': { vision: { modelId: 'google/gemini-4-argon' } },
+      'gemini-4-carbon': { vision: { modelId: 'google/gemini-4-carbon' } },
       'QWEN3.8': { text: { modelId: 'Qwen/Qwen3.8-Max' } },
     },
   });
@@ -359,12 +359,12 @@ test('validated GMI inference is preferred over Samsar only for mapped models', 
     DOCKER_PROVIDER.OPENROUTER,
   ]);
   assert.equal(available.modelProviders['gpt-6-astra'], DOCKER_PROVIDER.GMI_CLOUD);
-  assert.deepEqual(available.modelProviderPriority['gemini-4-argon'], [
+  assert.deepEqual(available.modelProviderPriority['gemini-4-carbon'], [
     DOCKER_PROVIDER.GOOGLE_CLOUD,
     DOCKER_PROVIDER.OPENROUTER,
     DOCKER_PROVIDER.SAMSAR,
   ]);
-  assert.equal(available.modelProviders['gemini-4-argon'], DOCKER_PROVIDER.OPENROUTER);
+  assert.equal(available.modelProviders['gemini-4-carbon'], DOCKER_PROVIDER.OPENROUTER);
 });
 
 test('no enabled provider exposes no Qwen model', () => {

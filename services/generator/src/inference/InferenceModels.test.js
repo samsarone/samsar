@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL,
-  GEMINI_4_ARGON_INFERENCE_MODEL,
+  DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL,
+  GEMINI_4_CARBON_INFERENCE_MODEL,
   GPT_56_SOL_REASONING_EFFORT,
   getGPT56SolReasoningEffort,
   KIMI_K3_INFERENCE_MODEL,
@@ -39,16 +39,16 @@ test('normalizes Qwen 3.8 Max aliases to the logical provider choice', () => {
   assert.equal(getProviderModelForInferenceModel(QWEN_38_INFERENCE_MODEL), 'qwen3.8-max');
 });
 
-test('normalizes Gemini 4 Argon inference aliases to the canonical key', () => {
-  assert.equal(normalizeInferenceModel('gemini-4-argon'), GEMINI_4_ARGON_INFERENCE_MODEL);
-  assert.equal(normalizeInferenceModel('gemini-4-argon'), GEMINI_4_ARGON_INFERENCE_MODEL);
-  assert.equal(normalizeInferenceModel('gemini-4'), GEMINI_4_ARGON_INFERENCE_MODEL);
-  assert.equal(normalizeInferenceModel('Gemini 4 Argon'), GEMINI_4_ARGON_INFERENCE_MODEL);
-  assert.equal(normalizeInferenceModel('gemini4'), GEMINI_4_ARGON_INFERENCE_MODEL);
-  assert.equal(normalizeInferenceModel('Google Gemini 4 Argon'), GEMINI_4_ARGON_INFERENCE_MODEL);
+test('normalizes Gemini 4 Carbon inference aliases to the canonical key', () => {
+  assert.equal(normalizeInferenceModel('gemini-4-carbon'), GEMINI_4_CARBON_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('gemini-4-carbon'), GEMINI_4_CARBON_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('gemini-4'), GEMINI_4_CARBON_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('Gemini 4 Carbon'), GEMINI_4_CARBON_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('gemini4'), GEMINI_4_CARBON_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('Google Gemini 4 Carbon'), GEMINI_4_CARBON_INFERENCE_MODEL);
 
-  assert.equal(getProviderModelForInferenceModel('Gemini 4 Argon'), DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL);
-  assert.equal(normalizeGeminiProviderModel('gemini4'), DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL);
+  assert.equal(getProviderModelForInferenceModel('Gemini 4 Carbon'), DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL);
+  assert.equal(normalizeGeminiProviderModel('gemini4'), DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL);
 });
 
 test('normalizes Kimi K3 aliases to the native provider model', () => {

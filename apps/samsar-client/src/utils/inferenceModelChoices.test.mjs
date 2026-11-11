@@ -14,6 +14,6 @@ for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fa
   });
 }
 test('unrelated providers do not acquire a GPT/Claude effort selector', () => {
-  assert.equal(supportsInferenceEffort('gemini-4-argon'), false);
+  assert.equal(supportsInferenceEffort('gemini-4-carbon'), false);
   assert.equal(supportsInferenceEffort('QWEN3.8'), false);
 });

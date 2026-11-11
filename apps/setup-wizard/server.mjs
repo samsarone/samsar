@@ -2031,7 +2031,7 @@ function buildRuntimeConfig(payload) {
       },
       openrouter: {
         enabled: Boolean(normalizeString(credentials.openrouterApiKey)),
-        gemini4ArgonModel: 'google/gemini-4-argon',
+        gemini4CarbonModel: 'google/gemini-4-carbon',
       },
       gmicloud: {
         enabled: gmiCloudEnabled,
@@ -2045,7 +2045,7 @@ function buildRuntimeConfig(payload) {
       googleCloud: {
         enabled: Boolean(googleCredentials.credentialsJsonB64 || normalizeSecretString(credentials.googleLyriaGeminiApiKey)),
         musicOnly: !googleCredentials.credentialsJsonB64,
-        ...(googleCredentials.credentialsJsonB64 ? { gemini4ArgonModel: 'gemini-4-argon' } : {}),
+        ...(googleCredentials.credentialsJsonB64 ? { gemini4CarbonModel: 'gemini-4-carbon' } : {}),
         lyriaGeminiConfigured: Boolean(normalizeSecretString(credentials.googleLyriaGeminiApiKey)),
         projectId: googleCredentials.projectId,
         credentialsJsonB64: googleCredentials.credentialsJsonB64,

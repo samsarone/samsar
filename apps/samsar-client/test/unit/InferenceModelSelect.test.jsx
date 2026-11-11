@@ -46,8 +46,10 @@ it('does not offer models removed by deployment availability', () => {
 it('hides effort for models without an effort choice and keeps their valid model key', () => {
   render(<ModelForm />);
   setXHigh();
-  fireEvent.change(screen.getByRole('combobox', { name: 'Assistant model' }), { target: { value: 'gemini-4-argon' } });
-  expect(screen.getByTestId('selected').textContent).toBe('gemini-4-argon');
+  expect(screen.getByRole('option', { name: 'Gemini 4 Carbon High', exact: true })).toHaveValue('gemini-4-carbon');
+  expect(screen.queryByRole('option', { name: /Argon/ })).not.toBeInTheDocument();
+  fireEvent.change(screen.getByRole('combobox', { name: 'Assistant model' }), { target: { value: 'gemini-4-carbon' } });
+  expect(screen.getByTestId('selected').textContent).toBe('gemini-4-carbon');
   expect(screen.queryByRole('combobox', { name: 'Reasoning effort' })).not.toBeInTheDocument();
   fireEvent.change(screen.getByRole('combobox', { name: 'Assistant model' }), { target: { value: 'claude-fable-5.1' } });
   expect(screen.getByTestId('selected').textContent).toBe('claude-fable-5.1');

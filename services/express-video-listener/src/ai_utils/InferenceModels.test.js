@@ -33,7 +33,7 @@ test('normalizes Kimi K3 labels to the canonical multimodal setting', () => {
 
 test('keeps Qwen out of the OpenAI Responses-only route without changing GPT or Gemini', () => {
   assert.equal(isResponsesOnlyModel('QWEN3.8'), false);
-  assert.equal(isResponsesOnlyModel('gemini-4-argon'), false);
+  assert.equal(isResponsesOnlyModel('gemini-4-carbon'), false);
   assert.equal(isResponsesOnlyModel('kimi-k3'), false);
   assert.equal(isResponsesOnlyModel('gpt-6-astra'), true);
 });

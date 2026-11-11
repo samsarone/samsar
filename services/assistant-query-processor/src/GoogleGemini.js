@@ -1,7 +1,7 @@
 import { collectGeminiStream } from './ProviderStreaming.js';
 import { getGoogleAccessToken, getGoogleCloudConfig } from './GoogleADC.js';
 import {
-  DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL,
+  DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL,
   DEFAULT_INFERENCE_MODEL,
   getProviderModelForInferenceModel,
 } from './InferenceModels.js';
@@ -11,7 +11,7 @@ import { readMountedProviderMediaBufferIfAvailable } from './ProviderMediaUrl.js
 const DEFAULT_GEMINI_LOCATION = 'global';
 const DEFAULT_IMAGE_MIME_TYPE = 'image/png';
 const MAX_INLINE_IMAGE_BYTES = 7 * 1024 * 1024;
-const DEFAULT_GEMINI_THINKING_LEVEL = 'MEDIUM';
+const DEFAULT_GEMINI_THINKING_LEVEL = 'HIGH';
 const GEMINI_THINKING_LEVELS = new Set(['LOW', 'MEDIUM', 'HIGH']);
 const MIN_GEMINI_MAX_OUTPUT_TOKENS = 64;
 const DEFAULT_GEMINI_TIMEOUT_MS = 10 * 60 * 1000;
@@ -20,8 +20,8 @@ function normalizeString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
 }
 
-function isGeminiArgonProviderModel(value) {
-  return /^gemini-4-argon(?:[.-]|$)/i.test(normalizeString(value));
+function isGeminiCarbonProviderModel(value) {
+  return /^gemini-4-carbon(?:[.-]|$)/i.test(normalizeString(value));
 }
 
 function getGeminiTimeoutMs(options = {}) {
@@ -48,7 +48,7 @@ function resolveGeminiModel(model) {
   const providerModel = normalizeString(getProviderModelForInferenceModel(model));
   return providerModel && providerModel !== DEFAULT_INFERENCE_MODEL
     ? providerModel
-    : DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL;
+    : DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL;
 }
 
 function buildVertexGenerateContentUrl({ projectId, location, model }) {
@@ -312,10 +312,10 @@ function getMaxOutputTokens(options = {}) {
 
 function buildGenerationConfig(options = {}, model = '') {
   const generationConfig = {};
-  const isArgonModel = isGeminiArgonProviderModel(model);
-  const supportsThinkingLevel = isArgonModel || normalizeString(model).startsWith('gemini-3');
+  const isCarbonModel = isGeminiCarbonProviderModel(model);
+  const supportsThinkingLevel = isCarbonModel || normalizeString(model).startsWith('gemini-3');
 
-  if (!isArgonModel && options.temperature !== undefined) {
+  if (!isCarbonModel && options.temperature !== undefined) {
     const temperature = Number(options.temperature);
     if (Number.isFinite(temperature)) {
       generationConfig.temperature = temperature;
@@ -323,7 +323,7 @@ function buildGenerationConfig(options = {}, model = '') {
   }
 
   const topPValue = options.top_p ?? options.topP;
-  if (!isArgonModel && topPValue !== undefined) {
+  if (!isCarbonModel && topPValue !== undefined) {
     const topP = Number(topPValue);
     if (Number.isFinite(topP)) {
       generationConfig.topP = topP;
@@ -338,8 +338,8 @@ function buildGenerationConfig(options = {}, model = '') {
       : normalizedMaxTokens;
   }
 
-  if (isArgonModel && generationConfig.maxOutputTokens) {
-    // Non-streaming REST calls cannot continue beyond Argon's single-request cap.
+  if (isCarbonModel && generationConfig.maxOutputTokens) {
+    // Non-streaming REST calls cannot continue beyond Carbon's single-request cap.
     generationConfig.maxOutputTokens = Math.min(generationConfig.maxOutputTokens, 32768);
   }
 
@@ -453,7 +453,7 @@ export async function sendAssistantGeminiCompletionRequest(
         signal,
         readLocalMediaBuffer: dependencyOverrides.readLocalMediaBuffer,
       });
-      if (isGeminiArgonProviderModel(model)) {
+      if (isGeminiCarbonProviderModel(model)) {
         while (contents.at(-1)?.role === 'model') contents.pop();
       }
       if (!contents.length) {

@@ -391,8 +391,8 @@ export const ASSISTANT_MODEL_TYPES = [
     value: 'gpt-6-astra',
   },
   {
-    get label() { return uiText("Gemini 4 Argon"); },
-    value: 'gemini-4-argon',
+    get label() { return uiText("Gemini 4 Carbon High"); },
+    value: 'gemini-4-carbon',
   },
   {
     get label() { return uiText("Qwen 3.8 Max"); },
@@ -423,8 +423,8 @@ export const INFERENCE_MODEL_TYPES = [
     isBranchedInferenceModel: true,
   },
   {
-    get label() { return uiText("Gemini 4 Argon"); },
-    value: 'gemini-4-argon',
+    get label() { return uiText("Gemini 4 Carbon High"); },
+    value: 'gemini-4-carbon',
     isBranchedInferenceModel: false,
   },
   {
