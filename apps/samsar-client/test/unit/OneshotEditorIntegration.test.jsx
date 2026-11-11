@@ -185,10 +185,11 @@ describe('VidGenie project loading and wizard requests', () => {
 
 describe('VidGenie generation lifecycle', () => {
   it.each([
-    ['claude-fable-5.1', 'xhigh'],
-    ['gpt-6.1-sol', 'high'],
-    ['gemini-4-argon', null],
-  ])('retranslation submits the selected %s model and applicable effort', async (model, effort) => {
+    ['claude-fable-5.1', 'xhigh', 'claude-fable-5.1'],
+    ['gpt-6.1-sol', 'high', 'gpt-6.1-sol'],
+    ['gemini-4-carbon', null, 'gemini-4-carbon'],
+    ['gemini-4-argon', null, 'gemini-4-carbon'],
+  ])('retranslation submits the selected %s model as its canonical key and applicable effort', async (model, effort, expectedModel) => {
     harness.user.selectedInferenceModel = 'gpt-6-astra';
     harness.session = {
       ...harness.session, isExpressGeneration: true,
@@ -202,7 +203,7 @@ describe('VidGenie generation lifecycle', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retranslate video' })); });
     const call = axios.post.mock.calls.find(([url]) => url.endsWith('/retranslate_video'));
     expect(call).toBeDefined();
-    expect(call[1].input.inference_model).toBe(model);
+    expect(call[1].input.inference_model).toBe(expectedModel);
     expect(call[1].input.effort).toBe(effort ?? undefined);
   });
 
