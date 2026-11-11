@@ -59,7 +59,7 @@ test('OpenRouter vision models use operation-specific reasoning-safe output limi
   assert.equal(__testOnly__.getExternalVisionMaxTokens('QWEN3.8', 'description'), 16384);
   assert.equal(__testOnly__.getExternalVisionMaxTokens('QWEN3.8', 'score'), 8192);
   assert.equal(__testOnly__.getExternalVisionMaxTokens('gpt-6-astra', 'description'), 16384);
-  assert.equal(__testOnly__.getExternalVisionMaxTokens('gemini-4-argon', 'score'), 8192);
+  assert.equal(__testOnly__.getExternalVisionMaxTokens('gemini-4-carbon', 'score'), 8192);
   assert.equal(__testOnly__.getExternalVisionMaxTokens('kimi-k3', 'description'), undefined);
 });
 

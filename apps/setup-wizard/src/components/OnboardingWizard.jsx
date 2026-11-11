@@ -237,7 +237,7 @@ const CAPABILITY_FAMILIES = {
     key: 'gemini',
     label: 'Gemini',
     providerKeys: ['googleCloud', 'gmicloud', 'samsar', 'openrouter'],
-    modelKeys: ['gemini-4-argon'],
+    modelKeys: ['gemini-4-carbon'],
   },
   qwen: {
     key: 'qwen',
@@ -267,7 +267,7 @@ const CAPABILITY_FAMILIES = {
     key: 'geminiAssistant',
     label: 'Gemini Assistant',
     providerKeys: ['googleCloud', 'gmicloud', 'samsar', 'openrouter'],
-    modelKeys: ['gemini-4-argon'],
+    modelKeys: ['gemini-4-carbon'],
   },
   qwenAssistant: {
     key: 'qwenAssistant',

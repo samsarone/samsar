@@ -14,10 +14,10 @@ All prices are **credits per one million tokens**. Each row applies to the speci
 | `gpt-6.1-sol` | OpenAI | > 272k input tokens | 480 | 24 | 1,800 |
 | `claude-opus-5.5` | Anthropic | Standard | 480 | 24 | 2,400 |
 | `claude-fable-5.1` | Anthropic / OpenRouter | Standard | 1,200 | 30 | 6,000 |
-| `gemini-4-argon` | Google global | Through Nov 30, 2026 | 240 | 12 | 1,200 |
-| `gemini-4-argon` | Google global | From Dec 1, 2026 | 480 | 24 | 2,400 |
-| `gemini-4-argon` | Google regional | Through Nov 30, 2026 | 264 | 13.2 | 1,320 |
-| `gemini-4-argon` | Google regional | From Dec 1, 2026 | 528 | 26.4 | 2,640 |
+| `gemini-4-carbon` | Google global | Through Nov 30, 2026 | 240 | 12 | 1,200 |
+| `gemini-4-carbon` | Google global | From Dec 1, 2026 | 480 | 24 | 2,400 |
+| `gemini-4-carbon` | Google regional | Through Nov 30, 2026 | 264 | 13.2 | 1,320 |
+| `gemini-4-carbon` | Google regional | From Dec 1, 2026 | 528 | 26.4 | 2,640 |
 | `QWEN3.8` | Alibaba international | Standard | 240 | 30 | 720 |
 | `kimi-k3` | Moonshot | Standard | 360 | 36 | 1,800 |
 
@@ -87,3 +87,5 @@ npm run test:credits-security --workspace services/processor
 ```
 
 The suites cover final token prices, cached tokens, reasoning usage, free responses, concurrent requests, idempotent replay, failure recovery, external-user balances, customer budgets, pending billing confirmation, and unchanged production agent stage pricing. SDK request-option and credit-header checks live in the separate `samsar-js` repository (`npm test`).
+
+Gemini inference and vision default to Carbon with High thinking. Legacy Argon selections resolve to Carbon; historical billing receipts keep their original model identity.

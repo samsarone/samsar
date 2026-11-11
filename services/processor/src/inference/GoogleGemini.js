@@ -4,14 +4,14 @@ import fetch from 'node-fetch';
 import { getGoogleAccessToken, getGoogleCloudConfig } from './GoogleADC.js';
 import {
   getProviderModelForInferenceModel,
-  isGeminiArgonProviderModel,
+  isGeminiCarbonProviderModel,
 } from '../consts/InferenceModels.js';
 import { readLocalMediaBufferIfAvailable } from '../utils/LocalMediaAsset.js';
 
 const DEFAULT_GEMINI_LOCATION = 'global';
 const DEFAULT_IMAGE_MIME_TYPE = 'image/png';
 const MAX_INLINE_IMAGE_BYTES = 7 * 1024 * 1024;
-const DEFAULT_GEMINI_THINKING_LEVEL = 'MEDIUM';
+const DEFAULT_GEMINI_THINKING_LEVEL = 'HIGH';
 const GEMINI_THINKING_LEVELS = new Set(['LOW', 'MEDIUM', 'HIGH']);
 const MIN_GEMINI_MAX_OUTPUT_TOKENS = 64;
 const DEFAULT_GEMINI_TIMEOUT_MS = 10 * 60 * 1000;
@@ -357,14 +357,14 @@ function resolveGeminiThinkingLevel(chatRequest = {}) {
 function buildGenerationConfig(chatRequest = {}, model = '') {
   const generationConfig = {};
   const jsonSchema = extractJsonSchema(chatRequest.response_format);
-  const isArgonModel = isGeminiArgonProviderModel(model);
-  const supportsThinkingLevel = isArgonModel || normalizeString(model).startsWith('gemini-3');
+  const isCarbonModel = isGeminiCarbonProviderModel(model);
+  const supportsThinkingLevel = isCarbonModel || normalizeString(model).startsWith('gemini-3');
 
-  if (!isArgonModel && chatRequest.temperature !== undefined) {
+  if (!isCarbonModel && chatRequest.temperature !== undefined) {
     generationConfig.temperature = Number(chatRequest.temperature);
   }
 
-  if (!isArgonModel && chatRequest.top_p !== undefined) {
+  if (!isCarbonModel && chatRequest.top_p !== undefined) {
     generationConfig.topP = Number(chatRequest.top_p);
   }
 
@@ -381,8 +381,8 @@ function buildGenerationConfig(chatRequest = {}, model = '') {
     generationConfig.responseSchema = normalizeJsonSchemaForGemini(jsonSchema);
   }
 
-  if (isArgonModel && generationConfig.maxOutputTokens) {
-    // Non-streaming REST calls cannot continue beyond Argon's single-request cap.
+  if (isCarbonModel && generationConfig.maxOutputTokens) {
+    // Non-streaming REST calls cannot continue beyond Carbon's single-request cap.
     generationConfig.maxOutputTokens = Math.min(generationConfig.maxOutputTokens, 32768);
   }
 
@@ -510,7 +510,7 @@ export async function createGoogleGeminiChatCompletion(chatRequest = {}, depende
     },
   );
 
-  if (isGeminiArgonProviderModel(model)) {
+  if (isGeminiCarbonProviderModel(model)) {
     while (contents.at(-1)?.role === 'model') contents.pop();
   }
   if (!contents.length) {

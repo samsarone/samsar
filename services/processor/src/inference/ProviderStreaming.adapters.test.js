@@ -45,7 +45,7 @@ test('processor OpenAI compatibility layer preserves final Responses usage and R
 
 test('Gemini processor streams natively and prices visible plus thinking tokens', async () => {
   const texts = [];
-  const result = await createGoogleGeminiChatCompletion({ model: 'gemini-4-argon', projectId: 'test', messages, onText: text => texts.push(text) }, {
+  const result = await createGoogleGeminiChatCompletion({ model: 'gemini-4-carbon', projectId: 'test', messages, onText: text => texts.push(text) }, {
     getAccessToken: async () => 'test', fetch: async url => {
       assert.match(url, /:streamGenerateContent\?alt=sse$/);
       return sse([{ candidates: [{ content: { parts: [{ text: 'Hello' }] }, finishReason: 'STOP' }],

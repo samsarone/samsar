@@ -19,7 +19,7 @@ export const INFERENCE_REASONING_EFFORT_VALUES = Object.freeze([
 export const INFERENCE_MODEL_KEYS = Object.freeze({
   GPT_56_SOL: INFERENCE_MODELS.Inference,
   GPT_56_SOL_XHIGH: INFERENCE_MODELS.BranchedInferenceExtraHigh,
-  GEMINI_4_ARGON: 'gemini-4-argon',
+  GEMINI_4_CARBON: 'gemini-4-carbon',
   QWEN_38: 'QWEN3.8',
   KIMI_K3: 'kimi-k3',
   CLAUDE_OPUS_55: 'claude-opus-5.5',
@@ -30,7 +30,7 @@ export const INFERENCE_MODEL_KEYS = Object.freeze({
 export const INFERENCE_PROVIDER_MODEL_KEYS = Object.freeze({
   [INFERENCE_MODEL_KEYS.GPT_56_SOL]: INFERENCE_MODELS.Inference,
   [INFERENCE_MODEL_KEYS.GPT_56_SOL_XHIGH]: INFERENCE_MODELS.Inference,
-  [INFERENCE_MODEL_KEYS.GEMINI_4_ARGON]: 'gemini-4-argon',
+  [INFERENCE_MODEL_KEYS.GEMINI_4_CARBON]: 'gemini-4-carbon',
   [INFERENCE_MODEL_KEYS.QWEN_38]: 'qwen3.8-max',
   [INFERENCE_MODEL_KEYS.KIMI_K3]: 'kimi-k3',
   [INFERENCE_MODEL_KEYS.CLAUDE_OPUS_55]: 'claude-opus-5-5',
@@ -60,9 +60,9 @@ export function getPublicationMetadataInferenceSettings(value) {
     : PUBLICATION_METADATA_INFERENCE_SETTINGS;
 }
 
-export const GEMINI_4_ARGON_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.GEMINI_4_ARGON;
-export const DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL =
-  INFERENCE_PROVIDER_MODEL_KEYS[GEMINI_4_ARGON_INFERENCE_MODEL];
+export const GEMINI_4_CARBON_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.GEMINI_4_CARBON;
+export const DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL =
+  INFERENCE_PROVIDER_MODEL_KEYS[GEMINI_4_CARBON_INFERENCE_MODEL];
 export const QWEN_38_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.QWEN_38;
 export const QWEN_38_MAX_MODEL = INFERENCE_PROVIDER_MODEL_KEYS[QWEN_38_INFERENCE_MODEL];
 export const ALIBABA_QWEN_MODEL_ENV = 'ALIBABA_QWEN_MODEL';
@@ -75,7 +75,7 @@ export const KIMI_K3_PROVIDER_MODEL =
 export const SUPPORTED_INFERENCE_MODEL_VALUES = Object.freeze([
   DEFAULT_INFERENCE_MODEL,
   GPT_56_SOL_XHIGH_INFERENCE_MODEL,
-  GEMINI_4_ARGON_INFERENCE_MODEL,
+  GEMINI_4_CARBON_INFERENCE_MODEL,
   QWEN_38_INFERENCE_MODEL,
   KIMI_K3_INFERENCE_MODEL,
   CLAUDE_OPUS_55_INFERENCE_MODEL,
@@ -105,10 +105,10 @@ export const INFERENCE_MODEL_OPTIONS = Object.freeze([
     exposeInCatalog: false,
   }),
   Object.freeze({
-    label: 'Gemini 4 Argon',
-    value: GEMINI_4_ARGON_INFERENCE_MODEL,
-    providerModel: DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL,
-    availabilityModel: GEMINI_4_ARGON_INFERENCE_MODEL,
+    label: 'Gemini 4 Carbon High',
+    value: GEMINI_4_CARBON_INFERENCE_MODEL,
+    providerModel: DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL,
+    availabilityModel: GEMINI_4_CARBON_INFERENCE_MODEL,
     isBranchedInferenceModel: false,
   }),
   Object.freeze({
@@ -173,20 +173,27 @@ const GPT_56_SOL_XHIGH_ALIAS_TOKENS = new Set([
   'GPT6ASTRAEXTRAHIGH',
 ]);
 
-const GEMINI_4_ARGON_ALIASES = new Set([
-  GEMINI_4_ARGON_INFERENCE_MODEL,
+const GEMINI_4_CARBON_ALIASES = new Set([
+  GEMINI_4_CARBON_INFERENCE_MODEL,
   'gemini-4',
   'gemini4',
   'gemini 4',
+  'gemini 4 carbon',
   'gemini 4 argon',
+  'gemini-4-argon',
   'google/gemini-4-argon',
+  'gemini4carbon',
+  'gemini4argon',
+  'google gemini 4 carbon',
+  'google gemini 4 argon',
+  'google/gemini-4-carbon',
 ]);
 
-const GEMINI_4_ARGON_ALIAS_TOKENS = new Set([
+const GEMINI_4_CARBON_ALIAS_TOKENS = new Set([
   'GEMINI4',
-  'GEMINI4ARGON',
+  'GEMINI4CARBON', 'GEMINI4ARGON',
   'GOOGLEGEMINI4',
-  'GOOGLEGEMINI4ARGON',
+  'GOOGLEGEMINI4CARBON', 'GOOGLEGEMINI4ARGON',
 ]);
 
 const QWEN_38_ALIASES = new Set([
@@ -226,10 +233,10 @@ function normalizeAliasToken(value) {
   return normalizeString(value).replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
 }
 
-function isGeminiArgonAlias(value) {
+function isGeminiCarbonAlias(value) {
   const normalized = normalizeString(value).toLowerCase();
-  return GEMINI_4_ARGON_ALIASES.has(normalized) ||
-    GEMINI_4_ARGON_ALIAS_TOKENS.has(normalizeAliasToken(value));
+  return GEMINI_4_CARBON_ALIASES.has(normalized) ||
+    GEMINI_4_CARBON_ALIAS_TOKENS.has(normalizeAliasToken(value).replace(/HIGH$/, ''));
 }
 
 function isQwen38Alias(value) {
@@ -271,8 +278,8 @@ export function normalizeSupportedInferenceModel(value) {
     return DEFAULT_INFERENCE_MODEL;
   }
 
-  if (isGeminiArgonAlias(value)) {
-    return GEMINI_4_ARGON_INFERENCE_MODEL;
+  if (isGeminiCarbonAlias(value)) {
+    return GEMINI_4_CARBON_INFERENCE_MODEL;
   }
 
   if (isQwen38Alias(value)) {
@@ -341,11 +348,11 @@ export function getDefaultUserInferenceModel() {
 
 export function isGeminiInferenceModel(value) {
   const normalized = normalizeString(value).toLowerCase();
-  return normalized.startsWith('gemini-') || isGeminiArgonAlias(value);
+  return normalized.startsWith('gemini-') || isGeminiCarbonAlias(value);
 }
 
-export function isGeminiArgonProviderModel(value) {
-  return /^gemini-4-argon(?:[.-]|$)/i.test(normalizeString(value));
+export function isGeminiCarbonProviderModel(value) {
+  return /^gemini-4-carbon(?:[.-]|$)/i.test(normalizeString(value));
 }
 
 export function isQwenInferenceModel(value) {
@@ -358,10 +365,11 @@ export function isKimiInferenceModel(value) {
 
 export function normalizeGeminiProviderModel(value) {
   const normalized = normalizeString(value).toLowerCase();
+  if (/^(?:google\/)?gemini-4-argon(?:-[0-9]{8})?$/.test(normalized)) return 'gemini-4-carbon';
   if (!normalized) {
     return '';
   }
-  return isGeminiArgonAlias(value) ? DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL : normalized;
+  return isGeminiCarbonAlias(value) ? DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL : normalized;
 }
 
 export function getProviderModelForInferenceModel(
@@ -374,12 +382,15 @@ export function getProviderModelForInferenceModel(
     return INFERENCE_PROVIDER_MODEL_KEYS[CLAUDE_OPUS_55_INFERENCE_MODEL];
   }
   if (isGeminiInferenceModel(value)) {
-    const normalized = normalizeString(value).toLowerCase();
-    if (normalized.startsWith('gemini-') && !GEMINI_4_ARGON_ALIASES.has(normalized)) {
+    const normalized = normalizeGeminiProviderModel(value);
+    if (normalized.startsWith('gemini-') && !GEMINI_4_CARBON_ALIASES.has(normalized)) {
       return normalized;
     }
 
-    return INFERENCE_PROVIDER_MODEL_KEYS[GEMINI_4_ARGON_INFERENCE_MODEL];
+    return normalizeGeminiProviderModel(env?.GOOGLE_GEMINI_4_CARBON_MODEL) ||
+      normalizeGeminiProviderModel(env?.GOOGLE_GEMINI_4_ARGON_MODEL) ||
+      normalizeGeminiProviderModel(env?.GOOGLE_GEMINI_PRO_MODEL) ||
+      INFERENCE_PROVIDER_MODEL_KEYS[GEMINI_4_CARBON_INFERENCE_MODEL];
   }
   const openAIModel = normalizeOpenAIInferenceModel(value);
   if (isOpenAIInferenceModel(openAIModel)) {

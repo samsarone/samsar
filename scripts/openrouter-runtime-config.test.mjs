@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { buildDockerAvailableModelsFromEnabledProviders } from '../apps/setup-wizard/src/constants/dockerModelAvailability.js';
 import {
-  DEFAULT_OPENROUTER_GEMINI_4_ARGON_MODEL,
+  DEFAULT_OPENROUTER_GEMINI_4_CARBON_MODEL,
   applyEffectiveOpenRouterProviderConfig,
   resolveOpenRouterRuntimeConfig,
 } from './openrouter-runtime-config.mjs';
@@ -14,7 +14,7 @@ test('disabled OpenRouter does not expose a stored credential or model mapping',
       providerConfig: { enabled: false },
       providerSecrets: { apiKey: 'stored-key' },
     }),
-    { enabled: false, apiKey: '', gemini4ArgonModel: '' },
+    { enabled: false, apiKey: '', gemini4CarbonModel: '' },
   );
 });
 
@@ -44,7 +44,7 @@ test('enabled OpenRouter reads the provider secret and renders the current Gemin
     {
       enabled: true,
       apiKey: 'stored-key',
-      gemini4ArgonModel: DEFAULT_OPENROUTER_GEMINI_4_ARGON_MODEL,
+      gemini4CarbonModel: DEFAULT_OPENROUTER_GEMINI_4_CARBON_MODEL,
     },
   );
 });
@@ -55,13 +55,13 @@ test('legacy config key and explicit Gemini mapping remain supported', () => {
       providerConfig: {
         enabled: true,
         apiKey: 'legacy-config-key',
-        gemini4ArgonModel: 'google/custom-gemini-model',
+        gemini4CarbonModel: 'google/custom-gemini-model',
       },
     }),
     {
       enabled: true,
       apiKey: 'legacy-config-key',
-      gemini4ArgonModel: 'google/custom-gemini-model',
+      gemini4CarbonModel: 'google/custom-gemini-model',
     },
   );
 });
@@ -77,9 +77,9 @@ test('provider secret takes precedence over the legacy config key', () => {
 
 test('Gemini 4 uses its configured provider model', () => {
   assert.equal(resolveOpenRouterRuntimeConfig({
-    providerConfig: { enabled: true, gemini4ArgonModel: 'google/custom-gemini' },
+    providerConfig: { enabled: true, gemini4CarbonModel: 'google/custom-gemini' },
     providerSecrets: { apiKey: 'stored-key' },
-  }).gemini4ArgonModel, 'google/custom-gemini');
+  }).gemini4CarbonModel, 'google/custom-gemini');
 });
 
 test('effective enabled provider exposes the routed inference models', () => {
@@ -93,7 +93,21 @@ test('effective enabled provider exposes the routed inference models', () => {
   const available = buildDockerAvailableModelsFromEnabledProviders(enabledProviders);
 
   assert.deepEqual(
-    available.models.filter((model) => ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1', 'gemini-4-argon', 'QWEN3.8'].includes(model)),
-    ['QWEN3.8', 'claude-fable-5.1', 'claude-opus-5.5', 'gemini-4-argon', 'gpt-6-astra', 'gpt-6.1-sol'],
+    available.models.filter((model) => ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1', 'gemini-4-carbon', 'QWEN3.8'].includes(model)),
+    ['QWEN3.8', 'claude-fable-5.1', 'claude-opus-5.5', 'gemini-4-carbon', 'gpt-6-astra', 'gpt-6.1-sol'],
   );
+});
+
+
+test('saved Argon settings migrate to Carbon and preserve custom provider mappings', () => {
+  for (const [legacy, expected] of [
+    ['google/gemini-4-argon', 'google/gemini-4-carbon'],
+    ['google/gemini-4-argon-20261013', 'google/gemini-4-carbon'],
+    ['google/custom-gemini', 'google/custom-gemini'],
+  ]) {
+    assert.equal(resolveOpenRouterRuntimeConfig({
+      providerConfig: { enabled: true, gemini4ArgonModel: legacy },
+      providerSecrets: { apiKey: 'fixture' },
+    }).gemini4CarbonModel, expected);
+  }
 });

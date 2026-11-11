@@ -213,7 +213,7 @@ test('uses native Alibaba credentials first and Samsar fallback when they are ab
     authorization: 'native',
   }), true);
   assert.equal(shouldUseSamsarExternalInference({
-    model: 'gemini-4-argon',
+    model: 'gemini-4-carbon',
     authorization: 'native',
   }), true);
   assert.equal(shouldUseSamsarExternalInference({

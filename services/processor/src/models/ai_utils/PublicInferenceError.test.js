@@ -33,7 +33,7 @@ test('recognizes nested OpenAI-compatible quota errors', () => {
         },
       },
     },
-  }, { model: 'gemini-4-argon' });
+  }, { model: 'gemini-4-carbon' });
 
   assert.equal(result.message, 'Gemini inference quota has been exhausted.');
 });

@@ -409,8 +409,8 @@ test('retries a branch suffix that introduces a new actor and meters both respon
     Identity: 'Bea, unknown traveler',
   };
   const responses = [
-    completion(JSON.stringify(invalidSuffix), 'gemini-4-argon'),
-    completion(JSON.stringify(buildValidSuffix()), 'gemini-4-argon'),
+    completion(JSON.stringify(invalidSuffix), 'gemini-4-carbon'),
+    completion(JSON.stringify(buildValidSuffix()), 'gemini-4-carbon'),
   ];
   const receipts = [];
   const delays = [];
@@ -423,7 +423,7 @@ test('retries a branch suffix that introduces a new actor and meters both respon
       path_name: 'Take the river',
       path_description: 'Ada boards the ferry and races downstream.',
     },
-    inferenceModel: 'gemini-4-argon',
+    inferenceModel: 'gemini-4-carbon',
     maxAttempts: 2,
     retryDelayMs: 2,
     onInferenceResponse: (receipt) => receipts.push(receipt),

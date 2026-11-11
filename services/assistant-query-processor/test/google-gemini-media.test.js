@@ -10,7 +10,7 @@ test('Google Gemini reads mounted Docker media directly for inlineData', async (
   const result = await sendAssistantGeminiCompletionRequest([{
     role: 'user',
     content: [{ type: 'input_image', source: { url: source } }],
-  }], 'gemini-4-argon', {}, {
+  }], 'gemini-4-carbon', {}, {
     getGoogleCloudConfig: () => ({ projectId: 'gemini-inline-project' }),
     getGoogleAccessToken: async () => 'token',
     resolveMediaUrl: async () => {
@@ -42,14 +42,14 @@ test('Google Gemini reads mounted Docker media directly for inlineData', async (
   assert.equal(result.outputText, 'seen');
 });
 
-test('versioned Argon keeps native sampling and trims trailing model turns', async () => {
+test('versioned Carbon keeps native sampling and trims trailing model turns', async () => {
   let capturedUrl;
   let capturedBody;
   await sendAssistantGeminiCompletionRequest([
     { role: 'user', content: 'First prompt' },
     { role: 'assistant', content: 'Previous answer' },
-  ], 'gemini-4-argon', {
-    model: 'gemini-4-argon-20261013',
+  ], 'gemini-4-carbon', {
+    model: 'gemini-4-carbon-20261110',
     temperature: 0.5,
     top_p: 0.8,
     max_tokens: 50000,
@@ -64,7 +64,7 @@ test('versioned Argon keeps native sampling and trims trailing model turns', asy
     },
   });
 
-  assert.match(capturedUrl, /models\/gemini-4-argon-20261013:generateContent$/);
+  assert.match(capturedUrl, /models\/gemini-4-carbon-20261110:generateContent$/);
   assert.deepEqual(capturedBody.contents.map(({ role }) => role), ['user']);
   assert.equal(capturedBody.generationConfig.temperature, undefined);
   assert.equal(capturedBody.generationConfig.topP, undefined);

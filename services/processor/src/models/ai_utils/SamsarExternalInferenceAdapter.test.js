@@ -87,9 +87,9 @@ function createTestGenblazeCatalog() {
         text: { modelId: 'gpt-6-astra', operation: 'chat.completions' },
         vision: { modelId: 'gpt-6-astra', operation: 'chat.completions' },
       },
-      'gemini-4-argon': {
-        text: { modelId: 'gemini-4-argon', operation: 'chat.completions' },
-        vision: { modelId: 'gemini-4-argon', operation: 'chat.completions' },
+      'gemini-4-carbon': {
+        text: { modelId: 'gemini-4-carbon', operation: 'chat.completions' },
+        vision: { modelId: 'gemini-4-carbon', operation: 'chat.completions' },
       },
     },
   }));
@@ -166,7 +166,7 @@ test('GenBlaze sends canonical GPT and Gemini models with high reasoning and mul
     reasoning_effort: 'xhigh',
   }, { genblazeClient });
   await createGenblazeChatCompletion({
-    model: 'gemini-4-argon',
+    model: 'gemini-4-carbon',
     messages: [{ role: 'user', content: [{ type: 'text', text: 'inspect' }, imagePart] }],
     reasoning_effort: 'low',
     reasoningEffort: 'xhigh',
@@ -189,7 +189,7 @@ test('GenBlaze sends canonical GPT and Gemini models with high reasoning and mul
   assert.equal(payloads[0].reasoning, undefined);
   assert.equal(payloads[1].model, 'gpt-6-astra');
   assert.equal(payloads[1].reasoning_effort, 'xhigh');
-  assert.equal(payloads[2].model, 'gemini-4-argon');
+  assert.equal(payloads[2].model, 'gemini-4-carbon');
   assert.equal(payloads[2].reasoning_effort, 'high');
   assert.equal(payloads[2].reasoning, undefined);
   assert.deepEqual(payloads[2].messages[0].content[1], imagePart);
@@ -263,7 +263,7 @@ test('shouldUseSamsarExternalInference falls back for Gemini in docker without G
   process.env.OPENAI_API_KEY = 'test-openai-key';
 
   assert.equal(shouldUseSamsarExternalInference({
-    model: 'gemini-4-argon',
+    model: 'gemini-4-carbon',
     messages: [{ role: 'user', content: 'hello' }],
   }), true);
 });
@@ -294,7 +294,7 @@ test('shouldUseSamsarExternalInference keeps Gemini native when Google auth is c
   process.env.K_SERVICE = 'processor';
 
   assert.equal(shouldUseSamsarExternalInference({
-    model: 'gemini-4-argon',
+    model: 'gemini-4-carbon',
     messages: [{ role: 'user', content: 'hello' }],
   }), false);
 });
@@ -405,7 +405,7 @@ test('Docker Qwen uses native, GMICloud, Samsar, then OpenRouter', () => {
   process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
   process.env.SAMSAR_API_KEY = 'test-samsar-key';
 
-  for (const model of ['gpt-6-astra', 'gemini-4-argon']) {
+  for (const model of ['gpt-6-astra', 'gemini-4-carbon']) {
     assert.equal(resolveConfiguredInferenceProvider(model), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
     assert.equal(shouldUseSamsarExternalInference({ model }), true);
   }
@@ -655,7 +655,7 @@ test('OpenRouter preserves explicit Sol xhigh for inference and metadata', async
 
   const responseFormat = { type: 'json_object' };
   await createOpenRouterChatCompletion({
-    model: 'gemini-4-argon',
+    model: 'gemini-4-carbon',
     messages: [{ role: 'user', content: 'return JSON' }],
     response_format: responseFormat,
   });
@@ -672,7 +672,7 @@ test('OpenRouter preserves explicit Sol xhigh for inference and metadata', async
     response_format: responseFormat,
   });
 
-  assert.equal(payloads[0].model, 'google/gemini-4-argon');
+  assert.equal(payloads[0].model, 'google/gemini-4-carbon');
   assert.equal(payloads[0].reasoning.effort, 'high');
   assert.equal(payloads[0].max_tokens, 65536);
   assert.equal(Object.hasOwn(payloads[0], 'max_completion_tokens'), false);
@@ -937,7 +937,7 @@ test('native authorization preserves Samsar fallback until provider credentials 
     authorization: 'native',
   }), true);
   assert.equal(shouldUseSamsarExternalInference({
-    model: 'gemini-4-argon',
+    model: 'gemini-4-carbon',
     authorization: 'native',
   }), true);
   assert.equal(shouldUseSamsarExternalInference({
@@ -973,7 +973,7 @@ test('external inference preserves explicit Sol reasoning effort without changin
     reasoning_effort: 'xhigh',
   });
   await createSamsarExternalChatCompletion({
-    model: 'gemini-4-argon',
+    model: 'gemini-4-carbon',
     messages: [{ role: 'user', content: 'hello' }],
     reasoning_effort: 'high',
   });

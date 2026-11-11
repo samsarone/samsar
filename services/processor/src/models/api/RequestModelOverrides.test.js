@@ -87,9 +87,9 @@ test('normalizes request inference model aliases', () => {
     'gpt-6-astra-xhigh',
   );
   assert.equal(normalizeInferenceModelFromPayload({ inferenceModel: 'gpt-5.6' }), 'gpt-6-astra');
-  assert.equal(normalizeInferenceModelFromPayload({ inference_model: 'Gemini 4 Argon' }), 'gemini-4-argon');
-  assert.equal(normalizeInferenceModelFromPayload({ inference_model: 'GEMINI4' }), 'gemini-4-argon');
-  assert.equal(normalizeInferenceModelFromPayload({ inferenceModel: 'gemini-4-argon' }), 'gemini-4-argon');
+  assert.equal(normalizeInferenceModelFromPayload({ inference_model: 'Gemini 4 Carbon' }), 'gemini-4-carbon');
+  assert.equal(normalizeInferenceModelFromPayload({ inference_model: 'GEMINI4' }), 'gemini-4-carbon');
+  assert.equal(normalizeInferenceModelFromPayload({ inferenceModel: 'gemini-4-carbon' }), 'gemini-4-carbon');
   assert.equal(normalizeInferenceModelFromPayload({ inference_model: 'Qwen 3.8' }), 'QWEN3.8');
   assert.equal(normalizeInferenceModelFromPayload({ inferenceModel: 'qwen3.8-max' }), 'QWEN3.8');
   assert.equal(normalizeInferenceModelFromPayload({ inferenceModel: 'QWEN3.8' }), 'QWEN3.8');
@@ -135,7 +135,7 @@ test('resolves canonical GPT 6 Astra plus explicit effort and legacy suffixes', 
   );
   assert.throws(
     () => resolveEffectiveInferenceSettings({
-      inference_model: 'gemini-4-argon',
+      inference_model: 'gemini-4-carbon',
       effort: 'xhigh',
     }),
     /effort is only supported for GPT Astra, GPT Sol, Claude Opus, and Claude Fable/,
@@ -144,12 +144,12 @@ test('resolves canonical GPT 6 Astra plus explicit effort and legacy suffixes', 
 
 test('resolves effective inference model from request override or account setting', () => {
   assert.equal(
-    resolveEffectiveInferenceModel({ inference_model: 'GPT 6 Astra' }, 'gemini-4-argon'),
+    resolveEffectiveInferenceModel({ inference_model: 'GPT 6 Astra' }, 'gemini-4-carbon'),
     'gpt-6-astra',
   );
   assert.equal(
-    resolveEffectiveInferenceModel({}, 'gemini-4-argon'),
-    'gemini-4-argon',
+    resolveEffectiveInferenceModel({}, 'gemini-4-carbon'),
+    'gemini-4-carbon',
   );
   assert.equal(resolveEffectiveInferenceModel({}, null), 'gpt-6-astra');
 });

@@ -48,7 +48,7 @@ test('validates a GMICloud credential and preserves actual active catalog ids', 
       calls,
       catalog: [
         { id: 'OPENAI/GPT-6-ASTRA', status: 'active' },
-        { id: 'tenant/google/gemini-4-argon', active: true },
+        { id: 'tenant/google/gemini-4-carbon', active: true },
         { id: 'Qwen/Qwen3.8-Max', state: 'available' },
       ],
     }),
@@ -62,7 +62,7 @@ test('validates a GMICloud credential and preserves actual active catalog ids', 
   assert.equal(calls[1].options.body, undefined);
   assert.equal(validation.ok, true);
   assert.equal(validation.modelMappings['gpt-6-astra'].text.modelId, 'OPENAI/GPT-6-ASTRA');
-  assert.equal(validation.modelMappings['gemini-4-argon'].vision.modelId, 'tenant/google/gemini-4-argon');
+  assert.equal(validation.modelMappings['gemini-4-carbon'].vision.modelId, 'tenant/google/gemini-4-carbon');
   assert.equal(validation.modelMappings['QWEN3.8'].text.modelId, 'Qwen/Qwen3.8-Max');
   assert.equal(validation.modelMappings['QWEN3.8'].vision.modelId, 'Qwen/Qwen3.8-Max');
   assert.doesNotMatch(JSON.stringify(result), /gmi-test-key/);
@@ -93,7 +93,7 @@ test('requires active status when status metadata is present', async () => {
     fetchImpl: buildFetch({
       catalog: [
         { id: 'openai/gpt-6-astra', status: 'inactive' },
-        { id: 'google/gemini-4-argon', enabled: false },
+        { id: 'google/gemini-4-carbon', enabled: false },
         { id: 'Qwen/Qwen3.8-Max', active: true },
       ],
     }),
@@ -104,7 +104,7 @@ test('requires active status when status metadata is present', async () => {
 
 test('chat matching ignores owner prefixes and case but remains version exact', () => {
   assert.equal(chatCatalogModelMatches('tenant/OPENAI/GPT-6-ASTRA', 'openai/gpt-6-astra'), true);
-  assert.equal(chatCatalogModelMatches('google/gemini-4-argon-v2', 'google/gemini-4-argon'), false);
+  assert.equal(chatCatalogModelMatches('google/gemini-4-carbon-v2', 'google/gemini-4-carbon'), false);
   assert.equal(chatCatalogModelMatches('Qwen/Qwen3.8-Max-2026-08-01', 'Qwen/Qwen3.8-Max'), false);
 });
 
@@ -259,14 +259,14 @@ test('keeps authenticated chat routes when the secondary media catalog is unavai
 test('keeps authenticated chat routes when the secondary media catalog is unreadable', async () => {
   const result = await validateGmiCloudProviderCredential({ gmiCloudApiKey: 'gmi-test-key' }, {
     fetchImpl: buildFetch({
-      catalog: [{ id: 'google/gemini-4-argon', status: 'active' }],
+      catalog: [{ id: 'google/gemini-4-carbon', status: 'active' }],
       mediaBody: { unexpected: [] },
     }),
   });
 
   const validation = result.providers.gmicloud;
   assert.equal(validation.ok, true);
-  assert.equal(validation.modelMappings['gemini-4-argon'].text.modelId, 'google/gemini-4-argon');
+  assert.equal(validation.modelMappings['gemini-4-carbon'].text.modelId, 'google/gemini-4-carbon');
   assert.equal(validation.mediaCatalogVerified, false);
   assert.match(validation.mediaCatalogWarning, /unreadable.*only verified inference models/i);
 });

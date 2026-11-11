@@ -5,8 +5,8 @@ const TOKENS_PER_MILLION = 1_000_000;
 const CREDITS_PER_DOLLAR = GENERATION_CREDITS_PER_USD;
 export const DEFAULT_ASSISTANT_PRICING_MULTIPLIER = GENERATION_PRICING_MULTIPLIER;
 export const EXTERNAL_CHAT_PRICING_MULTIPLIER = GENERATION_PRICING_MULTIPLIER;
-const GEMINI_4_ARGON_STANDARD_PRICING_START_MS = Date.UTC(2026, 11, 1);
-const GEMINI_4_ARGON_STANDARD_PRICING = Object.freeze({
+const GEMINI_4_CARBON_STANDARD_PRICING_START_MS = Date.UTC(2026, 11, 1);
+const GEMINI_4_CARBON_STANDARD_PRICING = Object.freeze({
   input: 4,
   cachedInput: 0.2,
   output: 20,
@@ -61,7 +61,8 @@ const TOKEN_PRICING_USD_PER_MILLION = Object.freeze({
     longContextInputThreshold: 200_000,
   },
   // Google Cloud global Standard pricing through November 30, 2026.
-  'gemini-4-argon': { input: 2, cachedInput: 0.1, output: 10 },
+  'gemini-4-carbon': { input: 2, cachedInput: 0.1, output: 10 },
+  'gemini-4-argon': { input: 2, cachedInput: 0.1, output: 10 }, // Historical receipts.
   'qwen3.8-max': { input: 2, cachedInput: 0.25, output: 6, cacheWrite: 2.5 },
   'kimi-k3': {
     input: 3,
@@ -93,8 +94,8 @@ export function calculateAssistantCreditsFromUsage({
   const pricingModel = resolvePricingModel(model);
   pricingMultiplier ??= DEFAULT_ASSISTANT_PRICING_MULTIPLIER;
   const billedAtMs = Number.isFinite(pricingTimestampMs) ? pricingTimestampMs : Date.now();
-  const pricing = pricingModel === 'gemini-4-argon' && billedAtMs >= GEMINI_4_ARGON_STANDARD_PRICING_START_MS
-    ? GEMINI_4_ARGON_STANDARD_PRICING
+  const pricing = ['gemini-4-carbon', 'gemini-4-argon'].includes(pricingModel) && billedAtMs >= GEMINI_4_CARBON_STANDARD_PRICING_START_MS
+    ? GEMINI_4_CARBON_STANDARD_PRICING
     : pricingModel ? (tariffProfile === 'legacy' ? LEGACY_INFERENCE_PRICING : TOKEN_PRICING_USD_PER_MILLION)[pricingModel] : null;
   const normalizedUsage = normalizeUsage(usage);
   // Provider monetary fields are audit data only. Settlement always uses the
@@ -139,7 +140,7 @@ export function calculateAssistantCreditsFromUsage({
     (cacheWriteHourTokens / TOKENS_PER_MILLION) * (pricing.cacheWriteHour ?? effectivePricing.input * 2) +
     (normalizedUsage.outputTokens / TOKENS_PER_MILLION) * effectivePricing.output
   );
-  if (region && region !== 'global' && pricingModel === 'gemini-4-argon') costUsd *= 1.1;
+  if (region && region !== 'global' && ['gemini-4-carbon', 'gemini-4-argon'].includes(pricingModel)) costUsd *= 1.1;
   const credits = roundTo(costUsd * CREDITS_PER_DOLLAR * pricingMultiplier, 4);
 
   return {
@@ -186,7 +187,9 @@ export function normalizeUsage(usage) {
   const reasoningTokens = toSafeNumber(raw.thoughtsTokenCount,
     source.output_tokens_details?.reasoning_tokens, source.completion_tokens_details?.reasoning_tokens);
   const outputTokens = google
-    ? toSafeNumber(raw.candidatesTokenCount) + reasoningTokens
+    ? (raw.candidatesTokenCount == null
+      ? Math.max(0, toSafeNumber(raw.totalTokenCount) - inputTokens)
+      : toSafeNumber(raw.candidatesTokenCount) + reasoningTokens)
     : toSafeNumber(source.output_tokens, source.completion_tokens);
   return { inputTokens, outputTokens, cachedInputTokens, reasoningTokens,
     ...(cacheWriteTokens ? { cacheWriteTokens, cacheWriteHourTokens } : {}) };
@@ -250,7 +253,7 @@ function validateAssistantTokenCounts(usage) {
   const tokenFields = new Set(['input_tokens', 'prompt_tokens', 'output_tokens', 'completion_tokens',
     'cached_tokens', 'cache_write_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens',
     'ephemeral_1h_input_tokens', 'ephemeral_5m_input_tokens', 'reasoning_tokens',
-    'promptTokenCount', 'candidatesTokenCount', 'thoughtsTokenCount', 'cachedContentTokenCount']);
+    'promptTokenCount', 'candidatesTokenCount', 'thoughtsTokenCount', 'cachedContentTokenCount', 'totalTokenCount']);
   function visit(value) {
     if (!value || typeof value !== 'object') return;
     for (const [key, count] of Object.entries(value)) {
@@ -303,8 +306,10 @@ function resolvePricingModel(model) {
     return 'gpt-5.6-sol';
   }
 
-  if (providerModel.startsWith('gemini-4-argon')) {
-    return 'gemini-4-argon';
+  if (providerModel.startsWith('gemini-4-argon')) return 'gemini-4-argon';
+
+  if (providerModel.startsWith('gemini-4-carbon')) {
+    return 'gemini-4-carbon';
   }
 
   if (providerModel.startsWith('gemini-3.1')) {

@@ -5,12 +5,12 @@ export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-6-astra';
 export const GPT_56_SOL_REASONING_EFFORT = 'high';
 export const GPT_56_SOL_XHIGH_REASONING_EFFORT = 'xhigh';
 const DEFAULT_INFERENCE_MODEL = GPT_56_SOL_INFERENCE_MODEL;
-const GEMINI_4_ARGON_INFERENCE_MODEL = 'gemini-4-argon';
+const GEMINI_4_CARBON_INFERENCE_MODEL = 'gemini-4-carbon';
 export const QWEN_38_INFERENCE_MODEL = 'QWEN3.8';
 export const QWEN_38_MAX_MODEL = 'qwen3.8-max';
 export const KIMI_K3_INFERENCE_MODEL = 'kimi-k3';
 export const CLAUDE_OPUS_55_INFERENCE_MODEL = 'claude-opus-5.5';
-const DEFAULT_GEMINI_MODEL = 'gemini-4-argon';
+const DEFAULT_GEMINI_MODEL = 'gemini-4-carbon';
 const DEFAULT_GEMINI_LOCATION = 'global';
 const DEFAULT_SCOPES = ['https://www.googleapis.com/auth/cloud-platform'];
 const PROJECT_ENV_KEYS = [
@@ -20,13 +20,20 @@ const PROJECT_ENV_KEYS = [
   'GCLOUD_PROJECT',
   'PROJECT_ID',
 ];
-const GEMINI_4_ARGON_PROVIDER_ALIASES = new Set([
-  GEMINI_4_ARGON_INFERENCE_MODEL,
+const GEMINI_4_CARBON_PROVIDER_ALIASES = new Set([
+  GEMINI_4_CARBON_INFERENCE_MODEL,
   'gemini-4',
   'gemini4',
   'gemini 4',
+  'gemini 4 carbon',
   'gemini 4 argon',
+  'gemini-4-argon',
   'google/gemini-4-argon',
+  'gemini4carbon',
+  'gemini4argon',
+  'google gemini 4 carbon',
+  'google gemini 4 argon',
+  'google/gemini-4-carbon',
 ]);
 const QWEN_38_ALIAS_TOKENS = new Set([
   'QWEN38',
@@ -44,7 +51,7 @@ const KIMI_K3_ALIAS_TOKENS = new Set([
   'MOONSHOTKIMIK3',
   'MOONSHOTK3',
 ]);
-const DEFAULT_GEMINI_THINKING_LEVEL = 'MEDIUM';
+const DEFAULT_GEMINI_THINKING_LEVEL = 'HIGH';
 const GEMINI_THINKING_LEVELS = new Set(['LOW', 'MEDIUM', 'HIGH']);
 
 const authCache = new Map();
@@ -53,8 +60,8 @@ function normalizeString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
 }
 
-function isGeminiArgonProviderModel(value) {
-  return /^gemini-4-argon(?:[.-]|$)/i.test(normalizeString(value));
+function isGeminiCarbonProviderModel(value) {
+  return /^gemini-4-carbon(?:[.-]|$)/i.test(normalizeString(value));
 }
 
 function normalizeAliasToken(value) {
@@ -143,6 +150,8 @@ async function getAccessToken() {
 }
 
 export function normalizeInferenceModel(value) {
+  const geminiToken = normalizeAliasToken(value).replace(/HIGH$/, '');
+  if (['GEMINI4', 'GEMINI4CARBON', 'GEMINI4ARGON', 'GOOGLEGEMINI4', 'GOOGLEGEMINI4CARBON', 'GOOGLEGEMINI4ARGON'].includes(geminiToken)) return GEMINI_4_CARBON_INFERENCE_MODEL;
   const reasoningModel = normalizeReasoningModel(value);
   if (reasoningModel) return reasoningModel;
   const gptToken = typeof value === 'string' ? value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
@@ -160,9 +169,9 @@ export function normalizeInferenceModel(value) {
     return DEFAULT_INFERENCE_MODEL;
   }
   if (
-    GEMINI_4_ARGON_PROVIDER_ALIASES.has(normalized)
+    GEMINI_4_CARBON_PROVIDER_ALIASES.has(normalized)
   ) {
-    return GEMINI_4_ARGON_INFERENCE_MODEL;
+    return GEMINI_4_CARBON_INFERENCE_MODEL;
   }
   if (isQwenInferenceModel(value)) {
     return QWEN_38_INFERENCE_MODEL;
@@ -175,17 +184,19 @@ export function normalizeInferenceModel(value) {
 
 export function isGeminiInferenceModel(value) {
   const normalized = normalizeString(value).toLowerCase();
-  return normalized.startsWith('gemini-') || normalizeInferenceModel(normalized) === GEMINI_4_ARGON_INFERENCE_MODEL;
+  return normalized.startsWith('gemini-') || normalizeInferenceModel(normalized) === GEMINI_4_CARBON_INFERENCE_MODEL;
 }
 
 function normalizeGeminiProviderModel(value) {
   const normalized = normalizeString(value).toLowerCase();
+  if (/^(?:google\/)?gemini-4-argon(?:-[0-9]{8})?$/.test(normalized)) return 'gemini-4-carbon';
   if (!normalized) return '';
-  return GEMINI_4_ARGON_PROVIDER_ALIASES.has(normalized) ? DEFAULT_GEMINI_MODEL : normalized;
+  return GEMINI_4_CARBON_PROVIDER_ALIASES.has(normalized) ? DEFAULT_GEMINI_MODEL : normalized;
 }
 
 export function resolveGeminiModel() {
   return (
+    normalizeGeminiProviderModel(process.env.GOOGLE_GEMINI_4_CARBON_MODEL) ||
     normalizeGeminiProviderModel(process.env.GOOGLE_GEMINI_4_ARGON_MODEL) ||
     normalizeGeminiProviderModel(process.env.GOOGLE_GEMINI_PRO_MODEL) ||
     DEFAULT_GEMINI_MODEL
@@ -282,7 +293,7 @@ export async function createGoogleGeminiChatCompletion(messageList) {
   const location = resolveGeminiLocation();
   const model = resolveGeminiModel();
   const { systemInstruction, contents } = buildGeminiContents(messageList);
-  if (isGeminiArgonProviderModel(model)) {
+  if (isGeminiCarbonProviderModel(model)) {
     while (contents.at(-1)?.role === 'model') contents.pop();
   }
   if (!contents.length) {

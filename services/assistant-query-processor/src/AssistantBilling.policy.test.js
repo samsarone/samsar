@@ -3,7 +3,7 @@ import test from 'node:test';
 import { calculateAssistantCreditsFromUsage, normalizeAssistantResponseUsage } from './AssistantBilling.js';
 
 for (const [model, expectedCost] of [
-  ['gpt-6-astra', 0.15], ['gpt-6.1-sol', 0.03], ['google/gemini-4-argon', 0.03],
+  ['gpt-6-astra', 0.15], ['gpt-6.1-sol', 0.03], ['google/gemini-4-carbon', 0.03],
   ['qwen/qwen3.8-max', 0.026], ['moonshotai/kimi-k3', 0.045], ['anthropic/claude-opus-5.5', 0.06],
 ]) {
   test(`${model}: assistant charge is exactly 120% of the checked-in token tariff`, () => {
@@ -35,7 +35,7 @@ test('native Claude token receipts separate ordinary input, cache reads and writ
 
 test('raw Gemini reasoning output is billed once', () => {
   const result = calculateAssistantCreditsFromUsage({
-    model: 'gemini-4-argon', pricingTimestampMs: Date.UTC(2026, 9, 21),
+    model: 'gemini-4-carbon', pricingTimestampMs: Date.UTC(2026, 9, 21),
     usage: { promptTokenCount: 1000, candidatesTokenCount: 100, thoughtsTokenCount: 900 },
   });
   assert.equal(result.costUsd, 0.012);
@@ -54,7 +54,7 @@ test('native Claude bills 5-minute and 1-hour cache writes separately', () => {
 test('normalized Gemini receipts include reasoning once and the actual regional premium', () => {
   const usage = normalizeAssistantResponseUsage(normalizeAssistantResponseUsage({ google_usage_metadata: {
     promptTokenCount: 1000, candidatesTokenCount: 100, thoughtsTokenCount: 900 } }));
-  const result = calculateAssistantCreditsFromUsage({ model: 'gemini-4-argon', usage,
+  const result = calculateAssistantCreditsFromUsage({ model: 'gemini-4-carbon', usage,
     pricingTimestampMs: Date.UTC(2026, 9, 21), region: 'us-central1' });
   assert.equal(result.costUsd, 0.0132);
   assert.equal(result.credits, 1.584);

@@ -163,9 +163,9 @@ test('GMICloud selection follows the validated text and vision catalog mappings'
         text: { modelId: 'gpt-6-astra', operation: 'chat.completions' },
         vision: { modelId: 'gpt-6-astra', operation: 'chat.completions' },
       },
-      'gemini-4-argon': {
-        text: { modelId: 'gemini-4-argon', operation: 'chat.completions' },
-        vision: { modelId: 'gemini-4-argon', operation: 'chat.completions' },
+      'gemini-4-carbon': {
+        text: { modelId: 'gemini-4-carbon', operation: 'chat.completions' },
+        vision: { modelId: 'gemini-4-carbon', operation: 'chat.completions' },
       },
     },
   }));
@@ -195,7 +195,7 @@ test('GMICloud selection follows the validated text and vision catalog mappings'
         DOCKER_INFERENCE_PROVIDER.GMICLOUD,
         DOCKER_INFERENCE_PROVIDER.OPENROUTER,
       ]);
-      assert.deepEqual(getConfiguredInferenceProviders('gemini-4-argon'), [
+      assert.deepEqual(getConfiguredInferenceProviders('gemini-4-carbon'), [
         DOCKER_INFERENCE_PROVIDER.GMICLOUD,
         DOCKER_INFERENCE_PROVIDER.OPENROUTER,
       ]);
@@ -207,7 +207,7 @@ test('GMICloud selection follows the validated text and vision catalog mappings'
         DOCKER_INFERENCE_PROVIDER.SAMSAR,
         DOCKER_INFERENCE_PROVIDER.OPENROUTER,
       ]);
-      assert.deepEqual(getConfiguredInferenceProviders('gemini-4-argon'), [
+      assert.deepEqual(getConfiguredInferenceProviders('gemini-4-carbon'), [
         DOCKER_INFERENCE_PROVIDER.GMICLOUD,
         DOCKER_INFERENCE_PROVIDER.SAMSAR,
         DOCKER_INFERENCE_PROVIDER.OPENROUTER,
@@ -226,7 +226,7 @@ test('GMICloud selection follows the validated text and vision catalog mappings'
         DOCKER_INFERENCE_PROVIDER.OPENROUTER,
         DOCKER_INFERENCE_PROVIDER.SAMSAR,
       ]);
-      assert.deepEqual(getConfiguredInferenceProviders('gemini-4-argon'), [
+      assert.deepEqual(getConfiguredInferenceProviders('gemini-4-carbon'), [
         DOCKER_INFERENCE_PROVIDER.OPENROUTER,
         DOCKER_INFERENCE_PROVIDER.SAMSAR,
       ]);
@@ -297,7 +297,7 @@ test('GPT and Gemini preserve legacy priority when GenBlaze lacks an exact mappi
       DOCKER_INFERENCE_PROVIDER.OPENROUTER,
       DOCKER_INFERENCE_PROVIDER.SAMSAR,
     ]);
-    assert.deepEqual(getConfiguredInferenceProviders('gemini-4-argon'), [
+    assert.deepEqual(getConfiguredInferenceProviders('gemini-4-carbon'), [
       DOCKER_INFERENCE_PROVIDER.OPENROUTER,
       DOCKER_INFERENCE_PROVIDER.SAMSAR,
     ]);
@@ -460,7 +460,7 @@ test('Samsar remains ahead of OpenRouter while native adapters stay first', () =
     SAMSAR_API_KEY: 'samsar-key',
   }, () => {
     assert.equal(resolveConfiguredInferenceProvider('QWEN3.8'), DOCKER_INFERENCE_PROVIDER.SAMSAR);
-    for (const model of ['gemini-4-argon', 'gpt-6-astra']) {
+    for (const model of ['gemini-4-carbon', 'gpt-6-astra']) {
       assert.equal(resolveConfiguredInferenceProvider(model), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
     }
     process.env.OPENAI_API_KEY = 'openai-key';
@@ -517,7 +517,7 @@ test('explicit deployed authorization overrides native credentials for every inf
     KIMI_K3_API_KEY: 'kimi-key',
     OPENAI_API_KEY: 'openai-key',
   }, () => {
-    for (const model of ['QWEN3.8', 'gemini-4-argon', 'kimi-k3', 'gpt-6-astra']) {
+    for (const model of ['QWEN3.8', 'gemini-4-carbon', 'kimi-k3', 'gpt-6-astra']) {
       assert.equal(shouldUseSamsarExternalInference({
         model,
         authorization: 'deployed',
@@ -535,7 +535,7 @@ test('explicit native authorization preserves Samsar fallback while provider cre
       model: 'QWEN3.8',
       authorization: 'native',
     }), true);
-    for (const model of ['gemini-4-argon', 'kimi-k3', 'gpt-6-astra']) {
+    for (const model of ['gemini-4-carbon', 'kimi-k3', 'gpt-6-astra']) {
       assert.equal(shouldUseSamsarExternalInference({
         model,
         authorization: 'native',
@@ -613,7 +613,7 @@ test('Qwen OpenRouter uses Qwen 3.8 Max for text and vision with bounded setting
     plugins: [{ id: 'existing-plugin' }],
   });
   await createOpenRouterChatCompletion({
-    model: 'gemini-4-argon',
+    model: 'gemini-4-carbon',
     messages: [{ role: 'user', content: 'hello' }],
   });
   await createOpenRouterChatCompletion({

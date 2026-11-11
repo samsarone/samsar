@@ -1,3 +1,4 @@
+import { calculateAssistantCreditsFromUsage } from '../AssistantBilling.js';
 // ModelPrices.js
 
 export const IMAGE_MODEL_PRICES = [
@@ -239,14 +240,19 @@ export const ASSISTANT_MODEL_PRICES = [
     ]
   },
   {
-    key: "gemini-4-argon",
-    prices: [
-      {
-        operationType: "words",
-        tokens: 1000,
-        price: 1
-      },
-    ]
+    key: "gemini-4-carbon",
+    billing: "token_usage",
+    get prices() {
+      return [
+        ['input_tokens', { input_tokens: 1_000_000, output_tokens: 0 }],
+        ['cached_input_tokens', { input_tokens: 1_000_000, input_tokens_details: { cached_tokens: 1_000_000 }, output_tokens: 0 }],
+        ['output_tokens', { input_tokens: 0, output_tokens: 1_000_000 }],
+      ].map(([operationType, usage]) => ({
+        operationType,
+        tokens: 1_000_000,
+        price: calculateAssistantCreditsFromUsage({ model: 'gemini-4-carbon', usage }).credits,
+      }));
+    },
   }
 ]
 

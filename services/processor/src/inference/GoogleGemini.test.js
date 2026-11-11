@@ -67,7 +67,7 @@ test('native Google Gemini reads mounted image media before building inline prov
   const originalMessages = JSON.parse(JSON.stringify(messages));
 
   const response = await createGoogleGeminiChatCompletion({
-    model: 'gemini-4-argon',
+    model: 'gemini-4-carbon',
     projectId: 'gemini-media-project',
     messages,
   }, {
@@ -100,11 +100,11 @@ test('native Google Gemini reads mounted image media before building inline prov
   assert.equal(response.choices[0].message.content, 'seen');
 });
 
-test('versioned Argon request keeps native sampling and conversation limits', async () => {
+test('versioned Carbon request keeps native sampling and conversation limits', async () => {
   let capturedUrl;
   let capturedBody;
   await createGoogleGeminiChatCompletion({
-    model: 'gemini-4-argon-20261013',
+    model: 'gemini-4-carbon-20261110',
     projectId: 'argon-shape-project',
     messages: [
       { role: 'user', content: 'First prompt' },
@@ -123,7 +123,7 @@ test('versioned Argon request keeps native sampling and conversation limits', as
     },
   });
 
-  assert.match(capturedUrl, /models\/gemini-4-argon-20261013:generateContent$/);
+  assert.match(capturedUrl, /models\/gemini-4-carbon-20261110:generateContent$/);
   assert.deepEqual(capturedBody.contents.map(({ role }) => role), ['user']);
   assert.equal(capturedBody.generationConfig.temperature, undefined);
   assert.equal(capturedBody.generationConfig.topP, undefined);

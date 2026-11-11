@@ -315,7 +315,7 @@ test('Gemini rereads mounted image bytes without a tunnel when the provider requ
 
   const result = await sendAssistantGeminiCompletionRequest(
     imageMessages(),
-    'gemini-4-argon',
+    'gemini-4-carbon',
     { maxRetries: 1 },
     {
       fetchImpl,
