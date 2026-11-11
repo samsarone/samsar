@@ -24,6 +24,8 @@ test('narrative requests keep standalone mixed artifacts and durable polling fie
     'gpt-6-astra-xhigh',
     'claude-opus-5.5',
     'claude-opus-5.5-xhigh',
+    'claude-fable-5.2',
+    'claude-fable-5.2-xhigh',
     'claude-fable-5.1',
     'claude-fable-5.1-xhigh',
     'gpt-6.1-sol',

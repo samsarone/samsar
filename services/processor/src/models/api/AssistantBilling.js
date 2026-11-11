@@ -13,7 +13,8 @@ const GEMINI_4_CARBON_STANDARD_PRICING = Object.freeze({
 });
 
 const TOKEN_PRICING_USD_PER_MILLION = Object.freeze({
-  'claude-fable-5.1': { input: 10, cachedInput: 0.25, output: 50, cacheWrite: 12.5, cacheWriteHour: 20 },
+  'claude-fable-5.2': { input: 8, cachedInput: 0.2, output: 40, cacheWrite: 10, cacheWriteHour: 16 },
+  'claude-fable-5.1': { input: 10, cachedInput: 0.25, output: 50, cacheWrite: 12.5, cacheWriteHour: 20 }, // Historical receipts.
   'claude-opus-5.5': { input: 4, cachedInput: 0.2, output: 20, cacheWrite: 5, cacheWriteHour: 8 },
   'gpt-6.1-sol': {
     input: 2,
@@ -272,6 +273,9 @@ function billingError(message, code) {
 }
 
 function resolvePricingModel(model) {
+  // Settle historical receipts against their actual model, before saved-choice aliases.
+  const receiptToken = String(model || '').replace(/^(?:anthropic)\//i, '').replace(/[^a-z0-9]/gi, '').toUpperCase().replace(/(?:EXTRAHIGH|XHIGH|HIGH)$/, '');
+  if (receiptToken === 'CLAUDEFABLE51') return 'claude-fable-5.1';
   const reasoningModel = getReasoningModelBase(model);
   if (TOKEN_PRICING_USD_PER_MILLION[reasoningModel]) return reasoningModel;
   if (typeof model !== 'string') {

@@ -81,7 +81,7 @@ test('separates canonical GPT 6 Astra from effort while retaining legacy suffixe
   });
 });
 
-for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1']) {
+for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
   test(`${model} retains queued model and effort ahead of changed user preferences`, () => {
     assert.deepEqual(resolveRequestInferenceSettings({
       fallbackRequest: { inferenceModel: model, inferenceEffort: 'xhigh' },

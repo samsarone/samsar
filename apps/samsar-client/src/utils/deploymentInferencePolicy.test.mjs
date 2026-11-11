@@ -89,7 +89,7 @@ test('standalone exposes Qwen only with an explicit model and validated Alibaba 
 test('provider fallbacks expose their configured inference models', () => {
   assert.deepEqual(
     extractDeploymentInferenceModelValues({ deployment: { providers: ['samsar'] } }),
-    ['gpt-6-astra', 'claude-opus-5.5', 'claude-fable-5.1', 'gpt-6.1-sol', 'gemini-4-carbon', 'QWEN3.8', 'kimi-k3'],
+    ['gpt-6-astra', 'claude-opus-5.5', 'claude-fable-5.2', 'gpt-6.1-sol', 'gemini-4-carbon', 'QWEN3.8', 'kimi-k3'],
   );
   assert.equal(
     labelOptionsForDeploymentInferenceProviders(MODEL_OPTIONS, {
@@ -192,7 +192,7 @@ test('OpenRouter alone exposes every inference model with validated Qwen provena
     'gemini-4-carbon',
     'QWEN3.8',
     'claude-opus-5.5',
-    'claude-fable-5.1',
+    'claude-fable-5.2',
     'gpt-6.1-sol',
   ]);
 });

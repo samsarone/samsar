@@ -185,7 +185,8 @@ describe('VidGenie project loading and wizard requests', () => {
 
 describe('VidGenie generation lifecycle', () => {
   it.each([
-    ['claude-fable-5.1', 'xhigh', 'claude-fable-5.1'],
+    ['claude-fable-5.2', 'xhigh', 'claude-fable-5.2'],
+    ['claude-fable-5.1', 'xhigh', 'claude-fable-5.2'],
     ['gpt-6.1-sol', 'high', 'gpt-6.1-sol'],
     ['gemini-4-carbon', null, 'gemini-4-carbon'],
     ['gemini-4-argon', null, 'gemini-4-carbon'],
@@ -371,14 +372,20 @@ describe('VidGenie image-list requests and JSON editor validation', () => {
   });
 });
 
-it.each(['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1'].flatMap((model) =>
-  ['high', 'xhigh'].map((effort) => [model, effort])
-))('submits saved %s / %s through the Vidgenie wizard', async (model, effort) => {
+it.each([
+  ['gpt-6-astra', 'gpt-6-astra'],
+  ['gpt-6.1-sol', 'gpt-6.1-sol'],
+  ['claude-opus-5.5', 'claude-opus-5.5'],
+  ['claude-fable-5.2', 'claude-fable-5.2'],
+  ['claude-fable-5.1', 'claude-fable-5.2'],
+].flatMap(([model, expectedModel]) =>
+  ['high', 'xhigh'].map((effort) => [model, effort, expectedModel])
+))('submits saved %s / %s as its canonical model through the Vidgenie wizard', async (model, effort, expectedModel) => {
   harness.user.selectedInferenceModel = model;
   harness.user.selectedInferenceEffort = effort;
   await mountEditor();
   await submitPrompt();
-  expect(axios.post.mock.calls[0][1].input).toMatchObject({ inference_model: model, effort });
+  expect(axios.post.mock.calls[0][1].input).toMatchObject({ inference_model: expectedModel, effort });
 });
 
 

@@ -22,7 +22,7 @@ export const MODEL_ADAPTER_STAGE_DEFINITIONS = Object.freeze([
     modelKeys: Object.freeze([
       'gpt-6-astra',
       'claude-opus-5.5',
-      'claude-fable-5.1',
+      'claude-fable-5.2',
       'gpt-6.1-sol',
       'gemini-4-carbon',
       'KIMIK3',
@@ -61,7 +61,7 @@ export const MODEL_ADAPTER_STAGE_DEFINITIONS = Object.freeze([
 const MODEL_LABELS = Object.freeze({
   'gpt-6-astra': 'GPT 6 Astra',
   'claude-opus-5.5': 'Claude Opus 5.5',
-  'claude-fable-5.1': 'Claude Fable 5.1',
+  'claude-fable-5.2': 'Claude Fable 5.2',
   'gpt-6.1-sol': 'GPT 6.1 Sol',
   'gemini-4-carbon': 'Gemini 4 Carbon',
   KIMIK3: 'Kimi K3',

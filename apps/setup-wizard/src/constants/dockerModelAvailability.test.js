@@ -30,7 +30,7 @@ const INFERENCE_MODEL_KEYS = Object.freeze([
   'gpt-6-astra',
   'gpt-6.1-sol',
   'claude-opus-5.5',
-  'claude-fable-5.1',
+  'claude-fable-5.2',
   'gemini-4-carbon',
   'KIMIK3',
   'QWEN3.8',
@@ -112,7 +112,7 @@ test('Samsar exposes every supported inference model, including Kimi K3', () => 
 
   assert.deepEqual(
     getAvailableInferenceModels(available),
-    ['KIMIK3', 'QWEN3.8', 'claude-fable-5.1', 'claude-opus-5.5', 'gemini-4-carbon', 'gpt-6-astra', 'gpt-6.1-sol'],
+    ['KIMIK3', 'QWEN3.8', 'claude-fable-5.2', 'claude-opus-5.5', 'gemini-4-carbon', 'gpt-6-astra', 'gpt-6.1-sol'],
   );
   for (const model of INFERENCE_MODEL_KEYS) {
     assert.equal(available.modelProviders[model], DOCKER_PROVIDER.SAMSAR);
@@ -125,7 +125,7 @@ test('OpenRouter alone exposes GPT, Claude, Gemini, and Qwen inference', () => {
   ]);
   assert.deepEqual(
     getAvailableInferenceModels(available),
-    ['QWEN3.8', 'claude-fable-5.1', 'claude-opus-5.5', 'gemini-4-carbon', 'gpt-6-astra', 'gpt-6.1-sol'],
+    ['QWEN3.8', 'claude-fable-5.2', 'claude-opus-5.5', 'gemini-4-carbon', 'gpt-6-astra', 'gpt-6.1-sol'],
   );
   assert.deepEqual(available.actions, ['assistant', 'chat']);
   for (const model of ['gpt-6-astra', 'claude-opus-5.5', 'gemini-4-carbon', 'QWEN3.8']) {
@@ -140,7 +140,7 @@ test('OpenRouter alone exposes GPT, Claude, Gemini, and Qwen inference', () => {
 
 test('Anthropic credentials alone enable Claude inference and assistant', () => {
   const available = buildDockerAvailableModelsFromEnabledProviders([DOCKER_PROVIDER.ANTHROPIC]);
-  assert.deepEqual(getAvailableInferenceModels(available), ['claude-fable-5.1', 'claude-opus-5.5']);
+  assert.deepEqual(getAvailableInferenceModels(available), ['claude-fable-5.2', 'claude-opus-5.5']);
   assert.deepEqual(available.actions, ['assistant', 'chat']);
   assert.equal(available.modelProviders['claude-opus-5.5'], DOCKER_PROVIDER.ANTHROPIC);
   assert.equal(getDockerModelDisplayName('claude-opus-5.5', DOCKER_PROVIDER.ANTHROPIC),
@@ -623,7 +623,7 @@ test('legacy GPT 5.6 selections retain the Astra setup catalog', () => {
 
 for (const [model, native, aliases] of [
   ['gpt-6.1-sol', DOCKER_PROVIDER.OPENAI, ['GPT 6.1 Sol', 'openai/gpt-6.1-sol-xhigh']],
-  ['claude-fable-5.1', DOCKER_PROVIDER.ANTHROPIC, ['claude-fable-5-1', 'anthropic/claude-fable-5.1-xhigh']],
+  ['claude-fable-5.2', DOCKER_PROVIDER.ANTHROPIC, ['claude-fable-5-2', 'anthropic/claude-fable-5.2-xhigh']],
   ['claude-opus-5.5', DOCKER_PROVIDER.ANTHROPIC, ['claude-opus-5-5', 'Claude Opus 5.5 Extra High']],
 ]) {
   test(`${model} stays distinct in setup, native routing, and remote fallback`, () => {
@@ -640,7 +640,7 @@ for (const [model, native, aliases] of [
 }
 
 test('all GPT and Claude choices satisfy setup inference readiness', () => {
-  for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1']) {
+  for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
     const status = buildExpressPipelineAvailability({ models: [model], actions: ['chat', 'assistant'] });
     assert.equal(status.requirements.find((item) => item.key === 'inference').isAvailable, true);
   }

@@ -87,7 +87,7 @@ test('inference settings preserve saved effort and explicit legacy override prec
   });
 });
 
-for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1']) {
+for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
   test(`${model} retains queued model and effort ahead of changed user preferences`, () => {
     assert.deepEqual(resolveRequestInferenceSettings({
       request: { inferenceModel: model, inferenceEffort: 'xhigh' },

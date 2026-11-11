@@ -39,7 +39,7 @@ for (const [name, modelsFile, adapterFile] of services) {
       assert.equal(effort(alias), 'xhigh', alias);
       assert.equal(effort(alias, 'high'), 'high', alias);
     }
-    for (const model of ['gpt-6.1-sol', 'claude-fable-5.1', 'gemini-4-carbon', 'QWEN3.8', 'kimi-k3', 'claude-opus-5.5']) {
+    for (const model of ['gpt-6.1-sol', 'claude-fable-5.2', 'gemini-4-carbon', 'QWEN3.8', 'kimi-k3', 'claude-opus-5.5']) {
       assert.equal(models.normalizeInferenceModel(model), model);
     }
   });

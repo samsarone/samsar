@@ -44,15 +44,15 @@ function mockSession(t, preferences = {}) {
 }
 
 test('translation uses current user model and effort rather than the source session model', async (t) => {
-  mockSession(t, { selectedInferenceModel: 'claude-fable-5.1', selectedInferenceEffort: 'xhigh' });
+  mockSession(t, { selectedInferenceModel: 'claude-fable-5.2', selectedInferenceEffort: 'xhigh' });
   const preview = await getTranslateVideoBillingPreview('owner', { session_id: 'source-session', language: 'FR' });
-  assert.equal(preview.inferenceModel, 'claude-fable-5.1-xhigh');
+  assert.equal(preview.inferenceModel, 'claude-fable-5.2-xhigh');
   assert.equal(preview.inferenceEffort, 'xhigh');
 });
 
 test('translation request selection overrides saved settings for every supported model family', async (t) => {
   mockSession(t, { selectedInferenceModel: 'gpt-6-astra', selectedInferenceEffort: 'high' });
-  for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1']) {
+  for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
     for (const effort of ['high', 'xhigh']) {
       const preview = await getTranslateVideoBillingPreview('owner', {
         session_id: 'source-session', language: 'FR', inference_model: model, effort,
@@ -74,7 +74,7 @@ test('translation validates model and effort overrides before generation', async
   mockSession(t);
   for (const overrides of [
     { inference_model: 'not-a-model' },
-    { inference_model: 'claude-fable-5.1', effort: 'invalid' },
+    { inference_model: 'claude-fable-5.2', effort: 'invalid' },
     { inference_model: 'gemini-4-carbon', effort: 'xhigh' },
   ]) {
     await assert.rejects(getTranslateVideoBillingPreview('owner', {
@@ -84,7 +84,7 @@ test('translation validates model and effort overrides before generation', async
 });
 
 test('translation without subtitles does not require OpenAI credentials, but subtitles still do', async (t) => {
-  mockSession(t, { selectedInferenceModel: 'claude-fable-5.1', selectedInferenceEffort: 'high' });
+  mockSession(t, { selectedInferenceModel: 'claude-fable-5.2', selectedInferenceEffort: 'high' });
   const overrides = { SAMSAR_DEPLOYMENT_EDITION: 'standalone', OPENAI_API_KEY: '', SAMSAR_API_KEY: '' };
   const previous = Object.fromEntries(Object.keys(overrides).map((key) => [key, process.env[key]]));
   Object.assign(process.env, overrides);
@@ -112,7 +112,7 @@ test('translation without subtitles does not require OpenAI credentials, but sub
 });
 
 test('translation job keeps selected inference settings for speech, speakers, overlays and the cloned session', async (t) => {
-  const source = mockSession(t, { selectedInferenceModel: 'claude-fable-5.1', selectedInferenceEffort: 'xhigh' });
+  const source = mockSession(t, { selectedInferenceModel: 'claude-fable-5.2', selectedInferenceEffort: 'xhigh' });
   const original = structuredClone(source);
   const preview = await getTranslateVideoBillingPreview('owner', { session_id: 'source-session', language: 'FR' });
   const requests = [];
@@ -134,14 +134,14 @@ test('translation job keeps selected inference settings for speech, speakers, ov
   ]);
   for (const request of requests) {
     assert.equal(request.language, 'French');
-    assert.equal(request.model, 'claude-fable-5.1-xhigh');
+    assert.equal(request.model, 'claude-fable-5.2-xhigh');
     assert.equal(request.options.reasoningEffort, 'xhigh');
   }
   assert.equal(saved.hostedAgentBilling, undefined);
   assert.equal(saved.postProcessingBilling, undefined);
   assert.equal(saved.sessionReceipt, undefined);
   assert.equal(saved.expressGenerationCreditCharges, undefined);
-  assert.equal(saved.inferenceModel, 'claude-fable-5.1-xhigh');
+  assert.equal(saved.inferenceModel, 'claude-fable-5.2-xhigh');
   assert.equal(saved.expressGenerationInferenceModel, saved.inferenceModel);
   assert.equal(saved.inferenceEffort, 'xhigh');
   assert.equal(saved.expressGenerationInferenceEffort, 'xhigh');
@@ -184,7 +184,7 @@ test('translation validates and repairs before queuing TTS, saving the same acce
   t.mock.method(AudioGeneration.prototype, 'save', async function () { events.push('TTS'); queued.push(this.toObject()); });
   await __testOnly__.processTranslateVideoSessionJob({
     oldSessionId: 'source-session', userId: 'owner', newSessionId: 'translated',
-    normalizedLanguageCode: 'FR', inferenceModel: 'claude-fable-5.1', inferenceEffort: 'xhigh',
+    normalizedLanguageCode: 'FR', inferenceModel: 'claude-fable-5.2', inferenceEffort: 'xhigh',
     enableSubtitles: true,
   }, {
     copyTranslateSessionAssets: async () => { events.push('copy'); },
@@ -275,7 +275,7 @@ test('translation timing uses the connected scene snapshot when joined source in
 });
 
 async function preparePublicationFixture(t, failureMode) {
-  const source = mockSession(t, { selectedInferenceModel: 'claude-fable-5.1', selectedInferenceEffort: 'high' });
+  const source = mockSession(t, { selectedInferenceModel: 'claude-fable-5.2', selectedInferenceEffort: 'high' });
   Object.assign(source.layers[0], {
     layerAiVideoType: 'character', layerBaseAiImageType: 'character',
     hasAiVideoLayer: true, aiVideoGenerationStatus: 'COMPLETED',

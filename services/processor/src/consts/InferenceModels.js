@@ -23,7 +23,7 @@ export const INFERENCE_MODEL_KEYS = Object.freeze({
   QWEN_38: 'QWEN3.8',
   KIMI_K3: 'kimi-k3',
   CLAUDE_OPUS_55: 'claude-opus-5.5',
-  CLAUDE_FABLE_51: 'claude-fable-5.1',
+  CLAUDE_FABLE_52: 'claude-fable-5.2',
   GPT_61_SOL: 'gpt-6.1-sol',
 });
 
@@ -34,7 +34,7 @@ export const INFERENCE_PROVIDER_MODEL_KEYS = Object.freeze({
   [INFERENCE_MODEL_KEYS.QWEN_38]: 'qwen3.8-max',
   [INFERENCE_MODEL_KEYS.KIMI_K3]: 'kimi-k3',
   [INFERENCE_MODEL_KEYS.CLAUDE_OPUS_55]: 'claude-opus-5-5',
-  [INFERENCE_MODEL_KEYS.CLAUDE_FABLE_51]: 'claude-fable-5-1',
+  [INFERENCE_MODEL_KEYS.CLAUDE_FABLE_52]: 'claude-fable-5-2',
   [INFERENCE_MODEL_KEYS.GPT_61_SOL]: 'gpt-6.1-sol',
 });
 
@@ -80,8 +80,8 @@ export const SUPPORTED_INFERENCE_MODEL_VALUES = Object.freeze([
   KIMI_K3_INFERENCE_MODEL,
   CLAUDE_OPUS_55_INFERENCE_MODEL,
   'claude-opus-5.5-xhigh',
-  'claude-fable-5.1',
-  'claude-fable-5.1-xhigh',
+  'claude-fable-5.2',
+  'claude-fable-5.2-xhigh',
   'gpt-6.1-sol',
   'gpt-6.1-sol-xhigh',
 ]);
@@ -138,11 +138,11 @@ export const INFERENCE_MODEL_OPTIONS = Object.freeze([
   Object.freeze({ label: 'GPT 6.1 Sol XHigh', value: 'gpt-6.1-sol-xhigh',
     providerModel: 'gpt-6.1-sol', availabilityModel: 'gpt-6.1-sol', reasoningEffort: 'xhigh',
     isBranchedInferenceModel: true, exposeInCatalog: false, }),
-  Object.freeze({ label: 'Claude Fable 5.1 High', value: 'claude-fable-5.1',
-    providerModel: 'claude-fable-5-1', availabilityModel: 'claude-fable-5.1', reasoningEffort: 'high',
+  Object.freeze({ label: 'Claude Fable 5.2 High', value: 'claude-fable-5.2',
+    providerModel: 'claude-fable-5-2', availabilityModel: 'claude-fable-5.2', reasoningEffort: 'high',
     isBranchedInferenceModel: true, }),
-  Object.freeze({ label: 'Claude Fable 5.1 XHigh', value: 'claude-fable-5.1-xhigh',
-    providerModel: 'claude-fable-5-1', availabilityModel: 'claude-fable-5.1', reasoningEffort: 'xhigh',
+  Object.freeze({ label: 'Claude Fable 5.2 XHigh', value: 'claude-fable-5.2-xhigh',
+    providerModel: 'claude-fable-5-2', availabilityModel: 'claude-fable-5.2', reasoningEffort: 'xhigh',
     isBranchedInferenceModel: true, exposeInCatalog: false, }),
   Object.freeze({ label: 'Claude Opus 5.5 XHigh', value: 'claude-opus-5.5-xhigh',
     providerModel: 'claude-opus-5-5', availabilityModel: 'claude-opus-5.5', reasoningEffort: 'xhigh',

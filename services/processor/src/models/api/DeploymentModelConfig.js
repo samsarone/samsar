@@ -221,6 +221,7 @@ function isAlibabaQwenImage3ProSavedCredentialEligible(availableModelConfig = {}
 function normalizeDeploymentModel(value) {
   const normalized = String(normalizeStoredGPTImageModelKey(value) || '').trim().toUpperCase();
   if (['GEMINI4', 'GEMINI4CARBON', 'GEMINI4ARGON', 'GOOGLEGEMINI4', 'GOOGLEGEMINI4CARBON', 'GOOGLEGEMINI4ARGON'].includes(normalized.replace(/[^A-Z0-9]/g, ''))) return 'GEMINI-4-CARBON';
+  if (['CLAUDEFABLE51', 'CLAUDEFABLE52'].includes(normalized.replace(/[^A-Z0-9]/g, '').replace(/(?:EXTRAHIGH|XHIGH|HIGH)$/, ''))) return 'CLAUDE-FABLE-5.2';
   if (['QWEN3.8', 'QWEN3.8-MAX'].includes(normalized)) {
     return 'QWEN3.8';
   }
@@ -313,7 +314,7 @@ function mergeRuntimeInferenceProviderSelections(availability) {
   const priorities = {
     'gpt-6-astra': ['openai', 'gmicloud', 'samsar', 'openrouter'],
     'claude-opus-5.5': ['anthropic', 'openrouter', 'samsar'],
-    'claude-fable-5.1': ['anthropic', 'openrouter', 'samsar'],
+    'claude-fable-5.2': ['anthropic', 'openrouter', 'samsar'],
     'gpt-6.1-sol': ['openai', 'openrouter', 'samsar'],
     'gemini-4-carbon': ['googleCloud', 'gmicloud', 'samsar', 'openrouter'],
     'QWEN3.8': ['alibabaCloud', 'gmicloud', 'samsar', 'openrouter'],
@@ -466,6 +467,7 @@ function applyStandaloneModelAdapterPreferences(availability = {}) {
 function normalizeRuntimeInferenceModelKey(value) {
   const model = normalizeDeploymentModel(value);
   if (model === 'GEMINI-4-CARBON') return 'gemini-4-carbon';
+  if (model === 'CLAUDE-FABLE-5.2') return 'claude-fable-5.2';
   return model === 'QWEN3.8' ? 'QWEN3.8' : normalizeStoredGPTImageModelKey(value);
 }
 
@@ -612,7 +614,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
 
   if (hasEnvCredential('ANTHROPIC_API_KEY')) {
     appendUnique(merged.providers, ['anthropic']);
-    appendUnique(merged.models, ['claude-opus-5.5', 'claude-fable-5.1']);
+    appendUnique(merged.models, ['claude-opus-5.5', 'claude-fable-5.2']);
     appendUnique(merged.actions, ['chat', 'assistant']);
   }
 
@@ -653,7 +655,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
 
   if (hasEnvCredential('SAMSAR_API_KEY')) {
     appendUnique(merged.providers, ['samsar']);
-    appendUnique(merged.models, ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1', 'gemini-4-carbon', 'QWEN3.8', 'KIMIK3', 'HAPPYHORSEI2V', 'WAN2.7PRO']);
+    appendUnique(merged.models, ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2', 'gemini-4-carbon', 'QWEN3.8', 'KIMIK3', 'HAPPYHORSEI2V', 'WAN2.7PRO']);
     appendUnique(merged.actions, ['chat', 'assistant', 'image', 'video']);
     if (exposeStandaloneProviderCapabilities) {
       appendUnique(merged.models, ['GPTIMAGE2.5', 'VEO3.1I2V']);
@@ -673,7 +675,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
 
   if (hasEnvCredential('OPENROUTER_API_KEY')) {
     appendUnique(merged.providers, ['openrouter']);
-    appendUnique(merged.models, ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1', 'gemini-4-carbon', 'QWEN3.8']);
+    appendUnique(merged.models, ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2', 'gemini-4-carbon', 'QWEN3.8']);
     appendUnique(merged.actions, ['chat', 'assistant']);
   }
 
@@ -697,7 +699,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
   const inferenceModels = new Set([
     normalizeDeploymentModel('gpt-6-astra'),
     normalizeDeploymentModel('claude-opus-5.5'),
-    normalizeDeploymentModel('claude-fable-5.1'),
+    normalizeDeploymentModel('claude-fable-5.2'),
     normalizeDeploymentModel('gpt-6.1-sol'),
     normalizeDeploymentModel('gemini-4-carbon'),
     normalizeDeploymentModel('QWEN3.8'),

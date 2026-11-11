@@ -231,7 +231,7 @@ const CAPABILITY_FAMILIES = {
     key: 'claude',
     label: 'Claude Opus / Fable',
     providerKeys: ['anthropic', 'openrouter', 'samsar'],
-    modelKeys: ['claude-opus-5.5', 'claude-fable-5.1'],
+    modelKeys: ['claude-opus-5.5', 'claude-fable-5.2'],
   },
   gemini: {
     key: 'gemini',
@@ -261,7 +261,7 @@ const CAPABILITY_FAMILIES = {
     key: 'claudeAssistant',
     label: 'Claude Opus / Fable Assistant',
     providerKeys: ['anthropic', 'openrouter', 'samsar'],
-    modelKeys: ['claude-opus-5.5', 'claude-fable-5.1'],
+    modelKeys: ['claude-opus-5.5', 'claude-fable-5.2'],
   },
   geminiAssistant: {
     key: 'geminiAssistant',

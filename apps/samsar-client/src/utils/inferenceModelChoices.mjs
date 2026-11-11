@@ -3,7 +3,8 @@ const REASONING_MODELS = Object.freeze({
   gpt61sol: 'gpt-6.1-sol',
   claudeopus55: 'claude-opus-5.5',
   claude55opus: 'claude-opus-5.5',
-  claudefable51: 'claude-fable-5.1',
+  claudefable52: 'claude-fable-5.2',
+  claudefable51: 'claude-fable-5.2',
 });
 
 export function parseReasoningModelChoice(value) {

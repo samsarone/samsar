@@ -14,7 +14,7 @@ function setup(t, { pending = false, authorized = true } = {}) {
   t.mock.method(mongoose, 'connect', async () => mongoose);
   const session = {
     _id: 'project', userId: 'owner', aspectRatio: '9:16', videoLink: 'https://media.example/final.mp4',
-    expressGenerationImageModel: 'SEEDREAM', expressGenerationInferenceModel: 'claude-fable-5.1',
+    expressGenerationImageModel: 'SEEDREAM', expressGenerationInferenceModel: 'claude-fable-5.2',
     isExpressGeneration: true, frameGenerationPending: pending,
     layers: [{ _id: 'scene', frameGenerationPending: pending,
       imageSession: { activeGeneratedImage: 'https://media.example/image.png', activeItemList: [] } }],
@@ -41,7 +41,7 @@ test('initial details exclude frames at the database and preserve editing/model/
   assert.equal(fixture.generated.mock.callCount(), 0);
   assert.equal(result.isSessionOwner, true);
   assert.equal(result.expressGenerationImageModel, 'SEEDREAM');
-  assert.equal(result.expressGenerationInferenceModel, 'claude-fable-5.1');
+  assert.equal(result.expressGenerationInferenceModel, 'claude-fable-5.2');
   assert.equal(result.layers[0].imageSession.activeItemList[0].type, 'image');
   assert.equal(result.layers[0].userVideoUploadTask.progressPercent, 50);
   assert.deepEqual(fixture.session.layers[0].imageSession.activeItemList, []);

@@ -384,7 +384,7 @@ export const IMAGE_EDIT_MODEL_TYPES = [
 
 export const ASSISTANT_MODEL_TYPES = [
   { get label() { return uiText("Claude Opus 5.5 High"); }, value: 'claude-opus-5.5' },
-  { get label() { return uiText("Claude Fable 5.1 High"); }, value: 'claude-fable-5.1' },
+  { get label() { return uiText("Claude Fable 5.2 High"); }, value: 'claude-fable-5.2' },
   { get label() { return uiText("GPT 6.1 Sol High"); }, value: 'gpt-6.1-sol' },
   {
     get label() { return uiText("GPT 6 Astra High"); },
@@ -404,7 +404,7 @@ export const ASSISTANT_MODEL_TYPES = [
   },
 
 
-  { get label() { return uiText("Claude Fable 5.1 XHigh"); }, value: 'claude-fable-5.1-xhigh' },
+  { get label() { return uiText("Claude Fable 5.2 XHigh"); }, value: 'claude-fable-5.2-xhigh' },
   { get label() { return uiText("Claude Opus 5.5 XHigh"); }, value: 'claude-opus-5.5-xhigh' },
   { get label() { return uiText("GPT 6.1 Sol XHigh"); }, value: 'gpt-6.1-sol-xhigh' },
   { get label() { return uiText("GPT 6 Astra XHigh"); }, value: 'gpt-6-astra-xhigh' },
@@ -413,7 +413,7 @@ export const ASSISTANT_MODEL_TYPES = [
 
 export const INFERENCE_MODEL_TYPES = [
   { get label() { return uiText("Claude Opus 5.5"); }, value: 'claude-opus-5.5', isBranchedInferenceModel: true },
-  { get label() { return uiText("Claude Fable 5.1"); }, value: 'claude-fable-5.1', isBranchedInferenceModel: true },
+  { get label() { return uiText("Claude Fable 5.2"); }, value: 'claude-fable-5.2', isBranchedInferenceModel: true },
   { get label() { return uiText("GPT 6.1 Sol"); }, value: 'gpt-6.1-sol', isBranchedInferenceModel: true },
 
 

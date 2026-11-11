@@ -624,7 +624,7 @@ export const SPEECH_SELECT_TYPES = {
 
 export const ASSISTANT_MODEL_TYPES = [
   { label: 'Claude Opus 5.5', value: 'claude-opus-5.5' },
-  { label: 'Claude Fable 5.1', value: 'claude-fable-5.1' },
+  { label: 'Claude Fable 5.2', value: 'claude-fable-5.2' },
   { label: 'GPT 6.1 Sol', value: 'gpt-6.1-sol' },
   {
     label: 'GPT 6 Astra',
@@ -647,7 +647,7 @@ export const ASSISTANT_MODEL_TYPES = [
 
 export const INFERENCE_MODEL_TYPES = [
   { label: 'Claude Opus 5.5', value: 'claude-opus-5.5', isBranchedInferenceModel: true },
-  { label: 'Claude Fable 5.1', value: 'claude-fable-5.1', isBranchedInferenceModel: true },
+  { label: 'Claude Fable 5.2', value: 'claude-fable-5.2', isBranchedInferenceModel: true },
   { label: 'GPT 6.1 Sol', value: 'gpt-6.1-sol', isBranchedInferenceModel: true },
   {
     label: 'GPT 6 Astra',
