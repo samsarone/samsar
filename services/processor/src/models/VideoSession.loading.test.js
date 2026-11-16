@@ -5,7 +5,7 @@ import VideoSession from '../schema/VideoSession.js';
 import FrameGeneration from '../schema/FrameGeneration.js';
 import UserVideoUploadTask from '../schema/UserVideoUploadTask.js';
 import GeneratedAIVideo from '../schema/generations/GeneratedAIVideo.js';
-import { getSessionDetails } from './VideoSession.js';
+import { assertVideoSessionEditableAccess, getSessionDetails } from './VideoSession.js';
 
 function query(value) {
   return { select() { return this; }, sort() { return this; }, async lean() { return value; } };
@@ -78,4 +78,26 @@ test('stale pending-frame flags still clear when no queued frame task exists', a
   const result = await getSessionDetails({ userId: fixture.userId, id: 'project' });
   assert.equal(result.frameGenerationPending, false);
   assert.equal(result.layers[0].frameGenerationPending, false);
+});
+
+test('assistant reads project only conversation and access fields while retaining shared edit authorization', async (t) => {
+  const fixture = setup(t);
+  Object.assign(fixture.session, { editableShareEnabled: true, editableShareToken: 'a'.repeat(48),
+    editableShareImportedUserIds: ['collaborator'] });
+  for (const [userId, extra] of [['owner', {}], ['collaborator', {}], ['invitee', { editableShareToken: 'a'.repeat(48) }]]) {
+    const result = await assertVideoSessionEditableAccess(userId, { id: 'project', ...extra }, {
+      markEdited: false, assistantConversationOnly: true,
+    });
+    assert.equal(result, fixture.session);
+    const fields = new Set(fixture.projection().split(' '));
+    for (const field of ['userId', 'editableShareEnabled', 'editableShareToken', 'editableShareImportedUserIds',
+      'sessionMessages', 'assistantStream', 'assistantSessionVersion', 'sessionMessageGenerationPending', 'sessionMessageGenerationError']) {
+      assert.ok(fields.has(field), field);
+    }
+    assert.ok(!fields.has('layers'));
+    assert.ok(!fields.has('audioLayers'));
+  }
+  await assert.rejects(assertVideoSessionEditableAccess('stranger', { id: 'project' }, {
+    markEdited: false, assistantConversationOnly: true,
+  }), { statusCode: 404 });
 });

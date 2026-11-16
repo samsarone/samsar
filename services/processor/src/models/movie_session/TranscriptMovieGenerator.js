@@ -1423,7 +1423,11 @@ async function requestQuickMovieGenerationInternal(userId, payload, {
 
     const audioDuration = numLayers * 10;
 
-    const musicTheme = await getMusicForTextTheme(themeJsonString, userInferenceModel, musicProvider);
+    const musicTheme = await getMusicForTextTheme(themeJsonString, userInferenceModel, musicProvider, {
+      originalPrompt: inputPrompt,
+      musicInstructions: payload.musicInstructions || payload.musicPrompt,
+      sessionId,
+    });
 
     const musicVolume = resolveExpressBackingTrackVolume(musicProvider);
 

@@ -19,6 +19,7 @@ import {
   getInferenceModelForSession,
   getInferenceSettingsForSession,
   getMaxConcurrentGmiCloudVideoRequests,
+  getLipSyncTimeoutMs,
   getRetryLipSyncModel,
   getRetryPromptSeedAction,
   isTransientProviderError,
@@ -59,22 +60,36 @@ test('base AI-video completion marks the generated media as available', () => {
 
 test('accepted lip-sync requests have a bounded wait without resubmitting while still pending', () => {
   const submittedAt = new Date('2026-10-22T18:00:00Z');
-  const now = new Date('2026-10-22T18:20:00Z').getTime();
+  const submittedAtMs = submittedAt.getTime();
   for (const submittedAdapter of ['fal', 'samsar']) {
     const request = {
       model: 'SYNCLIPSYNC', submittedAdapter,
       generationId: 'accepted-request', requestSubmitAt: submittedAt,
     };
-    assert.equal(shouldFailStaleLipSyncProviderPoll(request, submittedAt.getTime() + 9 * 60_000), false);
-    assert.equal(shouldFailStaleLipSyncProviderPoll(request, now), true);
+    for (const minutes of [14, 30, 31, 59, 60]) {
+      assert.equal(shouldFailStaleLipSyncProviderPoll(request, submittedAtMs + minutes * 60_000, {}), false);
+    }
+    assert.equal(shouldFailStaleLipSyncProviderPoll(request, submittedAtMs + 60 * 60_000 + 1, {}), true);
   }
   assert.equal(shouldFailStaleLipSyncProviderPoll({
     model: 'SYNCLIPSYNC', submittedAdapter: 'fal', requestSubmitAt: submittedAt,
-  }, now), true);
+  }, submittedAtMs + 61 * 60_000, {}), true);
   assert.equal(shouldFailStaleLipSyncProviderPoll({
     model: 'CREATIFYLIPSYNC', submittedAdapter: 'fal',
     generationId: 'other-request', requestSubmitAt: submittedAt,
-  }, now), true);
+  }, submittedAtMs + 61 * 60_000, {}), true);
+});
+
+test('lip-sync polling accepts a positive finite timeout override and otherwise waits 60 minutes', () => {
+  const defaultTimeoutMs = 60 * 60_000;
+  for (const value of [undefined, '', 'invalid', '0', '-1', 'Infinity', 'NaN']) {
+    assert.equal(getLipSyncTimeoutMs({ AI_VIDEO_LIP_SYNC_TIMEOUT_MS: value }), defaultTimeoutMs);
+  }
+  const env = { AI_VIDEO_LIP_SYNC_TIMEOUT_MS: String(45 * 60_000) };
+  assert.equal(getLipSyncTimeoutMs(env), 45 * 60_000);
+  const request = { createdAt: new Date('2026-10-22T18:00:00Z') };
+  assert.equal(shouldFailStaleLipSyncProviderPoll(request, request.createdAt.getTime() + 45 * 60_000, env), false);
+  assert.equal(shouldFailStaleLipSyncProviderPoll(request, request.createdAt.getTime() + 45 * 60_000 + 1, env), true);
 });
 
 test('new AI-video queue rows survive provider capacity waits', () => {

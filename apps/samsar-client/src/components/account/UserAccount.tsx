@@ -45,9 +45,9 @@ import {
 } from "../../utils/deploymentProviders.js";
 
 import { INFERENCE_MODEL_TYPES, ASSISTANT_MODEL_TYPES } from "../../constants/Types.ts";
+import { DEFAULT_TEXT_MODEL } from '../../utils/generationDefaults.mjs';
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
-const DEFAULT_TEXT_MODEL = "gpt-6-astra";
 const VIDEO_FPS_OPTIONS = [
   { value: 24, get label() { return uiText("24 FPS"); } },
   { value: 16, get label() { return uiText("16 FPS"); } },
@@ -282,7 +282,7 @@ export default function UserAccount() {
   }
 
   const updateUserDetails = (payload) => {
-    axios
+    return axios
       .post(`${PROCESSOR_SERVER}/users/update`, payload, getHeaders())
       .then((res) => {
         toast.success(uiText("User details updated!"), { position: "bottom-center" });
@@ -290,8 +290,12 @@ export default function UserAccount() {
           setUser(res.data);
         }
         getUserAPI();
+        return true;
       })
-      .catch(() => toast.error(uiText("Failed to update user details"), { position: "bottom-center" }));
+      .catch(() => {
+        toast.error(uiText("Failed to update user details"), { position: "bottom-center" });
+        return false;
+      });
   };
 
   const handleNotifyOnCompletionChange = (e) => {

@@ -9,10 +9,14 @@ its timers independently of media-generation polling.
   uncertain submission once with the **same payload and client request ID**.
   Further recovery is exposed through the popup's Retry action. Never create a
   new request ID when retrying a submission whose outcome is unknown.
-- `watch()` starts SSE and an immediate authenticated status read. REST reads
-  take at most 10 seconds, with one read in flight and a one-second delay between
-  reads. SSE connections are released on terminal events and bounded to 45 seconds
-  even when a proxy leaves the body open. Normal server rotations reconnect.
+- `watch()` starts SSE and an immediate authenticated status read. After an
+  accepted SSE snapshot, recent stream data or heartbeats suppress duplicate REST
+  reads. Polling resumes after 15 seconds without stream activity, with a REST
+  reconciliation at least every 30 seconds even while heartbeats arrive.
+  Unsupported streams use REST immediately. REST reads take at most 10 seconds, with one read
+  in flight and a one-second delay between reads. SSE connections are released on
+  terminal events and bounded to 45 seconds even when a proxy leaves the body
+  open. Normal server rotations reconnect.
 - Restoring network connectivity or returning to the tab reconnects active
   delivery. After 60 seconds without an accepted status snapshot, the popup
   stops spinning and offers Retry. This only reloads the existing response.
@@ -20,6 +24,8 @@ its timers independently of media-generation polling.
   minutes without progress offers recovery without cancelling provider work or
   changing the server's pending/billing state.
 - Session/version/query identity and sequence checks discard stale responses.
+  Stream-only updates preserve saved conversation history and replace the one
+  provisional reply.
   Clearing, navigation and unmount abort outstanding transports and retries.
   Completion releases both delivery transports. Server errors preserve partial
   text and are displayed in the popup.

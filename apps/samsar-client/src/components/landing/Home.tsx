@@ -57,9 +57,11 @@ const ImageStudioLandingHome = lazy(() => import("../image/ImageStudioLandingHom
 const AudioStudioHome = lazy(() => import("../audio/AudioStudioHome.jsx"));
 const ExternalStudioDashboard = lazy(() => import("../external/ExternalStudioDashboard.jsx"));
 const GenerationsHome = lazy(() => import("../generations/GenerationsHome.jsx"));
+const CreateLanding = lazy(() => import('./CreateLanding.jsx'));
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
 const STANDALONE_PUBLIC_AUTH_PATHS = new Set([
+  '/create',
   '/login',
   '/forgot_password',
   '/reset_password',
@@ -248,6 +250,7 @@ export default function Home() {
     if (location.pathname === '/image_sessions' && user) return true;
     if (location.pathname === '/audio/studio' && user) return true;
     const allowed = new Set([
+      '/create',
       '/login',
       '/register',
       '/forgot_password',
@@ -614,6 +617,7 @@ export default function Home() {
             }
           />
           <Route path="/generations" element={<GenerationsHome />} />
+          <Route path="/create" element={<CreateLanding />} />
           <Route path="/session/:id" element={<EditorHome />} />
           <Route path="/video" element={isMobile ? <MobileVideoLandingHome /> : <VideoEditorLandingHome />} />
           <Route path="/video/share/:shareToken" element={isMobile ? <SharedVideoDesktopOnlyMessage /> : <VideoHome initialSessionRequestRef={initialSessionRequestRef} />} />

@@ -45,6 +45,35 @@ beforeEach(() => {
 
 describe.each([['desktop', TopNav], ['mobile', MobileTopNav]])('%s navigation', (_, Nav) => {
   it.each(['/video/video-1', '/image/studio/image-1', '/audio/studio', '/vidgenie/video-1', '/account', '/generations'])(
+    'opens the simple Create page directly from %s', (path) => {
+      renderNav(Nav, path);
+      fireEvent.click(screen.getByRole('link', { name: 'Create' }));
+      expect(screen.getByLabelText('Current route')).toHaveTextContent('/create');
+      expect(mocks.openAlertDialog).not.toHaveBeenCalled();
+      expect(createStudioSession).not.toHaveBeenCalled();
+      expect(axios.post).not.toHaveBeenCalled();
+    }
+  );
+
+  it('keeps the Create page navigation free of project setup controls', () => {
+    mocks.userState.user.email = 'creator@example.com';
+    renderNav(Nav, '/create');
+    expect(screen.getByRole('link', { name: 'Create' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('button', { name: 'Samsar Studio' })).toBeInTheDocument();
+    expect(screen.getByText('creator@example.com')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New Project' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /New Studio project|New image project|Audio actions/ })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('session-controls')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Open billing/ })).not.toBeInTheDocument();
+  });
+
+  it('does not offer the Create page to external users', () => {
+    mocks.userState.user.isExternalUser = true;
+    renderNav(Nav, '/external/studio');
+    expect(screen.queryByRole('link', { name: 'Create' })).not.toBeInTheDocument();
+  });
+
+  it.each(['/video/video-1', '/image/studio/image-1', '/audio/studio', '/vidgenie/video-1', '/account', '/generations'])(
     'shows the same destinations from %s without opening project setup', async (path) => {
       renderNav(Nav, path);
       fireEvent.click(await screen.findByRole('button', { name: 'New Project' }));
@@ -122,6 +151,12 @@ it('keeps Audio Studio actions separate from navigation', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Audio actions' }));
   expect(openAudioActions).toHaveBeenCalledOnce();
   expect(screen.getByLabelText('Current route')).toHaveTextContent('/audio/studio');
+});
+
+it('keeps account settings accessible from the compact mobile Create header', () => {
+  renderNav(MobileTopNav, '/create');
+  fireEvent.click(screen.getByRole('button', { name: 'Account', exact: true }));
+  expect(screen.getByLabelText('Current route')).toHaveTextContent('/account');
 });
 
 

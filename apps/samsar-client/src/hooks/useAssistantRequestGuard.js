@@ -127,7 +127,8 @@ export function useAssistantRequestGuard(sessionId) {
                     }
                   }
                   if (event === 'snapshot' && guard.current.acceptSession(snapshot)) {
-                    onSnapshot({ ...snapshot, sessionMessages: assistantMessagesFromSnapshot(snapshot) });
+                    onSnapshot({ ...snapshot, sessionMessages: assistantMessagesFromSnapshot({ ...snapshot,
+                      sessionMessages: snapshot.sessionMessages || state.current.sessionMessages || [] }) });
                   }
                 }, signal, () => { if (active()) onActivity?.(); });
               }, controller.signal, 45000);
@@ -197,6 +198,7 @@ export function useAssistantRequestGuard(sessionId) {
         const controller = new AbortController();
         let stopped = false, timer, deadlineTimer, stream, inFlight = false;
         let lastContact = Date.now(), lastProgress = Date.now(), previousProgress = '';
+        let hasStreamSnapshot = false, lastStreamActivity = 0, lastStatusAttempt = Date.now();
         const active = () => !stopped && guard.current.isCurrent(token);
         const stop = () => {
           stopped = true;
@@ -224,10 +226,20 @@ export function useAssistantRequestGuard(sessionId) {
             if (snapshot.sessionMessageGenerationError) guard.current.reportError(new Error(snapshot.sessionMessageGenerationError), null);
           }
         };
-        const poll = async () => {
+        const poll = async (force = false) => {
           if (!active() || inFlight) return;
           clearTimeout(timer);
+          // SSE already delivers the same snapshots. Avoid a second database
+          // read every second while snapshots/10-second heartbeats are arriving.
+          // Reconcile every 30 seconds even if a heartbeat keeps a stalled
+          // snapshot reader alive. Missing stream activity falls back sooner.
+          if (!force && hasStreamSnapshot && Date.now() - lastStreamActivity < 15000 &&
+              Date.now() - lastStatusAttempt < 30000) {
+            timer = setTimeout(poll, 1000);
+            return;
+          }
           inFlight = true;
+          lastStatusAttempt = Date.now();
           try {
             const response = await withTimeout(signal => axios.get(statusUrl, { headers, signal, timeout: 10000,
               validateStatus: status => status >= 200 && status < 300 || status === 304 }), controller.signal, 10000);
@@ -246,10 +258,20 @@ export function useAssistantRequestGuard(sessionId) {
             if (active()) timer = setTimeout(poll, 1000);
           }
         };
-        const connect = () => { stream = guard.current.subscribe({ url, headers, onSnapshot: apply,
-          onActivity: () => { if (active()) lastContact = Date.now(); },
+        const connect = () => { stream = guard.current.subscribe({ url, headers,
+          onSnapshot: snapshot => {
+            hasStreamSnapshot = true;
+            lastStreamActivity = Date.now();
+            apply(snapshot);
+          },
+          onActivity: () => {
+            if (active()) {
+              lastContact = Date.now();
+              if (hasStreamSnapshot) lastStreamActivity = lastContact;
+            }
+          },
           onError: failure => fail(failure, false) }); };
-        const wake = () => { if (active() && !document.hidden) { connect(); void poll(); } };
+        const wake = () => { if (active() && !document.hidden) { connect(); void poll(true); } };
         state.current.stopDelivery = stop;
         // Healthy reasoning may take minutes without visible text. A dead
         // connection gets a shorter recovery deadline than a healthy job.

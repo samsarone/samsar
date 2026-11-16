@@ -1,6 +1,7 @@
 import { translateText as uiText } from "./localization.js";
 import { parseReasoningModelChoice } from './inferenceModelChoices.mjs';
-export const DEFAULT_INFERENCE_MODEL_VALUE = "gpt-6-astra";
+import { DEFAULT_TEXT_MODEL } from './generationDefaults.mjs';
+export const DEFAULT_INFERENCE_MODEL_VALUE = DEFAULT_TEXT_MODEL;
 export const EXTRA_HIGH_INFERENCE_MODEL_VALUE = "gpt-6-astra-xhigh";
 export const QWEN_INFERENCE_MODEL_VALUE = "QWEN3.8";
 export const KIMI_K3_INFERENCE_MODEL_VALUE = "kimi-k3";
@@ -210,7 +211,7 @@ export function normalizeDeploymentInferenceModelValue(value) {
     return "gemini-4-carbon";
   }
   if (inferGPT56SolEffortFromModelValue(compact)) {
-    return DEFAULT_INFERENCE_MODEL_VALUE;
+    return "gpt-6-astra";
   }
   return "";
 }

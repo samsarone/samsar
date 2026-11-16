@@ -1,4 +1,5 @@
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
+import { DEFAULT_TEXT_MODEL } from '../../utils/generationDefaults.mjs';
 import { translateText as uiText, formatUiDate } from '../../utils/localization.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
@@ -25,7 +26,6 @@ import {
 } from "../../utils/deploymentProviders.js";
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
-const DEFAULT_TEXT_MODEL = 'gpt-6-astra';
 const ASSISTANT_SIDEBAR_SAFE_GAP_PX = 24;
 
 function normalizeMessageText(content) {
@@ -203,7 +203,7 @@ export default function AssistantHome(props) {
     const normalizedOptionAssistantModel = normalizeDeploymentInferenceModelValue(
       userAssistantModelOption?.value,
     );
-    if (canReconcileAssistantModel && userAssistantModelOption?.value) {
+    if (canReconcileAssistantModel && user.selectedAssistantModel && userAssistantModelOption?.value) {
       if (normalizedOptionAssistantModel === normalizedUserAssistantModel) {
         pendingAssistantModelSyncRef.current = '';
       } else if (pendingAssistantModelSyncRef.current !== userAssistantModelOption.value) {

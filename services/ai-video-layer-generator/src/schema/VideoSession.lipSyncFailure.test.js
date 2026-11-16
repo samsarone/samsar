@@ -129,14 +129,14 @@ test('an expired accepted Sync job persists a mandatory session failure without 
     generationType: 'lip_sync',
     submittedAdapter: 'fal',
     generationId: 'accepted-provider-request',
-    requestSubmitAt: new Date(Date.now() - 20 * 60_000),
+    requestSubmitAt: new Date(Date.now() - 61 * 60_000),
     numRetries: 0,
     retryOnFail: true,
   }) });
 
   assert.equal(session.layers[0].lipSyncVideoGenerationStatus, 'FAILED');
   assert.equal(session.layers[0].lipSyncGenerationPending, false);
-  assert.match(session.layers[0].lipSyncVideoGenerationError, /10-minute lip-sync limit/);
+  assert.match(session.layers[0].lipSyncVideoGenerationError, /60-minute lip-sync limit/);
   assert.equal(session.layers[0].aiVideoLayer, '/assets/base.mp4');
   assert.equal(session.expressGenerationPending, true);
   assert.equal(session.expressGenerationFailed, false);

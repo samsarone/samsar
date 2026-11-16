@@ -82,6 +82,39 @@ test('two hosted assistant workers claim one job, invoke once, debit once and de
   assert.equal(h.state.jobs.length, 0);
 });
 
+test('queued assistant persists visible text while provider generation is still pending', async () => {
+  const h = harness();
+  h.state.jobs[0].stream = true;
+  h.session.sessionMessageGenerationPending = true;
+  let release, started, completed = false;
+  const generating = new Promise(resolve => { started = resolve; });
+  const final = new Promise(resolve => { release = resolve; });
+  const generate = h.context.sendAssistantCompletionRequest;
+  h.context.sendAssistantCompletionRequest = async (...args) => {
+    assert.equal(typeof args[2].onText, 'function');
+    await args[2].onText('Hello');
+    started();
+    await final;
+    return generate(...args);
+  };
+  const pending = h.processPending().finally(() => { completed = true; });
+  try {
+    await generating;
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(completed, false);
+    assert.equal(h.session.assistantStream.text, 'Hello');
+    assert.equal(h.session.assistantStream.status, 'streaming');
+    assert.equal(h.session.sessionMessageGenerationPending, true);
+    assert.equal(h.state.deliveries, 0);
+  } finally {
+    release();
+    await pending;
+  }
+  assert.equal(h.state.deliveries, 1);
+  assert.equal(h.account.debits, 1);
+  assert.equal(h.session.sessionMessageGenerationPending, false);
+});
+
 test('queued billing survives a ledger outage and restarts without another provider call or debit', async () => {
   const h = harness();
   const insert = h.account.Ledger.updateOne;

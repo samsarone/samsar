@@ -148,13 +148,40 @@ describe('VidGenie project loading and wizard requests', () => {
     await mountEditor();
     await submitPrompt('  A river story.  ');
     expect(axios.post).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/\/v2\/video\/step\/text_to_video$/), expect.objectContaining({ input: expect.objectContaining({
-      session_id: 'project-1', prompt: 'A river story.', image_model: 'GPTIMAGE2.5', video_model: 'RUNWAYML',
+      session_id: 'project-1', prompt: 'A river story.', image_model: 'GPTIMAGE2.5', video_model: 'KLINGIMGTOVID4',
+      inference_model: 'claude-opus-5.5',
       aspect_ratio: '16:9', tone: 'grounded', auto_render_full_video: true,
     }) }), expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer integration-token' }) }));
     expect(axios.get).toHaveBeenCalledWith(expect.stringMatching(/\/request-1\/status_detailed$/), expect.any(Object));
     expect(screen.getByLabelText('Generation progress')).toHaveTextContent('Generating project');
     expect(screen.getByRole('button', { name: 'Submit', exact: true })).toBeDisabled();
     expect(localStorage.getItem('vidgenieRequestStepMode:request-1')).toBeTruthy();
+  });
+
+  it('waits for profile hydration before persisting model defaults and uses saved account choices', async () => {
+    harness.user = null;
+    harness.userFetching = true;
+    harness.userInitiated = false;
+    const view = await mountEditor();
+    expect(JSON.parse(localStorage.getItem('vidgeniePreferencesV1') || '{}').inferenceModel).toBeUndefined();
+    expect(localStorage.getItem('defaultVidGPTImageGenerationModel')).toBeNull();
+    expect(localStorage.getItem('defaultVIdGPTVideoGenerationModel')).toBeNull();
+
+    harness.user = { _id: 'user-1', generationCredits: 2000, isEmailVerified: true,
+      selectedInferenceModel: 'gpt-6.1-sol', selectedInferenceEffort: 'xhigh',
+      agentImageModel: 'SEEDREAM', agentVideoModel: 'RUNWAYML' };
+    harness.userFetching = false;
+    harness.userInitiated = true;
+    await act(async () => view.rerender(<MemoryRouter initialEntries={['/vidgenie/project-1']}>
+      <LocalizationProvider><CurrentLocation /><Routes>
+        <Route path="/vidgenie/:id" element={<OneshotEditor />} />
+        <Route path="*" element={<div>Destination page</div>} />
+      </Routes></LocalizationProvider>
+    </MemoryRouter>));
+    await submitPrompt('A story with saved models.');
+    expect(axios.post.mock.calls[0][1].input).toMatchObject({
+      inference_model: 'gpt-6.1-sol', effort: 'xhigh', image_model: 'SEEDREAM', video_model: 'RUNWAYML',
+    });
   });
 
   it('includes explicit subtitle translation choices in the generation request', async () => {

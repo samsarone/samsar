@@ -254,6 +254,53 @@ test('a DB failure after a claimed attempt leaves a scoped lease for safe identi
   assert.ok(job.requestLeaseExpiresAt);
 });
 
+for (const minutes of [14, 30, 31, 59]) {
+  test(`accepted lip-sync is still pending after ${minutes} minutes without submitting a replacement`, async t => {
+    const { job, session } = fixture(t);
+    job.set({ status: 'PENDING', generationId: 'accepted', submittedAdapter: 'fal',
+      requestSubmitAt: new Date(Date.now() - minutes * 60_000) });
+    let polls = 0;
+    t.mock.method(fal.queue, 'submit', async () => assert.fail('accepted polling cannot submit a replacement'));
+    t.mock.method(fal.queue, 'status', async (_model, options) => {
+      assert.equal(options.requestId, 'accepted');
+      polls++;
+      return { status: 'IN_PROGRESS' };
+    });
+    await pollForAIVideoCompletion(job);
+    assert.equal(polls, 1);
+    assert.equal(job.status, 'PENDING');
+    assert.equal(job.generationId, 'accepted');
+    assert.equal(job.submittedAdapter, 'fal');
+    assert.equal(job.numRetries, 0);
+    assert.equal(job.infrastructureFailure, undefined);
+    assert.equal(session.layers[0].lipSyncGenerationPending, true);
+    assert.equal(session.get('providerNetworkFailure'), undefined);
+  });
+}
+
+test('an overridden lip-sync deadline retains the accepted identity and reports its configured minutes', async t => {
+  const originalTimeoutMs = process.env.AI_VIDEO_LIP_SYNC_TIMEOUT_MS;
+  process.env.AI_VIDEO_LIP_SYNC_TIMEOUT_MS = String(45 * 60_000);
+  t.after(() => {
+    if (originalTimeoutMs === undefined) delete process.env.AI_VIDEO_LIP_SYNC_TIMEOUT_MS;
+    else process.env.AI_VIDEO_LIP_SYNC_TIMEOUT_MS = originalTimeoutMs;
+  });
+  const { job, session } = fixture(t);
+  job.set({ status: 'PENDING', generationId: 'accepted', submittedAdapter: 'fal',
+    requestSubmitAt: new Date(Date.now() - 46 * 60_000) });
+  t.mock.method(fal.queue, 'submit', async () => assert.fail('deadline cannot submit a replacement'));
+  t.mock.method(fal.queue, 'status', async () => assert.fail('deadline must stop polling'));
+  await pollForAIVideoCompletion(job);
+  assert.equal(job.status, 'FAILED');
+  assert.equal(job.generationId, 'accepted');
+  assert.equal(job.submittedAdapter, 'fal');
+  assert.equal(job.numRetries, 0);
+  assert.equal(job.infrastructureFailureCode, 'PROVIDER_NETWORK_WAIT_EXPIRED');
+  assert.equal(job.infrastructureFailureFinalized, true);
+  assert.match(session.layers[0].lipSyncVideoGenerationError, /45-minute lip-sync limit/);
+  assert.equal(session.get('providerNetworkFailure').providerRequestId, 'accepted');
+});
+
 test('accepted lip-sync poll outages exhaust a bounded budget while retaining the same ID and adapter', async t => {
   const { job, session } = fixture(t);
   job.set({ status: 'PENDING', generationId: 'accepted', submittedAdapter: 'fal', requestSubmitAt: new Date() });

@@ -1,4 +1,5 @@
 import { studioAssistantView } from '../../utils/assistantContext.js';
+import { DEFAULT_IMAGE_MODEL, resolveGenerationModelDefaults } from '../../utils/generationDefaults.mjs';
 import { useAssistantRequestGuard } from '../../hooks/useAssistantRequestGuard.js';
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { translateText as uiText, getUiLanguage } from '../../utils/localization.js';
@@ -322,7 +323,7 @@ export default function ImageStudioHome() {
   } = useContext(NavCanvasControlContext);
   const { id } = useParams();
   const { colorMode } = useColorMode();
-  const { getUserAPI } = useUser();
+  const { user, getUserAPI } = useUser();
   const { openAlertDialog, closeAlertDialog } = useAlertDialog();
 
   const [sessionDetails, setSessionDetails] = useState(null);
@@ -357,9 +358,9 @@ export default function ImageStudioHome() {
   const [generationAspectRatio, setGenerationAspectRatio] = useState('1:1');
 
   const [promptText, setPromptText] = useState('');
-  const [selectedGenerationModel, setSelectedGenerationModel] = useState('NANOBANANA2');
+  const [selectedGenerationModel, setSelectedGenerationModel] = useState(() => resolveGenerationModelDefaults(user).imageModel);
   const [selectedEditModel, setSelectedEditModel] = useState(
-    'NANOBANANA2EDIT'
+    `${DEFAULT_IMAGE_MODEL}EDIT`
   );
   const [selectedEditModelValue, setSelectedEditModelValue] = useState(
     IMAGE_EDIT_MODEL_TYPES.find((model) => model.key === selectedEditModel)
@@ -1281,7 +1282,7 @@ export default function ImageStudioHome() {
       videoSessionId: id,
       layerId: currentLayer._id.toString(),
       aspectRatio: payload?.aspectRatio || generationAspectRatio || aspectRatio,
-      model: selectedGenerationModel || 'NANOBANANA2',
+      model: selectedGenerationModel || DEFAULT_IMAGE_MODEL,
     };
 
     axios

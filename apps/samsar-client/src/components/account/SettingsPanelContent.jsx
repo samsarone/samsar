@@ -31,6 +31,12 @@ import {
   filterMusicProvidersForAudioAvailability,
   filterSpeakerGroupsForAudioAvailability,
 } from "../../constants/audioProviderAvailability.js";
+import { IMAGE_GENERAITON_MODEL_TYPES, VIDEO_GENERATION_MODEL_TYPES } from '../../constants/Types.ts';
+import { useInferenceModelAvailability } from '../../hooks/useInferenceModelAvailability.js';
+import { useDeploymentModelAvailability } from '../../hooks/useDeploymentModelAvailability.js';
+import { isImageModelAllowedForDeploymentScope } from '../../utils/imageModelAvailability.mjs';
+import { isVideoModelAllowedForDeploymentScope } from '../../utils/videoModelAvailability.mjs';
+import { resolveGenerationModelDefaults } from '../../utils/generationDefaults.mjs';
 
 const BACKING_TRACK_MODEL_OPTIONS = [
   { value: "ELEVENLABS_MUSIC", get label() { return uiText("ElevenLabs"); } },
@@ -311,6 +317,7 @@ export default function SettingsPanelContent(props) {
     resolveSettingsTabFromPath(location.pathname)
   );
   const [username, setUsername] = useState(user.username || "");
+  const [generationModels, setGenerationModels] = useState(() => resolveGenerationModelDefaults(user));
   const [backingTrackModel, setBackingTrackModel] = useState(
     normalizeBackingTrackModelValue(user.backingTrackModel)
   );
@@ -338,6 +345,35 @@ export default function SettingsPanelContent(props) {
     source: googleSpeakersSource,
   } = useGoogleTTSSpeakers();
   const { audioAvailability } = useAudioProviderAvailability();
+  const { inferenceModelOptions, isLoading: inferenceModelsLoading } = useInferenceModelAvailability();
+  const {
+    isStandaloneDeployment,
+    isLoading: generationModelsLoading,
+    textToVideoImageModelValues = [],
+    textToVideoVideoModelValues = [],
+  } = useDeploymentModelAvailability();
+  const generationModelFields = [
+    {
+      key: 'inferenceModel', label: uiText('Text model'), options: inferenceModelOptions,
+      isLoading: inferenceModelsLoading,
+    },
+    {
+      key: 'imageModel', label: uiText('Image model'),
+      options: IMAGE_GENERAITON_MODEL_TYPES.filter((model) => model.isExpressModel &&
+        isImageModelAllowedForDeploymentScope(model, isStandaloneDeployment) &&
+        (!isStandaloneDeployment || textToVideoImageModelValues.includes(model.key)))
+        .map((model) => ({ value: model.key, label: model.name })),
+      isLoading: generationModelsLoading,
+    },
+    {
+      key: 'videoModel', label: uiText('Video model'),
+      options: VIDEO_GENERATION_MODEL_TYPES.filter((model) => model.isExpressModel &&
+        isVideoModelAllowedForDeploymentScope(model, isStandaloneDeployment) &&
+        (!isStandaloneDeployment || textToVideoVideoModelValues.includes(model.key)))
+        .map((model) => ({ value: model.key, label: model.name })),
+      isLoading: generationModelsLoading,
+    },
+  ];
   const availableBackingTrackModelOptions = useMemo(
     () => filterMusicProvidersForAudioAvailability(
       BACKING_TRACK_MODEL_OPTIONS.map((option) => ({ ...option, key: option.value, name: option.label })),
@@ -366,6 +402,7 @@ export default function SettingsPanelContent(props) {
     if (!user) return;
 
     setUsername(user.username || "");
+    setGenerationModels(resolveGenerationModelDefaults(user));
     setBackingTrackModel(normalizeBackingTrackModelValue(user.backingTrackModel));
     setFontPreferences(mergeFontPreferencesWithDefaults(user.fontPreferences));
     setSpeakerOptions(normalizeSpeakerOptionsState(user.speakerOptions));
@@ -453,16 +490,36 @@ export default function SettingsPanelContent(props) {
     }
   };
 
-  const handleUpdateUserDetails = (evt) => {
+  const handleUpdateUserDetails = async (evt) => {
     evt.preventDefault();
 
     const updatedDetails = {
       username,
       preferredLanguage,
       backingTrackModel,
+      selectedInferenceModel: generationModels.inferenceModel,
+      agentImageModel: generationModels.imageModel,
+      agentVideoModel: generationModels.videoModel,
     };
 
-    updateUserDetails(updatedDetails);
+    const saved = await updateUserDetails(updatedDetails);
+    if (saved === false) return;
+    const previousDefaults = resolveGenerationModelDefaults(user);
+    if (generationModels.imageModel !== previousDefaults.imageModel) {
+      localStorage.setItem('defaultVidGPTImageGenerationModel', generationModels.imageModel);
+      localStorage.setItem('defaultImageModel', generationModels.imageModel);
+      localStorage.setItem('defaultModel', generationModels.imageModel);
+    }
+    if (generationModels.videoModel !== previousDefaults.videoModel) {
+      localStorage.setItem('defaultVIdGPTVideoGenerationModel', generationModels.videoModel);
+      localStorage.setItem('defaultVidgenieImageListVideoGenerationModel', generationModels.videoModel);
+      localStorage.setItem('defaultVideoModel', generationModels.videoModel);
+    }
+    if (generationModels.inferenceModel !== previousDefaults.inferenceModel) {
+      let preferences = {};
+      try { preferences = JSON.parse(localStorage.getItem('vidgeniePreferencesV1') || '{}'); } catch { /* Use a fresh preference record. */ }
+      localStorage.setItem('vidgeniePreferencesV1', JSON.stringify({ ...preferences, inferenceModel: generationModels.inferenceModel }));
+    }
   };
 
   const handleSettingsTabClick = (tabKey) => {
@@ -720,6 +777,28 @@ export default function SettingsPanelContent(props) {
                 </select>
               </div>
             </div>
+            <fieldset className="space-y-3">
+              <legend className="text-base font-semibold">{uiText('Generation defaults')}</legend>
+              <p className={`text-sm ${secondaryTextColor}`}>{uiText('Used for new videos. You can change these models any time.')}</p>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                {generationModelFields.map((field) => {
+                  const hasSelectedOption = field.options.some((option) => option.value === generationModels[field.key]);
+                  return <div key={field.key}>
+                    <label htmlFor={`settings-${field.key}`} className={`block text-sm mb-1 ${secondaryTextColor}`}>{field.label}</label>
+                    <select
+                      id={`settings-${field.key}`}
+                      value={generationModels[field.key]}
+                      disabled={field.isLoading || field.options.length === 0}
+                      onChange={(event) => setGenerationModels((current) => ({ ...current, [field.key]: event.target.value }))}
+                      className={formInputClasses}
+                    >
+                      {!hasSelectedOption && <option value={generationModels[field.key]}>{generationModels[field.key]}</option>}
+                      {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </div>;
+                })}
+              </div>
+            </fieldset>
             <div className="block">
               <SecondaryButton className="w-full sm:w-auto" type="submit">
                 {t("account.updateButton")}

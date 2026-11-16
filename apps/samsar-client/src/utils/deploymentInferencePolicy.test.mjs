@@ -228,6 +228,12 @@ test('model preferences resolve against the allowed options without mutating can
   ]);
 });
 
+test('an unset inference preference defaults to Claude and preserves explicit GPT choices', () => {
+  assert.equal(resolveAllowedInferenceModelOption(undefined, MODEL_OPTIONS)?.value, 'claude-opus-5.5');
+  assert.equal(resolveAllowedInferenceModelOption('gpt-6-astra', MODEL_OPTIONS)?.value, 'gpt-6-astra');
+  assert.equal(normalizeDeploymentInferenceModelValue('GPT5.6XHIGH'), 'gpt-6-astra');
+});
+
 test('legacy GPT 5.6 XHigh model values resolve to canonical Sol with separate effort', () => {
   for (const value of [
     'gpt-6-astra-xhigh',

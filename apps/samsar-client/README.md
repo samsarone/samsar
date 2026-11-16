@@ -15,6 +15,7 @@ The project is best understood as three connected creation surfaces:
 | Surface | Route | Best for | User level |
 | --- | --- | --- | --- |
 | **VidGenie** | `/vidgenie/:id` | One-shot text-to-video and image-list-to-video creation | Beginner to API power user |
+| **Create** | `/create` | One prompt and one button to generate a video using saved model defaults | Beginner |
 | **Studio** | `/video/:id` | Full video editing, render control, scene/layer/timeline finishing | Intermediate to advanced |
 | **Image Studio** | `/image/studio/:id` | Standalone image generation, edit, upload, canvas, layer, and export workflows | Beginner to advanced |
 
@@ -22,6 +23,8 @@ Hosted app: [app.samsar.one](https://app.samsar.one)<br>
 Product/API docs: [docs.samsar.one](https://docs.samsar.one)
 
 ## Quick Mental Model
+
+Open **Create** in the navigation or visit `/create` for a simple prompt-only entry. It creates a 30-second landscape video and opens VidGenie to show progress. New model defaults are Claude Opus 5.5, GPT Image 2.6, and Kling 4; saved account choices take priority. Change the defaults in account Settings. The API uses the stable `GPTIMAGE2.5` key for GPT Image 2.6. Draft prompts survive sign-in and failed requests.
 
 Samsar builds a video as a structured session. A session contains scenes, visual layers, video layers, audio layers, text/subtitle items, hints, render settings, and generated media artifacts. VidGenie creates that session quickly. Studio opens the same session for detailed editing.
 

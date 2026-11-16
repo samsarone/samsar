@@ -39,6 +39,7 @@ export const INFERENCE_PROVIDER_MODEL_KEYS = Object.freeze({
 });
 
 export const DEFAULT_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.GPT_56_SOL;
+export const DEFAULT_USER_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.CLAUDE_OPUS_55;
 export const GPT_56_SOL_XHIGH_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.GPT_56_SOL_XHIGH;
 export const GPT_56_SOL_REASONING_EFFORT = INFERENCE_REASONING_EFFORTS.Inference;
 export const PUBLICATION_METADATA_INFERENCE_SETTINGS = Object.freeze({
@@ -340,10 +341,10 @@ export function getReasoningEffortForInferenceModel(value, requestedEffort = nul
 }
 
 export function getDefaultUserInferenceModel() {
-  return normalizeInferenceModel(
+  return normalizeSupportedInferenceModel(
     process.env.USER_INFERENCE_MODEL ||
     process.env.DEFAULT_USER_INFERENCE_MODEL
-  );
+  ) || DEFAULT_USER_INFERENCE_MODEL;
 }
 
 export function isGeminiInferenceModel(value) {

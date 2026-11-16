@@ -185,7 +185,14 @@ import {
 
 const LIPSYNC_MODELS = ['SYNCLIPSYNC', 'LATENTSYNC', 'KLINGLIPSYNC', 'HUMMINGBIRDLIPSYNC', 'CREATIFYLIPSYNC'];
 const MAX_LIPSYNC_WAIT_MS = 5 * 60 * 1000; // fail when base never becomes ready
-const MAX_LIPSYNC_PROVIDER_PENDING_MS = 10 * 60 * 1000; // fail stale provider polls and continue express flow
+const DEFAULT_LIP_SYNC_TIMEOUT_MS = 60 * 60 * 1000;
+
+export function getLipSyncTimeoutMs(env = process.env) {
+  const configuredTimeoutMs = Number(env.AI_VIDEO_LIP_SYNC_TIMEOUT_MS);
+  return Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0
+    ? configuredTimeoutMs
+    : DEFAULT_LIP_SYNC_TIMEOUT_MS;
+}
 
 
 
@@ -2562,7 +2569,7 @@ export async function pollForAIVideoCompletion(reqPayload) {
     if (shouldFailStaleLipSyncProviderPoll(payload)) {
       payload.retryOnFail = false;
       payload.infrastructureFailureCode = 'PROVIDER_NETWORK_WAIT_EXPIRED';
-      payload.lastProviderFailureMessage = `${model} did not finish within the 10-minute lip-sync limit.`;
+      payload.lastProviderFailureMessage = `${model} did not finish within the ${getLipSyncTimeoutMs() / 60000}-minute lip-sync limit.`;
       await processVideoGenerationFailed(payload);
       return;
     }
@@ -2685,7 +2692,8 @@ export async function pollForAIVideoCompletion(reqPayload) {
     await processVideoGenerationFailed(payload);
   } else if (responseStatus === 'PENDING') {
     const submittedAtMs = new Date(payload.requestSubmitAt || payload.createdAt).getTime();
-    if (Number.isFinite(submittedAtMs) && Date.now() - submittedAtMs > MAX_BASE_PROVIDER_PENDING_MS) {
+    if (!LIPSYNC_MODELS.includes(model) && Number.isFinite(submittedAtMs) &&
+        Date.now() - submittedAtMs > MAX_BASE_PROVIDER_PENDING_MS) {
       // A still-pending upstream job may eventually finish. Stop waiting
       // locally without submitting another billable job or switching adapters.
       await AIVideoLayerGeneration.findByIdAndUpdate(payload._id, {
@@ -2709,12 +2717,12 @@ export async function pollForAIVideoCompletion(reqPayload) {
   }
 }
 
-export function shouldFailStaleLipSyncProviderPoll(payload = {}, now = Date.now()) {
+export function shouldFailStaleLipSyncProviderPoll(payload = {}, now = Date.now(), env = process.env) {
   // Preserve accepted IDs during transient outages, but bound the wait for
   // every lip-sync provider. Expiry disables retries and retains the base video.
   const submittedAt = payload.requestSubmitAt || payload.createdAt;
   const ageMs = submittedAt ? now - new Date(submittedAt).getTime() : 0;
-  return ageMs > MAX_LIPSYNC_PROVIDER_PENDING_MS;
+  return ageMs > getLipSyncTimeoutMs(env);
 }
 
 
@@ -3997,11 +4005,9 @@ async function processLipSyncGenerationFailed(payload) {
 
 
 
-  const { sessionId, layerId, _id, numRetries, retryOnFail, model, prompt, requestSubmitAt, createdAt } = payload;
+  const { sessionId, layerId, _id, numRetries, retryOnFail, model, prompt } = payload;
   const generationId = _id.toString();
-  const lastRequestTime = requestSubmitAt || createdAt;
-  const providerTimedOut = Boolean(lastRequestTime) &&
-    (Date.now() - new Date(lastRequestTime).getTime()) > MAX_LIPSYNC_PROVIDER_PENDING_MS;
+  const providerTimedOut = shouldFailStaleLipSyncProviderPoll(payload);
 
 
 

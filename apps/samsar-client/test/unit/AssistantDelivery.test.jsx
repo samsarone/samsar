@@ -35,6 +35,75 @@ beforeEach(() => {
   vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 404 }));
 });
 
+it('delivers successive SSE text before the REST response or stream body completes', async () => {
+  let stream;
+  const cancel = vi.fn();
+  globalThis.fetch.mockResolvedValue(new Response(new ReadableStream({
+    start(controller) { stream = controller; }, cancel,
+  }), { headers: { 'content-type': 'text/event-stream' } }));
+  axios.get.mockImplementation(() => new Promise(() => {}));
+  const { result } = renderHook(() => useAssistantRequestGuard('session'));
+  const onSnapshot = vi.fn();
+  act(() => result.current.watch(watchOptions(onSnapshot)));
+  await tick(0);
+  const send = snapshot => stream.enqueue(new TextEncoder().encode(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`));
+  await act(async () => send({ ...pending, assistantStream: { ...pending.assistantStream,
+    sequence: 2, status: 'streaming', text: 'First words' } }));
+  expect(onSnapshot.mock.lastCall[0].sessionMessages[0].content).toBe('First words');
+  expect(cancel).not.toHaveBeenCalled();
+  await act(async () => send({ ...pending, assistantStream: { ...pending.assistantStream,
+    sequence: 3, status: 'streaming', text: 'First words continue' } }));
+  expect(onSnapshot.mock.lastCall[0].sessionMessages[0].content).toBe('First words continue');
+  expect(axios.get).toHaveBeenCalledTimes(1);
+  await act(async () => send(completed));
+  expect(onSnapshot.mock.lastCall[0].sessionMessages).toEqual(completed.sessionMessages);
+  expect(axios.get.mock.calls[0][1].signal.aborted).toBe(true);
+  expect(cancel).toHaveBeenCalledTimes(1);
+});
+
+it('uses a healthy SSE connection without repeating REST reads and resumes polling when it stalls', async () => {
+  let stream;
+  globalThis.fetch.mockResolvedValue(new Response(new ReadableStream({
+    start(controller) { stream = controller; },
+  }), { headers: { 'content-type': 'text/event-stream' } }));
+  axios.get.mockResolvedValue({ data: { status: 'PENDING', sessionDetails: pending } });
+  const { result } = renderHook(() => useAssistantRequestGuard('session'));
+  act(() => result.current.watch(watchOptions(vi.fn())));
+  await tick(0);
+  await act(async () => stream.enqueue(new TextEncoder().encode(`event: snapshot\ndata: ${JSON.stringify(pending)}\n\n`)));
+  await tick(10000);
+  expect(axios.get).toHaveBeenCalledTimes(1);
+  await act(async () => stream.enqueue(new TextEncoder().encode(': heartbeat\n\n')));
+  await tick(14000);
+  expect(axios.get).toHaveBeenCalledTimes(1);
+  await tick(1000);
+  expect(axios.get).toHaveBeenCalledTimes(2);
+});
+
+it('reconciles through REST every 30 seconds even while SSE heartbeats keep arriving', async () => {
+  let stream;
+  globalThis.fetch.mockResolvedValue(new Response(new ReadableStream({
+    start(controller) { stream = controller; },
+  }), { headers: { 'content-type': 'text/event-stream' } }));
+  axios.get.mockResolvedValueOnce({ data: { status: 'PENDING', sessionDetails: pending } })
+    .mockResolvedValue({ data: { status: 'COMPLETED', sessionDetails: completed } });
+  const { result } = renderHook(() => useAssistantRequestGuard('session'));
+  const onSnapshot = vi.fn();
+  act(() => result.current.watch(watchOptions(onSnapshot)));
+  await tick(0);
+  await act(async () => stream.enqueue(new TextEncoder().encode(`event: snapshot\ndata: ${JSON.stringify(pending)}\n\n`)));
+  for (let heartbeat = 0; heartbeat < 2; heartbeat++) {
+    await tick(10000);
+    await act(async () => stream.enqueue(new TextEncoder().encode(': heartbeat\n\n')));
+  }
+  await tick(9999);
+  expect(axios.get).toHaveBeenCalledTimes(1);
+  await tick(1);
+  expect(axios.get).toHaveBeenCalledTimes(2);
+  expect(onSnapshot.mock.lastCall[0].sessionMessages).toEqual(completed.sessionMessages);
+  expect(onSnapshot.mock.lastCall[0].sessionMessageGenerationPending).toBe(false);
+});
+
 it('cancels a blocked SSE read when the conversation is cleared', async () => {
   const cancel = vi.fn();
   const controller = new AbortController();
