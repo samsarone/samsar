@@ -8,6 +8,7 @@ import {
   DOCKER_VIDEO_PROVIDER,
   getConfiguredDockerVideoProviders,
   getDockerVideoProviderPriority,
+  hasGmiCloudVideoModelMapping,
   resolveDockerVideoProvider,
   resolveNextDockerVideoProvider,
 } from './DockerProviderPriority.js';
@@ -34,6 +35,35 @@ const originalEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[k
 function clearEnv() {
   ENV_KEYS.forEach((key) => delete process.env[key]);
 }
+
+test('Flash selects Fal or Samsar while refusing saved standard GMICloud mappings', (t) => {
+  clearEnv();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-flash-routing-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const catalogPath = path.join(directory, 'catalog.json');
+  fs.writeFileSync(catalogPath, JSON.stringify({ provider: 'gmicloud', models: {
+    'SEEDANCE2.5FLASHI2V': { video: { modelId: 'seedance-2-5-260628', operation: 'video.generate' } },
+    'SEEDANCE2.5I2V': { video: { modelId: 'seedance-2-5-260628', operation: 'video.generate' } },
+  } }));
+  const availablePath = path.join(directory, 'available.json');
+  fs.writeFileSync(availablePath, JSON.stringify({ modelProviders: { 'SEEDANCE2.5FLASHI2V': 'gmicloud' } }));
+  process.env.CURRENT_ENV = 'production';
+  process.env.SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED = 'true';
+  process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+  process.env.SAMSAR_HOSTED_GENBLAZE_VIDEO_ENABLED = 'true';
+  process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
+  process.env.SAMSAR_AVAILABLE_MODELS_PATH = availablePath;
+  process.env.FAL_API_KEY = 'test-fal';
+  assert.equal(hasGmiCloudVideoModelMapping('SEEDANCE2.5FLASHI2V'), false);
+  assert.equal(hasGmiCloudVideoModelMapping('SEEDANCE2.5I2V'), true);
+  assert.deepEqual(getDockerVideoProviderPriority('SEEDANCE2.5FLASHI2V'), ['fal', 'samsar']);
+  assert.equal(resolveDockerVideoProvider('SEEDANCE2.5FLASHI2V'), 'fal');
+  assert.equal(resolveDockerVideoProvider('SEEDANCE2.5I2V'), 'gmicloud');
+  delete process.env.FAL_API_KEY;
+  assert.equal(resolveDockerVideoProvider('SEEDANCE2.5FLASHI2V'), '');
+  process.env.SAMSAR_API_KEY = 'test-samsar';
+  assert.equal(resolveDockerVideoProvider('SEEDANCE2.5FLASHI2V'), 'samsar');
+});
 
 test.afterEach(() => {
   ENV_KEYS.forEach((key) => {

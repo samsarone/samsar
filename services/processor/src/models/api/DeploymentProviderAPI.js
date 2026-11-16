@@ -17,7 +17,7 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   samsar: {
     label: 'Samsar API Key',
     requiredFor: ['All models', 'All actions', 'moderation'],
-    models: ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2', 'gemini-4-carbon', 'QWEN3.8', 'KIMIK3', 'GPTIMAGE2.5', 'WAN2.7PRO', 'RUNWAYML', 'VEO3.1I2V', 'HAPPYHORSEI2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
+    models: ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2', 'gemini-4-carbon', 'QWEN3.8', 'KIMIK3', 'GPTIMAGE2.5', 'SEEDREAM', 'WAN2.7PRO', 'RUNWAYML', 'VEO3.1I2V', 'HAPPYHORSEI2V', 'SEEDANCE2.5FLASHI2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
     actions: ['chat', 'assistant', 'moderation', 'image', 'video', 'audio', 'lip_sync', 'sound_effect'],
   },
   openai: {
@@ -58,8 +58,8 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   },
   fal: {
     label: 'FAL',
-    requiredFor: ['FAL image models', 'Wan2.7 Pro image', 'FAL audio models', 'Seedance 2.0 video', 'Seedance 2.5 video', 'Happy Horse 1.1 video', 'lip sync', 'sound effects'],
-    models: ['NANOBANANA2', 'NANOBANANAPRO', 'WAN2.7PRO', 'SEEDANCE2.0I2V', 'SEEDANCE2.5I2V', 'HAPPYHORSEI2V', 'MMAUDIO', 'LATENT_SYNC'],
+    requiredFor: ['FAL image models', 'Seedream 5.5 image', 'Wan2.7 Pro image', 'FAL audio models', 'Seedance 2.0 video', 'Seedance 2.5 video', 'Seedance 2.5 Flash video', 'Happy Horse 1.1 video', 'lip sync', 'sound effects'],
+    models: ['NANOBANANA2', 'NANOBANANAPRO', 'SEEDREAM', 'WAN2.7PRO', 'SEEDANCE2.0I2V', 'SEEDANCE2.5I2V', 'SEEDANCE2.5FLASHI2V', 'HAPPYHORSEI2V', 'MMAUDIO', 'LATENT_SYNC'],
     actions: ['image', 'video', 'audio', 'lip_sync', 'sound_effect'],
   },
   runway: {

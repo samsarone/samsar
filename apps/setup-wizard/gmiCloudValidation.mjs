@@ -28,7 +28,6 @@ export const GMI_CLOUD_CHAT_MODEL_SPECS = Object.freeze({
 export const GMI_CLOUD_MEDIA_MODEL_SPECS = Object.freeze([
   Object.freeze({ samsarModel: 'GPTIMAGE2', modality: 'image', modelId: 'gpt-image-2-generate' }),
   Object.freeze({ samsarModel: 'GPTIMAGE2EDIT', modality: 'image', modelId: 'gpt-image-2-edit', operation: 'image.edit' }),
-  Object.freeze({ samsarModel: 'SEEDREAM', modality: 'image', modelId: 'seedream-5.0-pro' }),
   Object.freeze({ samsarModel: 'NANOBANANA2', modality: 'image', modelId: 'gemini-3.1-flash-image' }),
   Object.freeze({ samsarModel: 'NANOBANANA2EDIT', modality: 'image', modelId: 'gemini-3.1-flash-image', operation: 'image.edit' }),
   Object.freeze({ samsarModel: 'NANOBANANAPRO', modality: 'image', modelId: 'gemini-3-pro-image' }),
@@ -60,13 +59,23 @@ export const GMI_CLOUD_MEDIA_MODEL_SPECS = Object.freeze([
   Object.freeze({ samsarModel: 'ELEVENLABS', modality: 'audio', modelId: 'elevenlabs-tts-v3' }),
 ]);
 
+// Retain exact historical catalog routes for accepted requests. Fresh model
+// discovery must not advertise Seedream 5.0 as the current SEEDREAM 5.5 model.
+const GMI_CLOUD_LEGACY_MEDIA_MODEL_SPECS = Object.freeze([
+  Object.freeze({ samsarModel: 'SEEDREAM', modality: 'image', modelId: 'seedream-5.0-pro' }),
+]);
+const GMI_CLOUD_RUNTIME_MEDIA_MODEL_SPECS = Object.freeze([
+  ...GMI_CLOUD_MEDIA_MODEL_SPECS,
+  ...GMI_CLOUD_LEGACY_MEDIA_MODEL_SPECS,
+]);
+
 const ACTIVE_CATALOG_STATUSES = new Set(['active', 'available', 'enabled', 'online', 'ready']);
 const ALLOWED_ROUTE_MODALITIES = Object.freeze({
   ...Object.fromEntries(Object.keys(GMI_CLOUD_CHAT_MODEL_SPECS).map((modelKey) => [
     modelKey,
     Object.freeze(['text', 'vision']),
   ])),
-  ...Object.fromEntries(GMI_CLOUD_MEDIA_MODEL_SPECS.map((spec) => [
+  ...Object.fromEntries(GMI_CLOUD_RUNTIME_MEDIA_MODEL_SPECS.map((spec) => [
     spec.samsarModel,
     Object.freeze([spec.modality]),
   ])),
@@ -162,7 +171,7 @@ function operationForRoute(modelKey, modality, modelId) {
   if (GMI_CLOUD_CHAT_MODEL_SPECS[modelKey]?.[modality]) {
     return routeOperation(modality);
   }
-  const mediaSpec = GMI_CLOUD_MEDIA_MODEL_SPECS.find((spec) => (
+  const mediaSpec = GMI_CLOUD_RUNTIME_MEDIA_MODEL_SPECS.find((spec) => (
     spec.samsarModel === modelKey &&
     spec.modality === modality &&
     spec.modelId.toLowerCase() === normalizeString(modelId).toLowerCase()
@@ -191,7 +200,7 @@ function isAllowedRouteModelId(modelKey, modality, modelId) {
   if (chatSpec) {
     return chatSpec.candidates.some((candidate) => chatCatalogModelMatches(modelId, candidate));
   }
-  return GMI_CLOUD_MEDIA_MODEL_SPECS.some((spec) => (
+  return GMI_CLOUD_RUNTIME_MEDIA_MODEL_SPECS.some((spec) => (
     spec.samsarModel === modelKey &&
     spec.modality === modality &&
     spec.modelId.toLowerCase() === normalizeString(modelId).toLowerCase()

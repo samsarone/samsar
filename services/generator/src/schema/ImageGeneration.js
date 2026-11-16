@@ -40,6 +40,8 @@ const imageGenerationSchema = new Schema({
   apiRequestId: String,
   // Preserve the Fal endpoint across model upgrades for pending GPT Image jobs.
   gptImageFalEndpoint: String,
+  // Preserve Seedream 5/5.5 request affinity while accepted work completes.
+  seedreamFalEndpoint: String,
   apiSubmittedAt: Date,
   providerResultUrl: String,
   providerSubmissionAccepted: { type: Boolean, default: false },

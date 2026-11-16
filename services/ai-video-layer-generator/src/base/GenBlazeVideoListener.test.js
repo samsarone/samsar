@@ -10,6 +10,11 @@ import {
   shouldUseGenBlazeVideoProvider,
 } from './GenBlazeVideoListener.js';
 
+test('GMICloud rejects Flash instead of relabeling standard Seedance 2.5', () => {
+  assert.throws(() => buildGenBlazeVideoRequest({ model: 'SEEDANCE2.5FLASHI2V',
+    startImage: 'https://media.example/start.png' }), error => error.code === 'GENBLAZE_MODEL_UNSUPPORTED');
+});
+
 test('builds the generic GenBlaze I2V contract with start/end images and audio settings', () => {
   assert.deepEqual(
     buildGenBlazeVideoRequest({

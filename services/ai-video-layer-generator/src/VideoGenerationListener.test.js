@@ -177,6 +177,9 @@ test('video submission adapter is derived from the actual dispatch path', (t) =>
 });
 
 test('AI video polling rejects adapter and model mismatches', () => {
+  assert.equal(isSubmittedVideoAdapterCompatible('SEEDANCE2.5FLASHI2V', 'fal'), true);
+  assert.equal(isSubmittedVideoAdapterCompatible('SEEDANCE2.5FLASHI2V', 'samsar'), true);
+  assert.equal(isSubmittedVideoAdapterCompatible('SEEDANCE2.5FLASHI2V', 'gmicloud'), false);
   assert.equal(isSubmittedVideoAdapterCompatible('SEEDANCE2.0I2V', 'fal'), true);
   assert.equal(isSubmittedVideoAdapterCompatible('SEEDANCE2.0I2V', 'gmicloud'), true);
   assert.equal(isSubmittedVideoAdapterCompatible('SEEDANCE2.0I2V', 'googleCloud'), false);

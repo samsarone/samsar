@@ -3,6 +3,9 @@ import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
 import { getSourceSceneMetadata } from './SourceSceneMetadata.js';
 
 export function getInitialVideoAdapter(model, env = process.env) {
+  // Flash has its own fal contract. Never send it through the older Seedance
+  // GMICloud mappings used by historical 2.0 and 2.5 requests.
+  if (model === 'SEEDANCE2.5FLASHI2V' && !isStandaloneEdition(env)) return 'fal';
   if (
     (model === 'SEEDANCE2.0I2V' || model === 'SEEDANCE2.5I2V') &&
     !isStandaloneEdition(env)

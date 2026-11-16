@@ -289,8 +289,8 @@ const CAPABILITY_FAMILIES = {
   },
   seedream: {
     key: 'seedream',
-    label: 'Seedream',
-    providerKeys: ['fal', 'gmicloud', 'samsar'],
+    label: 'Seedream 5.5',
+    providerKeys: ['fal', 'samsar'],
     modelKeys: ['SEEDREAM'],
   },
   nanoBanana2: {
@@ -333,7 +333,7 @@ const CAPABILITY_FAMILIES = {
     key: 'seedance',
     label: 'Seedance',
     providerKeys: ['fal', 'gmicloud', 'samsar'],
-    modelKeys: ['SEEDANCEI2V', 'SEEDANCE2.0I2V', 'SEEDANCE2.5I2V'],
+    modelKeys: ['SEEDANCEI2V', 'SEEDANCE2.0I2V', 'SEEDANCE2.5I2V', 'SEEDANCE2.5FLASHI2V'],
   },
   kling: {
     key: 'kling',

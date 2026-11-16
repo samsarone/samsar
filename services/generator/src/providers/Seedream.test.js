@@ -6,6 +6,52 @@ import {
   pollSeedreamRequest,
   submitSeedreamRequest,
 } from './Seedream.js';
+import { LEGACY_SEEDREAM_FAL_ENDPOINT, SEEDREAM_FAL_ENDPOINT } from '../consts/SeedreamModel.js';
+
+for (const [aspectRatio, imageSize] of [
+  ['1:1', { width: 1024, height: 1024 }],
+  ['16:9', { width: 1792, height: 1024 }],
+  ['9:16', { width: 1024, height: 1792 }],
+]) {
+  test(`Seedream 5.5 submits and persists its exact endpoint and ${aspectRatio} PNG payload`, async () => {
+    const calls = [];
+    const updates = [];
+    await submitSeedreamRequest({ _id: 'new-image', model: 'SEEDREAM', prompt: 'A clear title', aspectRatio }, {
+      connect: async () => {},
+      imageGenerationModel: {
+        async findByIdAndUpdate() {},
+        async findOneAndUpdate(filter, update) { updates.push(update); },
+      },
+      async queueSubmit(endpoint, request) { calls.push({ endpoint, request }); return { request_id: 'accepted-55' }; },
+    });
+    assert.deepEqual(calls, [{ endpoint: SEEDREAM_FAL_ENDPOINT,
+      request: { input: { prompt: 'A clear title', image_size: imageSize, output_format: 'png', num_images: 1 } } }]);
+    assert.equal(updates[0].seedreamFalEndpoint, SEEDREAM_FAL_ENDPOINT);
+    assert.equal(updates[0].apiRequestId, 'accepted-55');
+    assert.equal(updates[0].apiGenerationStatus, 'PENDING');
+  });
+}
+
+for (const [name, extra, endpoint] of [
+  ['historical unversioned accepted 5.0 request', {}, LEGACY_SEEDREAM_FAL_ENDPOINT],
+  ['stored 5.5 request', { seedreamFalEndpoint: SEEDREAM_FAL_ENDPOINT }, SEEDREAM_FAL_ENDPOINT],
+  ['sealed 5.0 request', { falImageBillingSnapshot: { model: 'SEEDREAM', endpoint: LEGACY_SEEDREAM_FAL_ENDPOINT } }, LEGACY_SEEDREAM_FAL_ENDPOINT],
+]) {
+  test(`polls the original endpoint for a ${name} and reads the documented data.images result`, async () => {
+    const calls = [];
+    const result = await pollSeedreamRequest({ _id: 'pending-image', model: 'SEEDREAM',
+      apiGenerationStatus: 'PENDING', apiRequestId: 'accepted-original', ...extra }, {
+      connect: async () => {}, imageGenerationModel: { async findOneAndUpdate() {} },
+      async queueStatus(modelEndpoint, request) { calls.push({ modelEndpoint, request }); return { status: 'COMPLETED' }; },
+      async queueResult(modelEndpoint, request) { calls.push({ modelEndpoint, request }); return { data: { images: [{ url: 'https://media.example/image.png' }] } }; },
+      async saveFile(url) { assert.equal(url, 'https://media.example/image.png'); return 'saved.png'; },
+    });
+    assert.equal(result.image, 'saved.png');
+    assert.deepEqual(calls.map((call) => call.modelEndpoint), [endpoint, endpoint]);
+    assert.equal(calls[0].request.requestId, 'accepted-original');
+    assert.equal(calls[1].request.requestId, 'accepted-original');
+  });
+}
 
 test('returns Seedream submit failures to the shared image retry pipeline', async () => {
   const providerFailure = {

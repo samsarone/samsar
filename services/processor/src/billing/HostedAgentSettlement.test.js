@@ -5,7 +5,7 @@ import { buildHostedAgentQuote, calculateHostedAgentUsage } from './HostedAgentU
 import { getExpressVideoStageCreditsPerSecond, EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL } from '../consts/pricing/ExpressVideoPricingDistribution.js';
 
 const models = { RUNWAYML: 30, 'VEO3.1I2V': 60, 'VEO3.1I2VFAST': 36, COSMOS3SUPERI2V: 20,
-  SEEDANCEI2V: 30, 'SEEDANCE2.0I2V': 40, 'SEEDANCE2.5I2V': 60, KLINGIMGTOVID4: 36,
+  SEEDANCEI2V: 30, 'SEEDANCE2.0I2V': 40, 'SEEDANCE2.5I2V': 60, 'SEEDANCE2.5FLASHI2V': 60, KLINGIMGTOVID4: 36,
   KLINGIMGTOVID3PRO: 36, KLINGIMGTOVIDTURBO: 36, HAPPYHORSEI2V: 36 };
 const get = (o, p) => p.split('.').reduce((v, key) => v?.[key], o);
 function set(o, p, value) { const keys = p.split('.'); const last = keys.pop(); let v = o;

@@ -1,4 +1,5 @@
 import { normalizeKlingModelKey, isKlingV4Model, validateKlingV4Duration } from '../../utils/KlingModel.js';
+import { isSeedanceFlashModel, normalizeSeedanceFlashVideoOptions } from '../../utils/SeedanceFlash.js';
 import { imageSubmissionIdentity } from './ImageRequestBilling.js';
 import mongoose from 'mongoose';
 import { createHash } from 'node:crypto';
@@ -574,9 +575,10 @@ export function buildDirectExternalImageToVideoSession({
 
   const prompt = getFirstStringValue(payload, ['prompt']);
   const aspectRatio = getFirstStringValue(payload, ['aspect_ratio', 'aspectRatio']) || '16:9';
-  const duration = isKlingV4Model(model)
+  const flashOptions = isSeedanceFlashModel(model) ? normalizeSeedanceFlashVideoOptions(payload) : null;
+  const duration = flashOptions?.duration ?? (isKlingV4Model(model)
     ? validateKlingV4Duration(payload.duration ?? 5)
-    : normalizeDurationSeconds(payload.duration, 5);
+    : normalizeDurationSeconds(payload.duration, 5));
   const generateAudio = !isKlingV4Model(model) && (payload.generate_audio === true || payload.generateAudio === true);
   const framesPerSecond = Number(payload.frames_per_second || payload.framesPerSecond) || 24;
   const now = new Date();
@@ -656,6 +658,13 @@ export async function requestExternalDirectImageToVideo({
   textToVideo = false,
 }) {
   const normalizedPayload = textToVideo ? { ...payload } : await validateExternalImageToVideoPublicUrls(payload);
+  const requestedModel = normalizeKlingModelKey(getFirstStringValue(normalizedPayload, ['video_model', 'videoModel', 'model']));
+  const flashOptions = isSeedanceFlashModel(requestedModel) ? normalizeSeedanceFlashVideoOptions(normalizedPayload) : null;
+  if (flashOptions?.endImage) {
+    flashOptions.endImage = await resolveExternalPublicMediaUrl({ end_image_url: flashOptions.endImage }, {
+      urlKeys: ['end_image_url'], mediaLabel: 'end_image_url',
+    });
+  }
   const startImage = textToVideo ? '' : getValidatedDirectStartImage(normalizedPayload);
   if (textToVideo && !['VEO3.1', 'VEO3.1FAST', 'HAILUOPRO', 'KLINGTXTTOVID4'].includes(normalizeKlingModelKey(getFirstStringValue(payload, ['video_model', 'videoModel', 'model'])))) {
     throw buildExternalVideoError('Unsupported direct text-to-video model.');
@@ -726,6 +735,7 @@ export async function requestExternalDirectImageToVideo({
       generationType: 'generate',
       samsarExternalProviderStage: 'ai_video_generation',
       samsarExternalVideoRoute: 'direct_image_to_video',
+      ...(flashOptions ? { ...flashOptions, useEndFrame: Boolean(flashOptions.endImage) } : {}),
     });
   }
 

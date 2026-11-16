@@ -12,6 +12,7 @@ export const DOCKER_VIDEO_PROVIDER = Object.freeze({
 });
 
 export const DOCKER_VIDEO_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
+  'SEEDANCE2.5FLASHI2V': [DOCKER_VIDEO_PROVIDER.FAL, DOCKER_VIDEO_PROVIDER.SAMSAR],
   KLINGIMGTOVID4: [DOCKER_VIDEO_PROVIDER.FAL, DOCKER_VIDEO_PROVIDER.SAMSAR],
   KLINGTXTTOVID4: [DOCKER_VIDEO_PROVIDER.FAL, DOCKER_VIDEO_PROVIDER.SAMSAR],
   'VEO3.1': [
@@ -127,6 +128,7 @@ export const DOCKER_FAL_VIDEO_MODELS = Object.freeze([
   'SEEDANCEI2V',
   'SEEDANCE2.0I2V',
   'SEEDANCE2.5I2V',
+  'SEEDANCE2.5FLASHI2V',
   'HAPPYHORSEI2V',
   'MIRELOAI',
   'COSMOS3SUPERI2V',
@@ -147,6 +149,7 @@ export const DOCKER_FAL_SOUND_EFFECT_MODELS = Object.freeze([
   'SEEDANCEI2V',
   'SEEDANCE2.0I2V',
   'SEEDANCE2.5I2V',
+  'SEEDANCE2.5FLASHI2V',
   'VEO3.1I2V',
   'VEO3.1I2VFAST',
 ]);
@@ -314,6 +317,9 @@ function hasEnvCredential(...keys) {
 }
 
 export function hasGmiCloudVideoModelMapping(model, env = process.env) {
+  // No GMICloud Flash contract has been verified. Saved standard 2.5 routes
+  // cannot authorize this distinct model, even if their labels are changed.
+  if (normalizeVideoModelKey(model) === 'SEEDANCE2.5FLASHI2V') return false;
   const catalogPath = normalizeString(env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH);
   if (!catalogPath) return false;
   try {
@@ -497,7 +503,8 @@ export function getDockerVideoProviderPriority(model, { generationType = '' } = 
     );
   }
 
-  if (normalizedModel === 'SEEDANCE2.0I2V' || normalizedModel === 'SEEDANCE2.5I2V') {
+  if (normalizedModel === 'SEEDANCE2.0I2V' || normalizedModel === 'SEEDANCE2.5I2V'
+    || normalizedModel === 'SEEDANCE2.5FLASHI2V') {
     return defaultPriority;
   }
 

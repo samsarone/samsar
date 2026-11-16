@@ -1,4 +1,5 @@
 import { imageBillingError } from './ImagePricing.js';
+import { getSeedreamFalEndpoint, LEGACY_SEEDREAM_FAL_ENDPOINT, SEEDREAM_FAL_ENDPOINT } from '../consts/SeedreamModel.js';
 
 // Account rates checked against Fal's read-only Models Pricing API on 2026-10-23:
 // https://fal.ai/docs/platform-apis/v1/models/pricing
@@ -50,8 +51,16 @@ export const FAL_IMAGE_TARIFFS_V2 = freezeTariffs({
   ...FAL_IMAGE_TARIFFS_V1,
   SEEDREAM: ['bytedance/seedream/v5/pro/text-to-image', 0.0675, 'images'],
 });
-export const FAL_IMAGE_TARIFFS = FAL_IMAGE_TARIFFS_V2;
-const TARIFFS_BY_VERSION = Object.freeze({ 1: FAL_IMAGE_TARIFFS_V1, 2: FAL_IMAGE_TARIFFS_V2 });
+// Seedream 5.5 model card verified 2026-11-16:
+// https://fal.ai/models/bytedance/seedream/v5.5/text-to-image
+// The submitter fixes one PNG at <= 1,835,008 pixels; the documented custom
+// size rate is $0.03 through 2,610,000 pixels. Keep v2 for accepted 5.0 jobs.
+export const FAL_IMAGE_TARIFFS_V3 = freezeTariffs({
+  ...FAL_IMAGE_TARIFFS_V2,
+  SEEDREAM: [SEEDREAM_FAL_ENDPOINT, 0.03, 'images'],
+});
+export const FAL_IMAGE_TARIFFS = FAL_IMAGE_TARIFFS_V3;
+const TARIFFS_BY_VERSION = Object.freeze({ 1: FAL_IMAGE_TARIFFS_V1, 2: FAL_IMAGE_TARIFFS_V2, 3: FAL_IMAGE_TARIFFS_V3 });
 
 // These exact model cards also verify the rounding rule. Other Fal cards
 // identify a per-MP rate without defining billable-unit rounding; they must
@@ -86,7 +95,8 @@ function nanoEditConfig(payload) {
  * switches (web search and thinking off, one output except image-set edits). */
 export function createFalImageTariffSnapshot(payload = {}) {
   const model = String(payload.model || '').trim().toUpperCase();
-  const tariff = FAL_IMAGE_TARIFFS[model];
+  const version = model === 'SEEDREAM' && getSeedreamFalEndpoint(payload) === LEGACY_SEEDREAM_FAL_ENDPOINT ? 2 : 3;
+  const tariff = TARIFFS_BY_VERSION[version][model];
   if (!tariff) throw unverified(`Fal image model ${model || '(missing)'} has no verified fixed tariff.`);
   const [endpoint, baseUsdPerUnit, unit] = tariff;
   if (unit === 'megapixels' && !V1_ROUNDED_MEGAPIXEL_MODELS.has(model)) {
@@ -104,7 +114,7 @@ export function createFalImageTariffSnapshot(payload = {}) {
   const speedMultiplier = model === 'IDEOGRAMV3' ? 2 : 1;
   const outputCount = nanoEdit?.outputCount || 1;
   return {
-    version: 2, model, endpoint, unit, baseUsdPerUnit,
+    version, model, endpoint, unit, baseUsdPerUnit,
     config: { aspectRatio: payload.aspectRatio || '1:1',
       ...(nanoEdit ? nanoEdit : {}),
       ...(recraftStyle ? { imageStyle: recraftStyle } : {}),
@@ -119,7 +129,8 @@ export function createFalImageTariffSnapshot(payload = {}) {
     ...(['RECRAFTV3', 'RECRAFT20B'].includes(model) ? { styleMultiplier } : {}),
     ...(model === 'IDEOGRAMV3' ? { speedMultiplier } : {}),
     ...(model.includes('NANOBANANA') ? { resolutionMultiplier: nanoMultiplier } : {}),
-    verifiedOn: model === 'SEEDREAM' ? '2026-10-24' : '2026-10-23', source: 'fal-models-pricing-api',
+    verifiedOn: model === 'SEEDREAM' ? (version === 3 ? '2026-11-16' : '2026-10-24') : '2026-10-23',
+    source: model === 'SEEDREAM' && version === 3 ? 'fal-model-card' : 'fal-models-pricing-api',
   };
 }
 

@@ -455,6 +455,27 @@ test('legacy GPT Image 2 GMICloud mappings cannot enable Sunburst generation', (
   );
 });
 
+test('Seedream 5.0 GMI mappings and saved adapter order cannot route new Seedream 5.5 requests', (t) => {
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-seedream-55-'));
+  const catalogPath = path.join(temporaryDirectory, 'catalog.json');
+  const preferencePath = path.join(temporaryDirectory, 'preferences.json');
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  fs.writeFileSync(catalogPath, JSON.stringify({ provider: 'gmicloud', models: {
+    SEEDREAM: { image: { modelId: 'seedream-5.0-pro' } },
+  } }));
+  fs.writeFileSync(preferencePath, JSON.stringify({ modelProviderPriority: { SEEDREAM: ['gmicloud', 'fal', 'samsar'] } }));
+  clearCredentials();
+  process.env.CURRENT_ENV = 'standalone';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
+  process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalogPath;
+  process.env.SAMSAR_MODEL_ADAPTER_PREFERENCES_PATH = preferencePath;
+  assert.deepEqual(getDockerImageGenerationProviderPriority('SEEDREAM'), ['fal', 'samsar']);
+  assert.equal(resolveDockerImageGenerationProvider('SEEDREAM'), '');
+  process.env.FAL_API_KEY = 'test-key';
+  assert.equal(resolveDockerImageGenerationProvider('SEEDREAM'), 'fal');
+});
+
 test('credential-scoped GMICloud edit routes remain below native and Fal but ahead of Samsar', (t) => {
   const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'samsar-image-edit-gmi-'));
   const catalogPath = path.join(temporaryDirectory, 'genblaze-model-catalog.json');

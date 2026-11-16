@@ -10,6 +10,7 @@ fal.config({
 const SEEDANCE_15_IMAGE_TO_VIDEO_LINK = "fal-ai/bytedance/seedance/v1.5/pro/image-to-video";
 const SEEDANCE_20_IMAGE_TO_VIDEO_LINK = "bytedance/seedance-2.0/image-to-video";
 const SEEDANCE_25_IMAGE_TO_VIDEO_LINK = "bytedance/seedance-2.5/image-to-video";
+const SEEDANCE_25_FLASH_IMAGE_TO_VIDEO_LINK = "bytedance/seedance-2.5/flash/image-to-video";
 const SEEDANCE_25_DURATION_UNITS = Object.freeze([5, 10, 15, 20]);
 
 const SEEDANCE_ALLOWED_ASPECT_RATIOS = new Set([
@@ -38,6 +39,10 @@ function normalizeSeedanceDuration(duration, model) {
     ), SEEDANCE_25_DURATION_UNITS[0]);
   }
 
+  if (model === "SEEDANCE2.5FLASHI2V") {
+    return String(Math.min(30, Math.max(4, Math.round(parsedDuration))));
+  }
+
   const roundedDuration = Math.round(parsedDuration);
   return Math.min(15, Math.max(4, roundedDuration));
 }
@@ -62,6 +67,9 @@ export function getSeedanceImageToVideoLink(model) {
   }
   if (model === "SEEDANCE2.5I2V") {
     return SEEDANCE_25_IMAGE_TO_VIDEO_LINK;
+  }
+  if (model === "SEEDANCE2.5FLASHI2V") {
+    return SEEDANCE_25_FLASH_IMAGE_TO_VIDEO_LINK;
   }
   const error = new Error(`${model || '<missing>'} is not supported by the FAL Seedance adapter.`);
   error.code = 'FAL_MODEL_UNSUPPORTED';
@@ -118,6 +126,23 @@ export function buildSeedanceInputPayload(payload) {
   }
   if (payload.model === "SEEDANCE2.0I2V" || payload.model === "SEEDANCE2.5I2V") {
     inputPayload.resolution = "720p";
+  }
+  if (payload.model === "SEEDANCE2.5FLASHI2V") {
+    const resolution = payload.resolution || '720p';
+    const bitrateMode = payload.bitrate_mode || payload.bitrateMode;
+    const codec = payload.codec;
+    if (!['480p', '720p'].includes(resolution)
+      || (bitrateMode && !['standard', 'high'].includes(bitrateMode))
+      || (codec && !['auto', 'H264', 'H265'].includes(codec))) {
+      throw Object.assign(new Error('Unsupported Seedance 2.5 Flash resolution, bitrate mode, or codec.'), {
+        code: 'FAL_MODEL_INPUT_INVALID',
+      });
+    }
+    inputPayload.resolution = resolution;
+    // Flash I2V derives framing from its starting image; the schema requires auto.
+    inputPayload.aspect_ratio = 'auto';
+    if (bitrateMode) inputPayload.bitrate_mode = bitrateMode;
+    if (codec) inputPayload.codec = codec;
   }
 
   return inputPayload;

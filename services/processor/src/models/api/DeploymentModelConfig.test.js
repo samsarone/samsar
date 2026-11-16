@@ -307,6 +307,8 @@ test('standalone Samsar advertises inference and Seedance video models', () => {
     'VEO3.1I2V',
     'SEEDANCE2.0I2V',
     'SEEDANCE2.5I2V',
+    'SEEDREAM',
+    'SEEDANCE2.5FLASHI2V',
     'KLINGIMGTOVID4',
     'KLINGTXTTOVID4',
   ]);
@@ -646,12 +648,13 @@ test('GMICloud and FAL availability is a union with shared-model adapter prefere
       'HAPPYHORSEI2V',
       'SEEDANCE2.0I2V',
       'SEEDANCE2.5I2V',
+      'SEEDANCE2.5FLASHI2V',
       'NANOBANANAPRO',
       'KLINGIMGTOVID4',
       'KLINGTXTTOVID4',
     ]);
     assert.equal(result.modelProviders["GPTIMAGE2.5"], 'fal');
-    assert.equal(result.modelProviders.SEEDREAM, 'gmicloud');
+    assert.equal(result.modelProviders.SEEDREAM, 'fal');
     assert.equal(result.modelProviders.SEEDANCEI2V, 'gmicloud');
     assert.equal(result.modelProviders['WAN2.7PRO'], 'fal');
     assert.equal(result.modelProviders.COSMOS3SUPERI2V, 'fal');
@@ -849,7 +852,7 @@ test('FAL runtime enrichment exposes Wan2.7 Pro, Happy Horse, and Seedance media
   const result = mergeRuntimeInferenceDeploymentAvailability({});
 
   assert.deepEqual(result.providers, ['fal']);
-  assert.deepEqual(result.models, ['WAN2.7PRO', 'HAPPYHORSEI2V', 'SEEDANCE2.0I2V', 'SEEDANCE2.5I2V', 'KLINGIMGTOVID4', 'KLINGTXTTOVID4']);
+  assert.deepEqual(result.models, ['WAN2.7PRO', 'HAPPYHORSEI2V', 'SEEDANCE2.0I2V', 'SEEDANCE2.5I2V', 'SEEDANCE2.5FLASHI2V', 'SEEDREAM', 'KLINGIMGTOVID4', 'KLINGTXTTOVID4']);
   assert.deepEqual(result.actions, ['image', 'video']);
 });
 

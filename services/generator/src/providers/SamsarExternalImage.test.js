@@ -21,6 +21,21 @@ function createModelRecorder() {
   };
 }
 
+test('Seedream 5.5 keeps the canonical SEEDREAM key through the Samsar image adapter', async () => {
+  let observed;
+  await submitSamsarExternalTextToImageRequest({ _id: 'seedream-image', model: 'SEEDREAM',
+    prompt: 'A tree', aspectRatio: '16:9' }, {
+    connect: async () => {}, recordProviderUsageLog: async () => {},
+    imageGenerationModel: { async findByIdAndUpdate() {}, async findOneAndUpdate() {} },
+    client: { async requestV2ExternalImage(route, request) {
+      observed = { route, request }; return { data: { request_id: 'hosted-seedream' } };
+    } },
+  });
+  assert.equal(observed.route, 'text_to_image');
+  assert.equal(observed.request.input.model, 'SEEDREAM');
+  assert.equal(observed.request.input.aspect_ratio, '16:9');
+});
+
 test('external image retries use a new idempotency key without splitting the same attempt', () => {
   const initialPayload = {
     _id: 'image-row-1',

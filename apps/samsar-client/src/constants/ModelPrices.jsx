@@ -290,6 +290,22 @@ export const VIDEO_MODEL_PRICES = [
     units: [5, 10, 15, 20],
   },
   {
+    key: 'SEEDANCE2.5FLASHI2V',
+    name: 'Seedance 2.5 Flash I2V',
+    isExpressModel: true,
+    isBranchedVideoModel: false,
+    isImageToVideoModel: true,
+    isTextToVideoModel: false,
+    providerBilled: IS_STANDALONE_DEPLOYMENT,
+    isPerSecondPricing: true,
+    prices: [
+      { aspectRatio: '16:9', price: 50 },
+      { aspectRatio: '9:16', price: 50 },
+    ],
+    pricingDistribution: getExpressVideoPricingDistributionPerSecond('SEEDANCE2.5FLASHI2V'),
+    units: [5, 10, 15, 20, 25, 30],
+  },
+  {
     key: 'VEO3.1',
     isExpressModel: false,
     isImageToVideoModel: false,

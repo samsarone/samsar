@@ -111,7 +111,7 @@ export const IMAGE_GENERAITON_MODEL_TYPES = [
     isBranchedImageModel: true,
   },
   {
-    name: 'Seedream',
+    name: 'Seedream 5.5',
     key: 'SEEDREAM',
     isExpressModel: true,
     isBranchedImageModel: false,
@@ -285,6 +285,15 @@ export const VIDEO_GENERATION_MODEL_TYPES = [
     supportedAspectRatios: [
       '16:9', '9:16',
     ]
+  },
+  {
+    name: 'Seedance 2.5 Flash I2V',
+    key: 'SEEDANCE2.5FLASHI2V',
+    isImageToVideoModel: true,
+    isTextToVideoModel: false,
+    isExpressModel: true,
+    isBranchedVideoModel: false,
+    supportedAspectRatios: ['16:9', '9:16'],
   },
   {
     name: 'VEO3.1 Text2Vid',

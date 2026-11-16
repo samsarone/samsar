@@ -72,6 +72,7 @@ export const IMAGE_MODEL_PRICES = [
   },
   {
     key: 'SEEDREAM',
+    name: 'Seedream 5.5',
     isExpressModel: true,
     isBranchedImageModel: false,
     prices: [
@@ -278,6 +279,22 @@ export const VIDEO_MODEL_PRICES = [
     ],
     pricingDistribution: getExpressVideoPricingDistributionPerSecond('SEEDANCE2.5I2V'),
     units: [5, 10, 15, 20],
+  },
+  {
+    key: 'SEEDANCE2.5FLASHI2V',
+    name: 'Seedance 2.5 Flash I2V',
+    isExpressModel: true,
+    isBranchedVideoModel: false,
+    isImageToVideoModel: true,
+    isTextToVideoModel: false,
+    providerBilled: IS_STANDALONE_DEPLOYMENT,
+    isPerSecondPricing: true,
+    prices: [
+      { aspectRatio: '16:9', price: EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL['SEEDANCE2.5FLASHI2V'] },
+      { aspectRatio: '9:16', price: EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL['SEEDANCE2.5FLASHI2V'] },
+    ],
+    pricingDistribution: getExpressVideoPricingDistributionPerSecond('SEEDANCE2.5FLASHI2V'),
+    units: Array.from({ length: 27 }, (_, index) => index + 4),
   },
   {
     key: 'VEO3.1',

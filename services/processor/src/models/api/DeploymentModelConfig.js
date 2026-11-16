@@ -56,7 +56,7 @@ function normalizeStringListMap(value) {
     Object.entries(value)
       .filter(([key]) => typeof key === 'string' && key.trim())
       .map(([key, item]) => [key.trim(), normalizeStringList(item).filter((provider) => (
-        !['GPTIMAGE2.5', 'GPTIMAGE2.5EDIT'].includes(normalizeDeploymentModel(key)) ||
+        !['GPTIMAGE2.5', 'GPTIMAGE2.5EDIT', 'SEEDREAM', 'SEEDANCE2.5FLASHI2V'].includes(normalizeDeploymentModel(key)) ||
         normalizeDeploymentProvider(provider) !== 'gmicloud'
       ))]),
   );
@@ -133,9 +133,9 @@ function hasRuntimeGenBlazeSeedanceVideoModel(modelMappings, model) {
 
 function hasRuntimeGenBlazeModel(modelMappings, model, env = process.env) {
   const normalizedModel = normalizeDeploymentModel(model);
-  // The image worker supports Sunburst through OpenAI, Samsar, and (generation
-  // only) Fal. A legacy GMI catalog must not advertise a new Sunburst request.
-  if (['GPTIMAGE2.5', 'GPTIMAGE2.5EDIT'].includes(normalizedModel)) return false;
+  // Legacy GMI image/video mappings cannot authorize a new Sunburst, Seedream
+  // 5.5 or Seedance Flash request through an older upstream contract.
+  if (['GPTIMAGE2.5', 'GPTIMAGE2.5EDIT', 'SEEDREAM', 'SEEDANCE2.5FLASHI2V'].includes(normalizedModel)) return false;
   if (['GPT-6-ASTRA', 'GEMINI-4-CARBON', 'QWEN3.8'].includes(normalizedModel)) {
     return hasRuntimeGenBlazeInferenceModel(modelMappings, normalizedModel);
   }
@@ -646,7 +646,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
 
   if (hasEnvCredential('FAL_API_KEY')) {
     appendUnique(merged.providers, ['fal']);
-    appendUnique(merged.models, ['WAN2.7PRO', 'HAPPYHORSEI2V', 'SEEDANCE2.0I2V', 'SEEDANCE2.5I2V']);
+    appendUnique(merged.models, ['WAN2.7PRO', 'HAPPYHORSEI2V', 'SEEDANCE2.0I2V', 'SEEDANCE2.5I2V', 'SEEDANCE2.5FLASHI2V', 'SEEDREAM']);
     appendUnique(merged.actions, ['image', 'video']);
     if (exposeStandaloneProviderCapabilities) {
       appendUnique(merged.models, ['NANOBANANAPRO']);
@@ -681,6 +681,34 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
 
   for (const model of ['SEEDANCE2.0I2V', 'SEEDANCE2.5I2V']) {
     mergeRuntimeSeedanceProviderSelection(merged, gmiCloudModelMappings, model);
+  }
+
+  // Latest Seedream and Seedance Flash have different upstream contracts from
+  // the saved GMI 5.0 / standard-2.5 mappings. Keep those historical mappings
+  // out of new request availability without changing accepted worker jobs.
+  for (const [model, action] of [['SEEDREAM', 'image'], ['SEEDANCE2.5FLASHI2V', 'video']]) {
+    const canonicalPriority = isStandaloneEdition() ? ['samsar', 'fal'] : ['fal', 'samsar'];
+    const savedProvider = normalizeDeploymentProvider(findModelProvider(merged.modelProviders, model));
+    const savedPriority = Object.entries(merged.modelProviderPriority).find(
+      ([candidate]) => normalizeDeploymentModel(candidate) === model,
+    )?.[1] || [];
+    const availablePriority = canonicalPriority.filter((provider) => (
+      (provider === 'fal' ? hasEnvCredential('FAL_API_KEY') : hasEnvCredential('SAMSAR_API_KEY')) ||
+      (configuredProviderSet.has(provider) && (savedProvider === provider || savedPriority.includes(provider)))
+    ));
+    if (availablePriority.length > 0) {
+      appendUnique(merged.providers, availablePriority);
+      appendUnique(merged.models, [model]);
+      appendUnique(merged.actions, [action]);
+      merged.modelProviders[model] = availablePriority[0];
+      merged.modelProviderPriority[model] = [...availablePriority];
+      merged.defaultModelProviderPriority[model] = [...availablePriority];
+    } else {
+      merged.models = merged.models.filter((candidate) => normalizeDeploymentModel(candidate) !== model);
+      for (const modelMap of [merged.modelProviders, merged.modelProviderPriority, merged.defaultModelProviderPriority]) {
+        for (const key of Object.keys(modelMap)) if (normalizeDeploymentModel(key) === model) delete modelMap[key];
+      }
+    }
   }
 
   for (const [model, provider] of Object.entries(merged.modelProviders)) {

@@ -8,6 +8,7 @@ import { saveRemoteFile } from "../utils/FileUtils.js";
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import { isSubmissionOutcomeUnknown } from '../utils/ProviderSubmissionSafety.js';
+import { getSeedreamFalEndpoint } from '../consts/SeedreamModel.js';
 
 const FAL_API_KEY = process.env.FAL_API_KEY;
 
@@ -52,7 +53,7 @@ export async function submitSeedreamRequest(payload, dependencies = {}) {
   await imageGenerationModel.findByIdAndUpdate(_id, { rowLocked: true });
 
 
-  const falLink = getFalLinkForModel(model);
+  const falLink = getSeedreamFalEndpoint(payload);
 
   const imageSize = getImageSizeFromAspectRatio(aspectRatio);
 
@@ -61,6 +62,7 @@ export async function submitSeedreamRequest(payload, dependencies = {}) {
     prompt: prompt,
     "image_size": imageSize,
     output_format: "png",
+    num_images: 1,
   };
 
 
@@ -80,6 +82,7 @@ export async function submitSeedreamRequest(payload, dependencies = {}) {
       apiRequestId: requestId,
       apiGenerationStatus: "PENDING",
       apiSubmittedAt: new Date(),
+      seedreamFalEndpoint: falLink,
       rowLocked: false
     });
 
@@ -114,7 +117,7 @@ export async function pollSeedreamRequest(payload, dependencies = {}) {
     { rowLocked: true }
   );
 
-  const falLink = getFalLinkForModel(model);
+  const falLink = getSeedreamFalEndpoint(payload);
 
   
   let responseStatusData;
@@ -181,13 +184,6 @@ export async function pollSeedreamRequest(payload, dependencies = {}) {
   }
 }
 
-
-
-
-function getFalLinkForModel(model) {
-  return 'bytedance/seedream/v5/pro/text-to-image';
-
-}
 
 
 

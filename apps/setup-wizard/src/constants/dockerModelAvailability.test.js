@@ -288,6 +288,33 @@ test('Seedance 2.5 exposes GMICloud, Samsar, and FAL with exact route validation
   ]);
 });
 
+test('Seedance 2.5 Flash is available through Fal and Samsar without reusing the standard GMI model', () => {
+  for (const provider of [DOCKER_PROVIDER.FAL, DOCKER_PROVIDER.SAMSAR]) {
+    const available = buildDockerAvailableModelsFromEnabledProviders([provider]);
+    assert.equal(available.models.includes('SEEDANCE2.5FLASHI2V'), true);
+    assert.equal(available.modelProviders['SEEDANCE2.5FLASHI2V'], provider);
+    assert.deepEqual(available.modelProviderPriority['SEEDANCE2.5FLASHI2V'], ['fal', 'samsar']);
+  }
+  const gmi = buildDockerAvailableModelsFromEnabledProviders([DOCKER_PROVIDER.GMI_CLOUD], {
+    gmiCloudModelMappings: { 'SEEDANCE2.5FLASHI2V': { video: { modelId: 'seedance-2-5-260628', operation: 'video.generate' } } },
+  });
+  assert.equal(gmi.models.includes('SEEDANCE2.5FLASHI2V'), false);
+  assert.equal(getDockerModelDisplayName('SEEDANCE2.5FLASHI2V'), 'Seedance 2.5 Flash Image to Video');
+});
+
+test('Seedream 5.5 never inherits the old GMI 5.0 route and falls back to Fal or Samsar', () => {
+  const mappings = { SEEDREAM: { image: { modelId: 'seedream-5.0-pro', operation: 'image.generate' } } };
+  const gmi = buildDockerAvailableModelsFromEnabledProviders([DOCKER_PROVIDER.GMI_CLOUD], { gmiCloudModelMappings: mappings });
+  assert.equal(gmi.models.includes('SEEDREAM'), false);
+  assert.equal(resolveDockerModelProvider('SEEDREAM', [DOCKER_PROVIDER.GMI_CLOUD]), '');
+  for (const provider of [DOCKER_PROVIDER.FAL, DOCKER_PROVIDER.SAMSAR]) {
+    const available = buildDockerAvailableModelsFromEnabledProviders([DOCKER_PROVIDER.GMI_CLOUD, provider], { gmiCloudModelMappings: mappings });
+    assert.equal(available.modelProviders.SEEDREAM, provider);
+    assert.deepEqual(available.modelProviderPriority.SEEDREAM, ['fal', 'samsar']);
+  }
+  assert.equal(getDockerModelDisplayName('SEEDREAM'), 'Seedream 5.5');
+});
+
 test('GMICloud exposes only credential-scoped exact speech routes with audio actions', () => {
   const available = buildDockerAvailableModelsFromEnabledProviders([
     DOCKER_PROVIDER.GMI_CLOUD,

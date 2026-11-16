@@ -17,6 +17,7 @@ const END_IMAGE_MODELS = new Set([
   'SEEDANCEI2V',
   'SEEDANCE2.0I2V',
   'SEEDANCE2.5I2V',
+  'SEEDANCE2.5FLASHI2V',
   'VEO3.1FLIV',
   'CUSTOM_IMAGE_TO_VIDEO',
 ]);
@@ -99,7 +100,7 @@ export async function normalizeSelectedVideoGenerationMediaPayload(
 
   if (
     SOUND_EFFECT_MODELS.has(model) ||
-    generationType === 'sound_effect' ||
+    (generationType === 'sound_effect' && model !== 'SEEDANCE2.5FLASHI2V') ||
     generationType === 'text_to_sound_effect'
   ) {
     await normalizePresentFields(payload, VIDEO_KEYS, 'video', normalizeMediaUrl);

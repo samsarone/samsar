@@ -1,6 +1,7 @@
 import { isProductionEdition } from '../../utils/EnvironmentUtils.js';
 
 export function getInitialGenericVideoAdapter(model, env = process.env) {
+  if (model === 'SEEDANCE2.5FLASHI2V' && isProductionEdition(env)) return 'fal';
   if (
     (model === 'SEEDANCE2.0I2V' || model === 'SEEDANCE2.5I2V') &&
     isProductionEdition(env)
@@ -21,6 +22,20 @@ export function resolveGenericVideoAudioContext(payload = {}, currentLayer = {})
     ? payload.generationType.trim().toLowerCase()
     : '';
   const isSeedance25 = payload.model === 'SEEDANCE2.5I2V';
+
+  if (payload.model === 'SEEDANCE2.5FLASHI2V') {
+    const layerSceneType = currentLayerType || payloadLayerType || payloadGenerationType;
+    return {
+      generateAudio: Boolean(
+        payload.generateAudio === true ||
+        payload.generate_audio === true ||
+        payload.isAudioVideoGeneration === true ||
+        layerSceneType === 'sound_effect',
+      ),
+      generationType: layerSceneType || payload.generationType || payload.layerAiVideoType,
+      layerAiVideoType: layerSceneType || payload.layerAiVideoType,
+    };
+  }
 
   if (!isSeedance25) {
     const isPayloadSoundEffectLayer = payloadGenerationType === 'sound_effect' ||

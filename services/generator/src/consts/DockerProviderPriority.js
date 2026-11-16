@@ -51,7 +51,8 @@ export const DOCKER_IMAGE_GENERATION_PROVIDER_PRIORITY = Object.freeze({
   ],
   SEEDREAM: [
     DOCKER_ADAPTER_PROVIDER.FAL,
-    DOCKER_ADAPTER_PROVIDER.GMICLOUD,
+    // Seedream now means 5.5. GMICloud's verified mapping is still 5.0;
+    // accepted requests retain their adapter separately from new selection.
     DOCKER_ADAPTER_PROVIDER.SAMSAR,
   ],
   GPTIMAGE1: [

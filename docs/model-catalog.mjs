@@ -64,7 +64,7 @@ const notes = {
   'GPTIMAGE2.5': 'Stable internal key for GPTImage 2.6 Sunburst; requests also accept GPTIMAGE2.6. Legacy GenBlaze GPT Image 2 routes are excluded from this model.',
   'GPTIMAGE2.5EDIT': 'Stable internal key for GPTImage 2.6 Sunburst editing; requests also accept GPTIMAGE2.6EDIT. Legacy GenBlaze routes are excluded.',
   QWENIMAGE3PRO: 'Standalone native adapter only. Requires Alibaba standard pay-as-you-go credentials; Token Plan credentials do not enable it.',
-  SEEDREAM: 'Stable key currently maps to Seedream 5 Pro.',
+  SEEDREAM: 'Stable key maps to Seedream 5.5 through fal or Samsar. GMICloud 5.0 mappings are excluded for new requests; accepted historical jobs retain their submitted route.',
   NANOBANANA2: 'Image generation catalog model; not in the current Express image allowlist.',
   NANOBANANA2EDIT: 'Used by image enhancement and branding removal. Multi-output image-set jobs bypass GenBlaze.',
   NANOBANANAPROEDIT: 'Required by VidGenie image-list mode. Multi-output image-set jobs bypass GenBlaze.',
@@ -73,7 +73,8 @@ const notes = {
   'VEO3.1FAST': 'Fast text-to-video model; use VEO3.1I2VFAST for Express scene animation.',
   'VEO3.1FLIV': 'First/last-frame generation; not an Express video selection.',
   'SEEDANCE2.0I2V': 'Standalone provider-billed I2V. Exact GenBlaze route: seedance-2-0-260128. No Samsar adapter in the setup catalog.',
-  'SEEDANCE2.5I2V': '5, 10 or 15 second 720p scene buckets. Exact GenBlaze route: seedance-2-5-260628. Hosted worker uses GMICloud internally.',
+  'SEEDANCE2.5I2V': 'Standard 2.5 choice with 5, 10, 15 or 20 second 720p scene buckets. Exact GenBlaze route: seedance-2-5-260628. Hosted worker uses GMICloud internally.',
+  'SEEDANCE2.5FLASHI2V': 'Seedance 2.5 Flash through fal or Samsar. Native audio, optional end frame, 480p or 720p, and 4–30 second clips. Hosted workflows retain standard 2.5 family rates. GMICloud Flash is not advertised without a verified model.',
   HAPPYHORSEI2V: 'Stable key currently maps to Happy Horse 1.1 I2V.',
   KLINGIMGTOVID4: `Kling 4 I2V: 720p, no native audio, ${KLING_V4_DURATION_SECONDS.join(', ')} second clips. Check the target deployment for adapter availability.`,
   KLINGTXTTOVID4: `Kling 4 T2V: 720p, no native audio, ${KLING_V4_DURATION_SECONDS.join(', ')} second clips. Direct clip generation; not an Express scene-motion selection.`,
@@ -104,7 +105,7 @@ export const models = Object.entries(providerMap).map(([setupKey, adapters]) => 
   const option = inference.get(key);
   return {
     key, setupKey, requestKey: option?.value || ({ KIMIK3: 'kimi-k3', OPENAI_TTS: 'OPENAI', GOOGLE_TTS: 'GOOGLE' })[key] || key,
-    label: ({ 'gpt-6-astra': 'GPT 6 Astra', SEEDREAM: 'Seedream 5 Pro', SEEDANCEI2V: 'Seedance 1.5 I2V', HAPPYHORSEI2V: 'Happy Horse 1.1 I2V', HAILUOPRO: 'Hailuo 02 Pro', KLINGIMGTOVID3PRO: 'Kling 4 I2V (legacy 3 Pro key)', KLINGIMGTOVIDTURBO: 'Kling 4 I2V (legacy Turbo key)' })[key] || mediaLabels.get(key) || getDockerModelDisplayName(setupKey),
+    label: ({ 'gpt-6-astra': 'GPT 6 Astra', SEEDREAM: 'Seedream 5.5', SEEDANCEI2V: 'Seedance 1.5 I2V', HAPPYHORSEI2V: 'Happy Horse 1.1 I2V', HAILUOPRO: 'Hailuo 02 Pro', KLINGIMGTOVID3PRO: 'Kling 4 I2V (legacy 3 Pro key)', KLINGIMGTOVIDTURBO: 'Kling 4 I2V (legacy Turbo key)' })[key] || mediaLabels.get(key) || getDockerModelDisplayName(setupKey),
     modality, adapters: ordered, runtimePriority: adapters, nativeAdapter: nativeAdapter || null,
     hosted: adapters.includes('samsar') || key === 'ELEVENLABS',
     scope: 'deployment',

@@ -567,6 +567,10 @@ function inferExternalVideoToVideoRoute(payload = {}) {
   const hasVideoInput = Boolean(getPayloadMediaUrl(payload, ['video_url', 'videoUrl', 'videoLink', 'video']));
   const hasAudioInput = Boolean(getPayloadMediaUrl(payload, ['audio_url', 'audioUrl', 'audioLink', 'audio']));
 
+  // Flash produces synchronized audio as part of I2V. Its sound-effect stage
+  // label must not turn a starting image into a video-to-audio request.
+  if (model === 'SEEDANCE2.5FLASHI2V' && getStartImageReference(payload)) return '';
+
   if (
     stage === 'lip_sync_generation' ||
     generationType === 'lip_sync' ||
@@ -630,9 +634,20 @@ function buildExternalTextToVideoInput(payload = {}) {
 
 export function buildExternalImageToVideoInput(payload = {}, uploadedStartImageUrl) {
   const clientRequestId = getExternalVideoAttemptId(payload);
+  const isSeedanceFlash = getExternalVideoModel(payload).toUpperCase() === 'SEEDANCE2.5FLASHI2V';
   const generateAudio = payload.isAudioVideoGeneration === true ||
-    payload.generateAudio === true || payload.generate_audio === true;
+    payload.generateAudio === true || payload.generate_audio === true ||
+    (isSeedanceFlash && normalizeString(payload.generationType || payload.layerAiVideoType).toLowerCase() === 'sound_effect');
+  const flashOptions = {};
+  if (isSeedanceFlash) {
+    const endImageUrl = getPayloadMediaUrl(payload, ['endImage', 'end_image_url', 'endImageUrl', 'end_image']);
+    if (endImageUrl) flashOptions.end_image_url = endImageUrl;
+    flashOptions.resolution = payload.resolution || '720p';
+    if (payload.bitrate_mode || payload.bitrateMode) flashOptions.bitrate_mode = payload.bitrate_mode || payload.bitrateMode;
+    if (payload.codec) flashOptions.codec = payload.codec;
+  }
   return {
+    ...flashOptions,
     client_request_id: clientRequestId,
     image_url: uploadedStartImageUrl,
     image_urls: [uploadedStartImageUrl],
@@ -640,7 +655,7 @@ export function buildExternalImageToVideoInput(payload = {}, uploadedStartImageU
     startImage: uploadedStartImageUrl,
     prompt: normalizeString(payload.prompt),
     video_model: getExternalVideoModel(payload),
-    aspect_ratio: normalizeString(payload.aspectRatio) || '16:9',
+    aspect_ratio: isSeedanceFlash ? 'auto' : normalizeString(payload.aspectRatio) || '16:9',
     duration: normalizeDuration(payload.duration),
     generate_audio: generateAudio,
     metadata: {
@@ -724,6 +739,14 @@ export async function buildExternalVideoRouteRequest(client, payload = {}, route
   }
 
   const uploadedStartImageUrl = await getStartImageUrlForExternalVideo(client, payload);
+  let directPayload = payload;
+  if (getExternalVideoModel(payload).toUpperCase() === 'SEEDANCE2.5FLASHI2V') {
+    const endImage = getPayloadMediaUrl(payload, ['endImage', 'end_image_url', 'endImageUrl', 'end_image']);
+    if (endImage) directPayload = {
+      ...payload,
+      endImage: await normalizeProviderMediaUrl(endImage, { mediaKind: 'image' }),
+    };
+  }
   if (route === 'step/image_to_video') {
     return {
       route,
@@ -740,7 +763,7 @@ export async function buildExternalVideoRouteRequest(client, payload = {}, route
     route: 'direct_image_to_video',
     uploadedStartImageUrl,
     body: {
-      input: buildExternalImageToVideoInput(payload, uploadedStartImageUrl),
+      input: buildExternalImageToVideoInput(directPayload, uploadedStartImageUrl),
     },
   };
 }

@@ -18,6 +18,24 @@ import { resolveDockerVideoProvider } from './consts/DockerProviderPriority.js';
 
 const originalFetch = globalThis.fetch;
 
+test('Samsar Flash preserves its exact model and native audio/quality controls on direct I2V', () => {
+  const payload = {
+    model: 'SEEDANCE2.5FLASHI2V', generationType: 'sound_effect',
+    startImage: 'https://media.example/start.png', endImage: 'https://media.example/end.png',
+    duration: 30, resolution: '480p', bitrate_mode: 'high', codec: 'H265',
+  };
+  assert.equal(resolveExternalVideoRoute(payload), 'direct_image_to_video');
+  const input = buildExternalImageToVideoInput(payload, payload.startImage);
+  assert.equal(input.video_model, 'SEEDANCE2.5FLASHI2V');
+  assert.equal(input.end_image_url, payload.endImage);
+  assert.equal(input.duration, 30);
+  assert.equal(input.aspect_ratio, 'auto');
+  assert.equal(input.generate_audio, true);
+  assert.equal(input.resolution, '480p');
+  assert.equal(input.bitrate_mode, 'high');
+  assert.equal(input.codec, 'H265');
+});
+
 test.beforeEach(() => {
   globalThis.fetch = async (url) => {
     const normalizedUrl = String(url);

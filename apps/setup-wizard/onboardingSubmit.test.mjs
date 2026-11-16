@@ -201,16 +201,18 @@ test('GMICloud tooltip shows discovered supported routes and excludes incomplete
     validationResult: {
       providers: { gmicloud: { ok: true, modelMappings: {
         SEEDREAM: { image: { modelId: 'fixture-seedream' } },
+        NANOBANANA2: { image: { modelId: 'gemini-3.1-flash-image' } },
         'gpt-6-astra': { text: { modelId: 'fixture-text-without-vision' } },
         UNKNOWN: { video: { modelId: 'unsupported-model' } },
       } } },
-      available: { models: ['SEEDREAM'], actions: ['image'], providers: ['gmicloud'] },
+      available: { models: ['NANOBANANA2'], actions: ['image'], providers: ['gmicloud'] },
     },
   } });
   await act(async () => document.querySelector('[aria-label="Models for GMICloud via GenBlaze"]').click());
   const names = [...document.querySelectorAll('#gmicloud-models li')].map((item) => item.textContent);
   assert.equal(names.length, 1);
-  assert.match(names[0], /Seedream/);
+  assert.match(names[0], /Nano Banana 2/);
+  assert.equal(names.some((name) => /Seedream/.test(name)), false);
 });
 
 test('a rejected key removes the ready hint and keeps the user on Providers', async (t) => {

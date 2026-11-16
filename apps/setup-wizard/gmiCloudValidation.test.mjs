@@ -129,7 +129,7 @@ test('intersects exact active media catalog models without submitting generation
 
   const mappings = result.providers.gmicloud.modelMappings;
   assert.equal(mappings.GPTIMAGE2.image.modelId, 'GPT-IMAGE-2-GENERATE');
-  assert.equal(mappings.SEEDREAM.image.modelId, 'seedream-5.0-pro');
+  assert.equal(mappings.SEEDREAM, undefined);
   assert.equal(mappings['VEO3.1I2V'], undefined);
   assert.equal(mappings.GPTIMAGE2EDIT.image.modelId, 'gpt-image-2-edit');
   assert.equal(mappings.GPTIMAGE2EDIT.image.operation, 'image.edit');
@@ -143,6 +143,18 @@ test('intersects exact active media catalog models without submitting generation
   assert.equal(calls.every((call) => call.options.method === 'GET'), true);
   assert.equal(calls.every((call) => call.options.body === undefined), true);
   assert.equal(GMI_CLOUD_MEDIA_MODEL_SPECS.some((spec) => spec.samsarModel === 'WAN2.7PRO'), false);
+  assert.equal(GMI_CLOUD_MEDIA_MODEL_SPECS.some((spec) => spec.samsarModel === 'SEEDREAM'), false);
+});
+
+test('preserves legacy Seedream runtime affinity without inventing a Seedream 5.5 or Flash GMI route', () => {
+  const legacy = { SEEDREAM: { image: { modelId: 'seedream-5.0-pro', operation: 'image.generate' } } };
+  assert.deepEqual(normalizeGmiCloudModelMappings(legacy), legacy);
+  const runtime = buildGmiCloudRuntimeCatalog({ apiKey: 'legacy-key', enabled: true, modelMappings: legacy });
+  assert.deepEqual(runtime.models.SEEDREAM, legacy.SEEDREAM);
+  assert.deepEqual(normalizeGmiCloudModelMappings({
+    SEEDREAM: { image: { modelId: 'seedream-5.5' } },
+    'SEEDANCE2.5FLASHI2V': { video: { modelId: 'seedance-2-5-260628' } },
+  }), {});
 });
 
 test('maps every exact compatible GMICloud video version and excludes incompatible Kling text video', async () => {
