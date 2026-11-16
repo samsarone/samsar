@@ -22,8 +22,8 @@ it('selects Sol and Fable with High and XHigh without changing Astra defaults', 
   await page.getByText('H', { exact: true }).click();
   await userEvent.keyboard('{End}{Enter}');
   await expect.element(page.getByLabelText('Selected model')).toHaveTextContent('gpt-6.1-sol-xhigh');
-  await page.getByRole('combobox', { name: 'Assistant model', exact: true }).selectOptions('claude-fable-5.1');
-  await expect.element(page.getByLabelText('Selected model')).toHaveTextContent('claude-fable-5.1-xhigh');
+  await page.getByRole('combobox', { name: 'Assistant model', exact: true }).selectOptions('claude-fable-5.2');
+  await expect.element(page.getByLabelText('Selected model')).toHaveTextContent('claude-fable-5.2-xhigh');
   await page.getByRole('combobox', { name: 'Assistant model', exact: true }).selectOptions('claude-opus-5.5');
   await expect.element(page.getByLabelText('Selected model')).toHaveTextContent('claude-opus-5.5-xhigh');
 });

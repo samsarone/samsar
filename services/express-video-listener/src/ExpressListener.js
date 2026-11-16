@@ -269,7 +269,7 @@ const AI_VIDEO_ORPHAN_PENDING_GRACE_MS = Math.max(
 );
 const LIP_SYNC_MISSING_REQUEST_GRACE_MS = Math.max(
   60 * 1000,
-  Number(process.env.LIP_SYNC_MISSING_REQUEST_GRACE_MS) || 10 * 60 * 1000,
+  Number(process.env.LIP_SYNC_MISSING_REQUEST_GRACE_MS) || 60 * 60 * 1000,
 );
 
 function normalizeStatusValue(value) {

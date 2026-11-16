@@ -279,7 +279,7 @@ test('Google-only speaker preferences skip OpenAI TTS instruction metadata', asy
     'grounded',
     {
       language: 'en',
-      inferenceModel: 'gemini-4-argon',
+      inferenceModel: 'gemini-4-carbon',
       speakerOptions: {
         allowOpenAI: false,
         allowElevenLabs: false,

@@ -19,7 +19,7 @@ test('inference context prefers the session override over the saved user setting
   assert.equal(await resolveInferenceModelFromContext({
     request: {},
     session: { expressGenerationInferenceModel: 'Qwen 3.8' },
-    user: { selectedInferenceModel: 'gemini-4-argon' },
+    user: { selectedInferenceModel: 'gemini-4-carbon' },
   }), 'QWEN3.8');
 });
 
@@ -30,7 +30,7 @@ test('inference settings resolve model and authorization independently by preced
       selectedInferenceModelAuthorization: 'deployed',
     },
     session: {
-      expressGenerationInferenceModel: 'gemini-4-argon',
+      expressGenerationInferenceModel: 'gemini-4-carbon',
       selectedInferenceModelAuthorization: 'native',
     },
     user: {

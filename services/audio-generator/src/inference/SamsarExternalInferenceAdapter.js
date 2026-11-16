@@ -36,11 +36,11 @@ const DEFAULT_GENBLAZE_BASE_URL = 'http://genblaze:8080/v1';
 const GENBLAZE_INFERENCE_MODELS = new Set([
   'QWEN3.8',
   'gpt-6-astra',
-  'gemini-4-argon',
+  'gemini-4-carbon',
 ]);
 const GENBLAZE_HIGH_REASONING_MODELS = new Set([
   'gpt-6-astra',
-  'gemini-4-argon',
+  'gemini-4-carbon',
 ]);
 const GOOGLE_NATIVE_CREDENTIAL_KEYS = Object.freeze([
   'GOOGLE_APPLICATION_CREDENTIALS_JSON_B64',
@@ -77,7 +77,7 @@ export const DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
     DOCKER_INFERENCE_PROVIDER.OPENROUTER,
   ]),
-  'gemini-4-argon': Object.freeze([
+  'gemini-4-carbon': Object.freeze([
     DOCKER_INFERENCE_PROVIDER.GOOGLE_CLOUD,
     DOCKER_INFERENCE_PROVIDER.GMICLOUD,
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
@@ -147,7 +147,7 @@ function normalizeSavedInferencePreferenceModelKey(model) {
   const token = normalizeString(model).replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
   if (token === 'CLAUDEOPUS55' || token === 'CLAUDE55OPUS') return 'claude-opus-5.5';
   if (['QWEN38', 'QWEN38MAX'].includes(token)) return 'QWEN3.8';
-  if (['GEMINI4', 'GEMINI4ARGON', 'GOOGLEGEMINI4', 'GOOGLEGEMINI4ARGON'].includes(token)) return 'gemini-4-argon';
+  if (['GEMINI4', 'GEMINI4CARBON', 'GEMINI4ARGON', 'GOOGLEGEMINI4', 'GOOGLEGEMINI4CARBON', 'GOOGLEGEMINI4ARGON'].includes(token)) return 'gemini-4-carbon';
   if (['KIMIK3', 'KIMI3', 'MOONSHOTK3'].includes(token)) return 'KIMIK3';
   if (['GPT6ASTRA', 'GPT6', 'GPT56SOL', 'GPT5SOL'].includes(token)) return 'gpt-6-astra';
   return '';
@@ -157,7 +157,7 @@ function getInferencePreferenceModelKey(model) {
   if (supportsInferenceEffort(model)) return getReasoningModelBase(model);
   if (isClaudeModel(model)) return 'claude-opus-5.5';
   if (isQwenInferenceModel(model)) return 'QWEN3.8';
-  if (isGeminiInferenceModel(model)) return 'gemini-4-argon';
+  if (isGeminiInferenceModel(model)) return 'gemini-4-carbon';
   if (isKimiInferenceModel(model)) return 'KIMIK3';
   return 'gpt-6-astra';
 }
@@ -271,7 +271,7 @@ function getOpenRouterReasoningEffort(requestedModel, effort, request = {}) {
 
 function buildOpenRouterRequestPayload(request, requestedModel, openRouterModel, effort) {
   const payload = { ...request, model: openRouterModel };
-  if (isGPTModel(requestedModel) || isClaudeModel(requestedModel)) {
+  if (isGPTModel(requestedModel) || isClaudeModel(requestedModel) || isGeminiInferenceModel(requestedModel)) {
     for (const key of ['temperature', 'top_p', 'top_logprobs', 'logprobs']) delete payload[key];
   }
   const effectiveEffort = isClaudeModel(requestedModel)
@@ -434,8 +434,8 @@ function getGenblazeInferenceModality(chatRequest = {}) {
 
 function getCanonicalGenblazeInferenceModel(model) {
   if (isQwenInferenceModel(model)) return 'QWEN3.8';
-  if (isGeminiInferenceModel(model) && normalizeInferenceModel(model) === 'gemini-4-argon') {
-    return 'gemini-4-argon';
+  if (isGeminiInferenceModel(model) && normalizeInferenceModel(model) === 'gemini-4-carbon') {
+    return 'gemini-4-carbon';
   }
   const normalized = normalizeString(model).toLowerCase();
   return normalized === 'gpt-6-astra' || normalized.startsWith('gpt-6-astra-')
@@ -493,7 +493,7 @@ function getInferenceProviderPriority(model, chatRequest = {}) {
     defaultPriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['QWEN3.8'];
   } else if (isGeminiInferenceModel(model)) {
     defaultPriority = Boolean(getGenblazeClient()) && hasGenblazeModelMapping(model, chatRequest)
-      ? DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gemini-4-argon']
+      ? DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gemini-4-carbon']
       : [
         DOCKER_INFERENCE_PROVIDER.GOOGLE_CLOUD,
         DOCKER_INFERENCE_PROVIDER.OPENROUTER,
@@ -596,7 +596,11 @@ export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = pr
     return normalizeString(env?.OPENROUTER_QWEN_38_MAX_MODEL) || 'qwen/qwen3.8-max';
   }
   if (isGeminiInferenceModel(model)) {
-    return normalizeString(env?.OPENROUTER_GEMINI_4_ARGON_MODEL) || 'google/gemini-4-argon';
+    const configuredGeminiModel = normalizeString(env?.OPENROUTER_GEMINI_4_CARBON_MODEL) ||
+      normalizeString(env?.OPENROUTER_GEMINI_4_ARGON_MODEL);
+    return /^(?:google\/)?gemini-4-argon(?:-[0-9]{8})?$/i.test(configuredGeminiModel)
+      ? 'google/gemini-4-carbon'
+      : configuredGeminiModel || 'google/gemini-4-carbon';
   }
   const configuredModel = normalizeString(env?.OPENROUTER_GPT_6_ASTRA_MODEL) ||
     normalizeString(env?.OPENROUTER_GPT_56_SOL_MODEL);

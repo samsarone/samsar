@@ -8,7 +8,7 @@ test('translateSpeech uses the OpenAI model regardless of the selected inference
   const translated = await translateSpeech(
     'Hello there.',
     'Thai',
-    'gemini-4-argon',
+    'gemini-4-carbon',
     {
       createChatCompletion: async (_client, request) => {
         capturedRequest = request;
@@ -46,7 +46,7 @@ test('translateSpeech accepts provider parsed output and skips empty speech', as
 test('translateSpeech detects canonical source language and preserves exact same-language text', async () => {
   let capturedRequest = null;
   const original = '夜が明ける。';
-  const resolved = await translateSpeech(original, 'Japanese', 'gemini-4-argon', {
+  const resolved = await translateSpeech(original, 'Japanese', 'gemini-4-carbon', {
     detectSourceLanguage: true,
     returnMetadata: true,
     targetLanguageCode: 'ja',
@@ -117,7 +117,7 @@ test('translateSpeech returns ordered subtitle mappings and a localized speaker 
 });
 
 test('translateSpeech deterministically falls back for incomplete alignment metadata', async () => {
-  const missingMap = await translateSpeech('Hello.', 'French', 'gemini-4-argon', {
+  const missingMap = await translateSpeech('Hello.', 'French', 'gemini-4-carbon', {
     includeSubtitleAlignment: true,
     maxValidationAttempts: 1,
     createChatCompletion: async () => ({
@@ -131,7 +131,7 @@ test('translateSpeech deterministically falls back for incomplete alignment meta
   });
 
   let missingSpeakerCallCount = 0;
-  const missingSpeaker = await translateSpeech('Hello.', 'French', 'gemini-4-argon', {
+  const missingSpeaker = await translateSpeech('Hello.', 'French', 'gemini-4-carbon', {
     includeSubtitleAlignment: true,
     speakerCharacterName: 'Host',
     maxValidationAttempts: 1,
@@ -166,7 +166,7 @@ test('translateSpeech repairs a paraphrased map against the immutable translatio
     },
   ];
 
-  const translated = await translateSpeech('天气很好。', 'English', 'gemini-4-argon', {
+  const translated = await translateSpeech('天气很好。', 'English', 'gemini-4-carbon', {
     includeSubtitleAlignment: true,
     createChatCompletion: async (_client, request) => {
       requests.push(request);
@@ -216,7 +216,7 @@ test('translateSpeech retries invalid source segmentation and accepts a correcte
     },
   ];
 
-  const translated = await translateSpeech('Hello world.', 'French', 'gemini-4-argon', {
+  const translated = await translateSpeech('Hello world.', 'French', 'gemini-4-carbon', {
     includeSubtitleAlignment: true,
     createChatCompletion: async (_client, request) => {
       requests.push(request);
@@ -245,7 +245,7 @@ test('translateSpeech retries invalid source segmentation and accepts a correcte
 test('translateSpeech falls back after three invalid source-alignment attempts', async () => {
   let callCount = 0;
 
-  const translated = await translateSpeech('Hello world.', 'French', 'gemini-4-argon', {
+  const translated = await translateSpeech('Hello world.', 'French', 'gemini-4-carbon', {
     includeSubtitleAlignment: true,
     maxValidationAttempts: 99,
     createChatCompletion: async () => {
@@ -277,7 +277,7 @@ test('translateSpeech does not retry alignment provider failures', async () => {
   let callCount = 0;
 
   await assert.rejects(
-    translateSpeech('Hello.', 'French', 'gemini-4-argon', {
+    translateSpeech('Hello.', 'French', 'gemini-4-carbon', {
       includeSubtitleAlignment: true,
       createChatCompletion: async () => {
         callCount += 1;
@@ -297,7 +297,7 @@ test('translateSpeech does not retry alignment provider failures', async () => {
 
 test('translateSpeech ignores alignment metadata when detected speech already uses the target language', async () => {
   const original = 'Bonjour.';
-  const resolved = await translateSpeech(original, 'French', 'gemini-4-argon', {
+  const resolved = await translateSpeech(original, 'French', 'gemini-4-carbon', {
     detectSourceLanguage: true,
     returnMetadata: true,
     targetLanguageCode: 'fr',
@@ -347,7 +347,7 @@ test('translateSpeech repairs or falls back from missing and extra mapping cover
   ];
 
   for (const scenario of scenarios) {
-    const translated = await translateSpeech('Hello world.', 'French', 'gemini-4-argon', {
+    const translated = await translateSpeech('Hello world.', 'French', 'gemini-4-carbon', {
       includeSubtitleAlignment: true,
       maxValidationAttempts: 1,
       createChatCompletion: async () => ({
@@ -370,7 +370,7 @@ test('translateSpeech repairs or falls back from missing and extra mapping cover
 });
 
 test('translateSpeech accepts complete mappings across punctuation, case, spacing, and no-space scripts', async () => {
-  const thai = await translateSpeech('HELLO, world!', 'Thai', 'gemini-4-argon', {
+  const thai = await translateSpeech('HELLO, world!', 'Thai', 'gemini-4-carbon', {
     includeSubtitleAlignment: true,
     createChatCompletion: async () => ({
       choices: [{
@@ -408,7 +408,7 @@ test('translateSpeech accepts complete mappings across punctuation, case, spacin
 });
 
 test('translateSpeech coverage repair preserves semantically significant combining marks', async () => {
-  const translated = await translateSpeech('Water', 'Thai', 'gemini-4-argon', {
+  const translated = await translateSpeech('Water', 'Thai', 'gemini-4-carbon', {
     includeSubtitleAlignment: true,
     createChatCompletion: async () => ({
       choices: [{

@@ -4,8 +4,9 @@ import { zodResponseFormat } from "openai/helpers/zod";
 
 import { getFunctionCallParamsForModel , getModelForUserInferenceModel} from './agent/ModelUtils.js';
 import { createCompatibleChatCompletion } from "./ai_utils/OpenAICompat.js";
-import { getDefaultUserInferenceModel, getReasoningEffortForInferenceModel } from '../consts/InferenceModels.js';
+import { getDefaultUserInferenceModel, getReasoningEffortForInferenceModel, isGeminiInferenceModel } from '../consts/InferenceModels.js';
 import { supportsInferenceEffort } from '../inference/ReasoningModels.js';
+import { buildDeterministicMusicPrompt, buildMusicRetryMessages } from './audio/MusicPromptFallback.js';
 
 const API_KEY = process.env.OPENAI_API_KEY;
 
@@ -531,7 +532,7 @@ At the end of the prompt, in the same paragraph, add: " ar 9:16 orientation port
 
 
 
-export async function getMusicForTextTheme(themeJson, inferenceModel, musicModel = 'CASSETTEAI') {
+export async function getMusicForTextTheme(themeJson, inferenceModel, musicModel = 'CASSETTEAI', options = {}) {
 
 
   let systemPrompt;
@@ -561,9 +562,73 @@ RULES → plain text only, no lists, no headings, no code fences, no brand names
     { role: 'user', content: userPrompt }
   ];
 
-  const response = await sendAssistantMessageRequest(messageList, inferenceModel);
+  const callOptions = { createChatCompletion: options.createChatCompletion, preserveError: true };
+  const generate = async (messages, retry = false) => {
+    const response = await sendAssistantMessageRequest(messages, inferenceModel, retry ? {
+      ...callOptions,
+      createChatCompletion: (client, request) => (options.createChatCompletion || createCompatibleChatCompletion)(
+        client, {
+          ...request, maxRetries: 0, externalMaxRetries: 0, timeout: 30000,
+          ...(isGeminiInferenceModel(request.model) ? { timeoutMs: 30000 } : {}),
+        },
+      ),
+    } : callOptions);
+    if (response?.refusal || typeof response?.content !== 'string' || !response.content.trim()) {
+      throw Object.assign(new Error('Music prompt generation returned no usable prompt.'), {
+        code: 'MUSIC_PROMPT_INVALID_OUTPUT',
+      });
+    }
+    return response.content;
+  };
 
-  return response.content;
+  let failure;
+  try {
+    // Preserve the original request and its successful output verbatim.
+    return await generate(messageList);
+  } catch (error) {
+    failure = error;
+  }
+
+  for (let retry = 1; ; retry += 1) {
+    if (options.signal?.aborted || failure?.inferenceUsageObserverFailed ||
+        failure?.code === 'INFERENCE_USAGE_OBSERVER_FAILED' || failure?.submissionOutcomeUnknown) {
+      throw failure;
+    }
+    const status = Number(failure?.status ?? failure?.statusCode ?? failure?.response?.status);
+    const failureCode = String(failure?.code || failure?.error?.code || '').toLowerCase();
+    const accessFailure = [401, 403, 404].includes(status) ||
+      /insufficient_quota|quota_exceeded|quota_exhausted|insufficient_credit/.test(failureCode);
+    const temporaryFailure = status === 429 || status >= 500 || failure?.name === 'AbortError' ||
+      /timeout|econnreset|econnrefused|etimedout|eai_again|enotfound/i.test(failureCode);
+    const promptFailure = [400, 422].includes(status) || failure?.code === 'MUSIC_PROMPT_INVALID_OUTPUT';
+    const useLocalFallback = retry > 2 || accessFailure ||
+      (failure?.retryable === false && !temporaryFailure && !promptFailure);
+    console.warn('[music_prompt] generation_failed', {
+      sessionId: options.sessionId || null,
+      inferenceModel,
+      attempt: retry,
+      status: status || null,
+      message: failure?.message || String(failure),
+      recovery: useLocalFallback ? 'original_context_fallback' : 'regenerate_prompt',
+    });
+    if (useLocalFallback) return buildDeterministicMusicPrompt(themeJson, options);
+
+    if (temporaryFailure) await (options.delay || ((ms) => new Promise((resolve) => setTimeout(resolve, ms))))(retry * 1000);
+    if (options.signal?.aborted) throw options.signal.reason || failure;
+    const failureHint = failure?.code === 'MUSIC_PROMPT_INVALID_OUTPUT'
+      ? 'The previous response did not contain a usable music prompt.'
+      : temporaryFailure ? 'A temporary inference failure prevented prompt generation.'
+        : 'The previous prompt generation request failed; simplify the musical description.';
+    try {
+      const prompt = await generate(buildMusicRetryMessages(themeJson, options, retry, failureHint), true);
+      if (prompt.trim().split(/\s+/u).length > 35 || /^\s*(?:```|[\[{]|#{1,6}\s)/u.test(prompt)) {
+        throw Object.assign(new Error('The fallback music prompt was not concise plain text.'), { code: 'MUSIC_PROMPT_INVALID_OUTPUT' });
+      }
+      return prompt.trim();
+    } catch (error) {
+      failure = error;
+    }
+  }
 }
 
 
@@ -712,6 +777,7 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
     const response = await createCompletion(openai, baseFunctionCallParams);
     return response.choices[0].message;
   } catch (error) {
+    if (options.preserveError === true) throw error;
     let errorString = 'An error occurred while sending the message. Please try again with a different message.'
     throw new Error(errorString);
   }

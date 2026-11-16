@@ -1,4 +1,4 @@
-import { isProviderNetworkError, isProviderHttpFailure, completedProviderResultFailure } from '../utils/ProviderNetworkRecovery.js';
+import { isProviderNetworkError, isProviderHttpFailure, completedProviderResultFailure, readProviderVideoResult } from '../utils/ProviderNetworkRecovery.js';
 import { fal } from "@fal-ai/client";
 
 const FAL_API_KEY = process.env.FAL_API_KEY;
@@ -111,9 +111,9 @@ export async function listenToPendingCosmos3ImgToVidRequests(payload) {
 
     const responseStatus = responseStatusData.status;
     if (responseStatus === "COMPLETED") {
-      const result = await fal.queue.result(COSMOS3_IMAGE_TO_VIDEO_LINK, {
+      const result = await readProviderVideoResult(() => fal.queue.result(COSMOS3_IMAGE_TO_VIDEO_LINK, {
         requestId: generationId,
-      });
+      }));
 
       return {
         responseStatus: "COMPLETED",

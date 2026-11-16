@@ -119,7 +119,7 @@ test('uses strict text-to-video inference aliases and falls back to the user sel
   );
   assert.equal(
     resolveNarrativeInferenceModel({ inference_model: 'GEMINI4' }, 'QWEN3.8'),
-    'gemini-4-argon',
+    'gemini-4-carbon',
   );
   assert.equal(resolveNarrativeInferenceModel({}, 'QWEN3.8'), 'QWEN3.8');
   assert.equal(

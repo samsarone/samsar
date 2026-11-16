@@ -1,4 +1,4 @@
-export const DEFAULT_OPENROUTER_GEMINI_4_ARGON_MODEL = 'google/gemini-4-argon';
+export const DEFAULT_OPENROUTER_GEMINI_4_CARBON_MODEL = 'google/gemini-4-carbon';
 
 function normalizeString(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -12,17 +12,20 @@ export function resolveOpenRouterRuntimeConfig({ providerConfig = {}, providerSe
     return {
       enabled: false,
       apiKey: '',
-      gemini4ArgonModel: '',
+      gemini4CarbonModel: '',
     };
   }
 
-  const gemini4ArgonModel = normalizeString(providerConfig.gemini4ArgonModel) ||
-    DEFAULT_OPENROUTER_GEMINI_4_ARGON_MODEL;
+  const configuredModel = normalizeString(providerConfig.gemini4CarbonModel) ||
+    normalizeString(providerConfig.gemini4ArgonModel);
+  const gemini4CarbonModel = /^(?:google\/)?gemini-4-argon(?:-[0-9]{8})?$/i.test(configuredModel)
+    ? DEFAULT_OPENROUTER_GEMINI_4_CARBON_MODEL
+    : configuredModel || DEFAULT_OPENROUTER_GEMINI_4_CARBON_MODEL;
 
   return {
     enabled: true,
     apiKey: configuredApiKey,
-    gemini4ArgonModel,
+    gemini4CarbonModel,
   };
 }
 

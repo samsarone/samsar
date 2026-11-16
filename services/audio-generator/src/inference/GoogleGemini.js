@@ -2,21 +2,21 @@ import fetch from 'node-fetch';
 
 import { getGoogleAccessToken, getGoogleCloudConfig } from './GoogleADC.js';
 import {
-  DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL,
+  DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL,
   getProviderModelForInferenceModel,
 } from './InferenceModels.js';
 import { readMountedProviderMediaBufferIfAvailable } from '../utils/ProviderMediaUrl.js';
 
 const DEFAULT_GEMINI_LOCATION = 'global';
-const DEFAULT_GEMINI_THINKING_LEVEL = 'MEDIUM';
+const DEFAULT_GEMINI_THINKING_LEVEL = 'HIGH';
 const GEMINI_THINKING_LEVELS = new Set(['LOW', 'MEDIUM', 'HIGH']);
 
 function normalizeString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
 }
 
-function isGeminiArgonProviderModel(value) {
-  return /^gemini-4-argon(?:[.-]|$)/i.test(normalizeString(value));
+function isGeminiCarbonProviderModel(value) {
+  return /^gemini-4-carbon(?:[.-]|$)/i.test(normalizeString(value));
 }
 
 function resolveGeminiLocation() {
@@ -30,9 +30,10 @@ function resolveGeminiLocation() {
 function resolveGeminiModel(model) {
   return (
     normalizeString(getProviderModelForInferenceModel(model)) ||
+    normalizeString(process.env.GOOGLE_GEMINI_4_CARBON_MODEL) ||
     normalizeString(process.env.GOOGLE_GEMINI_4_ARGON_MODEL) ||
     normalizeString(process.env.GOOGLE_GEMINI_PRO_MODEL) ||
-    DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL
+    DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL
   );
 }
 
@@ -253,7 +254,7 @@ export async function createGoogleGeminiChatCompletion(messages, inferenceModel,
   }
 
   const { systemInstruction, contents } = await buildGeminiContents(messages, options);
-  if (isGeminiArgonProviderModel(model)) {
+  if (isGeminiCarbonProviderModel(model)) {
     while (contents.at(-1)?.role === 'model') contents.pop();
   }
   if (!contents.length) {

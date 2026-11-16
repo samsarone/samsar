@@ -410,8 +410,12 @@ async function findVideoSessionForStudioAccess(userId, sessionId, payload = {}, 
   }
 
   const query = VideoSession.findById(sessionId);
-  // Only the response-only read opts in; mutation and frame endpoints keep full documents.
-  const session = await (options.omitResponseFrames ? query.select('-layers.frames') : query);
+  // Assistant progress is read repeatedly while a reply streams. Fetch only
+  // conversation and access-control fields, rather than hydrating every frame
+  // and media layer on each SSE/status update. Mutation callers keep full docs.
+  const session = await (options.assistantConversationOnly
+    ? query.select('userId editableShareEnabled editableShareToken editableShareImportedUserIds editableShareCollaborators sessionMessages assistantStream assistantSessionVersion sessionMessageGenerationPending sessionMessageGenerationError')
+    : options.omitResponseFrames ? query.select('-layers.frames') : query);
   if (!session) {
     return null;
   }

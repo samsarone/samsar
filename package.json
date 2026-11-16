@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "test": "node --test scripts/*.test.mjs apps/setup-wizard/*.test.mjs apps/setup-wizard/src/constants/*.test.js apps/samsar-client/src/utils/*.test.mjs deploy/compose/media-tunnel-controller/*.test.mjs packages/*/*.test.mjs services/docker-cleanup/test/*.test.js services/processor/src/utils/NetworkOutagePolicy.test.js",
-    "test:argon-migration": "node --test scripts/gemini-argon-*.integration.mjs",
+    "test:argon-migration": "npm run test:carbon-migration",
+    "test:carbon-migration": "node --test scripts/gemini-argon-*.integration.mjs",
     "test:astra-migration": "node --test scripts/gpt-astra-migration.integration.mjs",
     "test:deployment": "npm run config:render && docker compose --env-file runtime/secrets/root.env -f deploy/compose/docker-compose.yml --profile core --profile workers --profile local-mongo --profile minio --profile local-media --profile logger --profile reverse-proxy --profile genblaze config --quiet",
     "test:ci": "npm test && npm run test:deployment",

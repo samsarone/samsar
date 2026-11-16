@@ -27,7 +27,7 @@ test('optional Gemini key survives runtime generation without enabling unrelated
   execFileSync(process.execPath, [path.join(root, 'scripts/generate-runtime-config.mjs')], { cwd: root, stdio: 'pipe' });
   const env = await fs.readFile(path.join(root, 'runtime/secrets/root.env'), 'utf8');
   assert.match(env, /^GOOGLE_LYRIA_GEMINI_API_KEY=test-gemini-secret$/m);
-  assert.match(env, /^GOOGLE_GEMINI_4_ARGON_MODEL=$/m);
+  assert.match(env, /^GOOGLE_GEMINI_4_CARBON_MODEL=$/m);
   assert.equal((await fs.stat(path.join(root, 'runtime/secrets/root.env'))).mode & 0o777, 0o600);
   const available = JSON.parse(await fs.readFile(path.join(root, 'runtime/config/available-models.json'), 'utf8'));
   assert.deepEqual(available.models, ['LYRIA3']);
@@ -40,5 +40,5 @@ test('optional Gemini key survives runtime generation without enabling unrelated
   const oldEnv = await fs.readFile(path.join(root, 'runtime/secrets/root.env'), 'utf8');
   assert.match(oldEnv, /^GOOGLE_LYRIA_GEMINI_API_KEY=$/m);
   assert.match(oldEnv, /^GOOGLE_APPLICATION_CREDENTIALS_JSON_B64=legacy-test-credentials$/m);
-  assert.match(oldEnv, /^GOOGLE_GEMINI_4_ARGON_MODEL=gemini-4-argon$/m);
+  assert.match(oldEnv, /^GOOGLE_GEMINI_4_CARBON_MODEL=gemini-4-carbon$/m);
 });

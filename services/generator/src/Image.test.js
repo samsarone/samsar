@@ -234,14 +234,14 @@ test('image scoring context diagnostics identifies selected prompt source', () =
   assert.equal(details.diagnostics.selectedPromptText.length, 'Kenji layer prompt'.length);
 });
 
-test('grounded scoring starts at 60 and relaxes to 50 only after multiple score-only failures', () => {
-  assert.equal(__testOnly__.getScoreThresholdCutoff('grounded'), 60);
+test('grounded scoring starts at 65 and relaxes to 50 only after multiple score-only failures', () => {
+  assert.equal(__testOnly__.getScoreThresholdCutoff('grounded'), 65);
   assert.equal(
     __testOnly__.getScoreThresholdCutoff('grounded', {
       failureRetryCount: 0,
       filterRetryCount: 1,
     }),
-    60,
+    65,
   );
   assert.equal(
     __testOnly__.getScoreThresholdCutoff('grounded', {
@@ -255,7 +255,7 @@ test('grounded scoring starts at 60 and relaxes to 50 only after multiple score-
       failureRetryCount: 0,
       filterRetryCount: 2,
     }),
-    60,
+    65,
   );
 });
 
@@ -266,6 +266,9 @@ test('image generation failures do not enable score-only layer pruning', () => {
   });
 
   assert.equal(policy.fallbackScoreCutoff, 50);
+  assert.equal(__testOnly__.getImageFilterScoreCutoff('grounded', {
+    failureRetryCount: 2,
+  }), 41);
   assert.equal(policy.allowExpressLayerPrune, false);
   assert.equal(
     __testOnly__.hasReachedScoreOnlyFilterRelaxation({
@@ -276,10 +279,10 @@ test('image generation failures do not enable score-only layer pruning', () => {
   );
 });
 
-test('terminal score-only fallback accepts the best candidate for singular sessions', () => {
+test('terminal score-only fallback rescues the best singular candidate below the normal cutoff', () => {
   const passes = [
     { score: 42, src: 'attempt-1.png' },
-    { score: 58, src: 'attempt-2.png' },
+    { score: 49, src: 'attempt-2.png' },
     { score: 44, src: 'attempt-3.png' },
   ];
   const policy = __testOnly__.getTerminalFilterFailurePolicy('grounded', {
@@ -287,19 +290,58 @@ test('terminal score-only fallback accepts the best candidate for singular sessi
     filterRetryCount: 2,
   });
 
-  assert.equal(policy.fallbackScoreCutoff, 50);
+  assert.equal(policy.fallbackScoreCutoff, 42);
   assert.equal(policy.allowExpressLayerPrune, true);
   assert.deepEqual(
     __testOnly__.getBestFilterPass(passes, policy.fallbackScoreCutoff),
-    { pass: passes[1], score: 58 },
+    { pass: passes[1], score: 49 },
+  );
+  assert.deepEqual(
+    __testOnly__.getBestFilterPass([passes[0]], policy.fallbackScoreCutoff),
+    { pass: passes[0], score: 42 },
   );
   assert.equal(
     __testOnly__.getBestFilterPass([
-      { score: 42, src: 'attempt-1.png' },
-      { score: 49, src: 'attempt-2.png' },
-      { score: 44, src: 'attempt-3.png' },
+      { score: 41, src: 'attempt-1.png' },
+      { score: 39, src: 'attempt-2.png' },
+      { score: 40, src: 'attempt-3.png' },
     ], policy.fallbackScoreCutoff),
     null,
+  );
+});
+
+test('singular fallback stays at the normal cutoff before repeated score-only failures', () => {
+  for (const [videoTone, normalCutoff] of [['grounded', 65], ['default', 50]]) {
+    for (const filterRetryCount of [0, 1]) {
+      const policy = __testOnly__.getTerminalFilterFailurePolicy(videoTone, {
+        failureRetryCount: 0,
+        filterRetryCount,
+      }, { narrativeType: 'singular' });
+
+      assert.equal(policy.fallbackScoreCutoff, normalCutoff);
+      assert.equal(policy.allowExpressLayerPrune, false);
+      assert.equal(__testOnly__.getBestFilterPass([
+        { score: 42, src: 'early-attempt.png' },
+      ], policy.fallbackScoreCutoff), null);
+    }
+  }
+});
+
+test('relaxed terminal fallback still excludes unusable image candidates', () => {
+  const policy = __testOnly__.getTerminalFilterFailurePolicy('grounded', {
+    failureRetryCount: 0,
+    filterRetryCount: 2,
+  });
+  const passes = [
+    { score: 90, src: 'rejected-aspect.png', aspectRatioRejected: true },
+    { score: 80 },
+    { score: Number.NaN, src: 'invalid-score.png' },
+    { score: 42, src: 'usable-fallback.png' },
+  ];
+
+  assert.deepEqual(
+    __testOnly__.getBestFilterPass(passes, policy.fallbackScoreCutoff),
+    { pass: passes[3], score: 42 },
   );
 });
 
@@ -330,15 +372,19 @@ test('branched sessions accept the best terminal image candidate at or above 25 
   );
 });
 
-test('singular sessions retain the standard cutoff and prune-and-retime policy', () => {
-  const policy = __testOnly__.getTerminalFilterFailurePolicy(
-    'grounded',
-    { failureRetryCount: 0, filterRetryCount: 2 },
-    { narrativeType: 'singular' },
-  );
+test('singular sessions lower only terminal fallback after repeated score-only failures', () => {
+  const payload = { failureRetryCount: 0, filterRetryCount: 2 };
+  for (const videoTone of ['grounded', 'default']) {
+    const policy = __testOnly__.getTerminalFilterFailurePolicy(
+      videoTone,
+      payload,
+      { narrativeType: 'singular' },
+    );
 
-  assert.equal(policy.fallbackScoreCutoff, 50);
-  assert.equal(policy.allowExpressLayerPrune, true);
+    assert.equal(__testOnly__.getScoreThresholdCutoff(videoTone, payload), 50);
+    assert.equal(policy.fallbackScoreCutoff, 42);
+    assert.equal(policy.allowExpressLayerPrune, true);
+  }
 });
 
 test('selected image candidate keeps its source, score, and description aligned', () => {

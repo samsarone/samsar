@@ -5,7 +5,8 @@ const MODEL_TOKENS = Object.freeze({
   GPT61SOL: 'gpt-6.1-sol',
   CLAUDEOPUS55: 'claude-opus-5.5',
   CLAUDE55OPUS: 'claude-opus-5.5',
-  CLAUDEFABLE51: 'claude-fable-5.1',
+  CLAUDEFABLE52: 'claude-fable-5.2',
+  CLAUDEFABLE51: 'claude-fable-5.2', // Saved selections retain their effort while upgrading.
 });
 
 export function normalizeReasoningModel(value) {
@@ -44,11 +45,15 @@ export function withInferenceEffort(model, effort) {
 }
 
 export function getClaudeProviderModel(model) {
-  return getReasoningModelBase(model) === 'claude-fable-5.1' ? 'claude-fable-5-1' : 'claude-opus-5-5';
+  return getReasoningModelBase(model) === 'claude-fable-5.2' ? 'claude-fable-5-2' : 'claude-opus-5-5';
 }
 
 export function getClaudeOpenRouterModel(model, env = process.env) {
-  return getReasoningModelBase(model) === 'claude-fable-5.1'
-    ? env.OPENROUTER_CLAUDE_FABLE_51_MODEL || 'anthropic/claude-fable-5.1'
-    : env.OPENROUTER_CLAUDE_OPUS_55_MODEL || 'anthropic/claude-opus-5.5';
+  if (getReasoningModelBase(model) === 'claude-fable-5.2') {
+    const configured = String(env.OPENROUTER_CLAUDE_FABLE_52_MODEL || env.OPENROUTER_CLAUDE_FABLE_51_MODEL || '').trim();
+    return /^(?:anthropic\/)?claude-fable-5[.-]1$/i.test(configured)
+      ? 'anthropic/claude-fable-5.2'
+      : configured || 'anthropic/claude-fable-5.2';
+  }
+  return env.OPENROUTER_CLAUDE_OPUS_55_MODEL || 'anthropic/claude-opus-5.5';
 }

@@ -3,7 +3,8 @@ const NETWORK_CODES = new Set(['ECONNRESET', 'ECONNABORTED', 'ETIMEDOUT', 'EAI_A
   'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'EPIPE', 'UND_ERR_CONNECT_TIMEOUT',
   'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_SOCKET', 'SAMSAR_MEDIA_TUNNEL_UNREACHABLE']);
 const FAILURE_CODES = new Set(['PROVIDER_NETWORK_RETRY_EXHAUSTED', 'PROVIDER_SUBMISSION_OUTCOME_UNKNOWN',
-  'PROVIDER_MEDIA_DOWNLOAD_FAILED', 'PROVIDER_NETWORK_WAIT_EXPIRED', 'PROVIDER_MEDIA_PREPARATION_FAILED']);
+  'PROVIDER_MEDIA_DOWNLOAD_FAILED', 'PROVIDER_NETWORK_WAIT_EXPIRED', 'PROVIDER_MEDIA_PREPARATION_FAILED',
+  'PROVIDER_POLL_REJECTED']);
 
 export { providerRequestFetch } from './ProviderNetworkTransport.js';
 
@@ -40,6 +41,30 @@ export function completedProviderResultFailure(error) {
     providerFailureMessage: details.map(item => item.msg).join('; '),
     providerFailureCode: getProviderResultInfrastructureCode({ providerStatus }),
   };
+}
+
+// A rejected result belongs to a completed execution. A rejection from the
+// status endpoint does not establish whether the accepted job has failed.
+export async function readProviderVideoResult(readResult) {
+  try {
+    return await readResult();
+  } catch (error) {
+    if (error && typeof error === 'object') error.providerOperation = 'result';
+    throw error;
+  }
+}
+
+export function getProviderExecutionRejection(error) {
+  const status = Number(error?.response?.status ?? error?.statusCode ?? error?.status);
+  if (status !== 422 || error?.providerOperation !== 'result') return null;
+  const body = error?.body || error?.response?.data || error?.data;
+  const providerStatus = { ...(body && typeof body === 'object' ? body : { detail: body }), status };
+  if (getProviderResultInfrastructureCode({ providerStatus })) return null;
+  const failure = completedProviderResultFailure(error);
+  const providerFailureMessage = failure?.providerFailureMessage || [
+    body?.detail, body?.error?.message, body?.error, body?.message, error?.message,
+  ].find(value => typeof value === 'string' && value.trim()) || 'Provider rejected video generation.';
+  return { responseStatus: 'FAILED', providerStatus, providerFailureMessage, providerFailureCode: null };
 }
 
 export function isProviderHttpFailure(error) {

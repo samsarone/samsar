@@ -11,7 +11,7 @@ import {
 test('request model wins over session and saved user settings', () => {
   assert.equal(resolveRequestInferenceModel({
     request: { inferenceModel: 'QWEN3.8' },
-    session: { expressGenerationInferenceModel: 'gemini-4-argon' },
+    session: { expressGenerationInferenceModel: 'gemini-4-carbon' },
     user: { selectedInferenceModel: 'gpt-6-astra' },
   }), 'QWEN3.8');
 });
@@ -20,7 +20,7 @@ test('session generation override wins over saved user setting', () => {
   assert.equal(resolveRequestInferenceModel({
     session: {
       expressGenerationInferenceModel: 'QWEN3.8',
-      inferenceModel: 'gemini-4-argon',
+      inferenceModel: 'gemini-4-carbon',
     },
     user: { selectedInferenceModel: 'gpt-6-astra' },
   }), 'QWEN3.8');
@@ -87,7 +87,7 @@ test('inference settings preserve saved effort and explicit legacy override prec
   });
 });
 
-for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1']) {
+for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
   test(`${model} retains queued model and effort ahead of changed user preferences`, () => {
     assert.deepEqual(resolveRequestInferenceSettings({
       request: { inferenceModel: model, inferenceEffort: 'xhigh' },

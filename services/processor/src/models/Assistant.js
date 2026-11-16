@@ -400,7 +400,9 @@ export async function getAssistantStreamSnapshot(userId, payload = {}) {
     throw Object.assign(new Error('Invalid session ID.'), { status: 400 });
   }
   // Recheck shared-edit access on each snapshot, including after reconnects.
-  const session = await assertAssistantConversationAccess(userId, payload, { markEdited: false });
+  const session = await assertAssistantConversationAccess(userId, payload, {
+    markEdited: false, assistantConversationOnly: true,
+  });
   return {
     sessionId: String(session._id),
     assistantSessionVersion: session.assistantSessionVersion || 0,

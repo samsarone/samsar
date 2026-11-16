@@ -740,7 +740,7 @@ const env = {
 	  OPENAI_API_KEY: config.providers?.openai?.apiKey || '',
   ANTHROPIC_API_KEY: config.providers?.anthropic?.apiKey || '',
 	  OPENROUTER_API_KEY: effectiveProviderConfig.openrouter.apiKey,
-	  OPENROUTER_GEMINI_4_ARGON_MODEL: effectiveProviderConfig.openrouter.gemini4ArgonModel,
+	  OPENROUTER_GEMINI_4_CARBON_MODEL: effectiveProviderConfig.openrouter.gemini4CarbonModel,
 	  KIMI_K3_API_KEY: config.providers?.kimi?.apiKey || '',
 	  ALIBABA_API_KEY: alibabaApiKey,
 	  ALIBABA_API_HOST: alibabaApiHost,
@@ -761,8 +761,10 @@ const env = {
   GOOGLE_LYRIA_GEMINI_API_KEY: config.providers?.googleCloud?.lyriaGeminiConfigured ? (providerSecrets.googleCloud?.geminiApiKey || '') : '',
   GOOGLE_CLOUD_PROJECT: config.providers?.googleCloud?.projectId || '',
   GOOGLE_APPLICATION_CREDENTIALS_JSON_B64: config.providers?.googleCloud?.credentialsJsonB64 || '',
-  GOOGLE_GEMINI_4_ARGON_MODEL: config.providers?.googleCloud?.enabled && !config.providers.googleCloud.musicOnly
-    ? normalizeString(config.providers.googleCloud.gemini4ArgonModel) || 'gemini-4-argon'
+  GOOGLE_GEMINI_THINKING_LEVEL: 'HIGH',
+  OPENROUTER_GEMINI_REASONING_EFFORT: 'high',
+  GOOGLE_GEMINI_4_CARBON_MODEL: config.providers?.googleCloud?.enabled && !config.providers.googleCloud.musicOnly
+    ? normalizeString(config.providers.googleCloud.gemini4CarbonModel || config.providers.googleCloud.gemini4ArgonModel).replace(/^(?:google\/)?gemini-4-argon(?:-[0-9]{8})?$/i, 'gemini-4-carbon') || 'gemini-4-carbon'
     : '',
   DOCKER_SETUP_SECRET: config.security?.dockerSetupSecret || '',
   SAMSAR_ORGANIZATION_NAME: config.organization?.name || '',

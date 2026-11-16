@@ -4,7 +4,7 @@ import { translateTextContent } from './OpenAI.js';
 import { createCompatibleChatCompletion } from './ai_utils/OpenAICompat.js';
 import { toAnthropicMessages } from '../inference/AnthropicChatAdapter.js';
 
-for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1']) {
+for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
   for (const reasoningEffort of ['high', 'xhigh']) {
     test(`translation forwards ${model} and ${reasoningEffort} to its adapter`, async () => {
       let request;
@@ -24,7 +24,7 @@ for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fa
   }
 }
 
-for (const model of ['gemini-4-argon', 'kimi-k3', 'QWEN3.8']) {
+for (const model of ['gemini-4-carbon', 'kimi-k3', 'QWEN3.8']) {
   test(`translation forwards ${model} without unsupported generic reasoning effort`, async () => {
     let request;
     await translateTextContent(['Hello.'], 'French', model, {
@@ -39,7 +39,7 @@ for (const model of ['gemini-4-argon', 'kimi-k3', 'QWEN3.8']) {
   });
 }
 
-for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1']) {
+for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
   test(`translation carries xhigh through the ${model} native adapter payload`, async (t) => {
     const previousEdition = process.env.SAMSAR_DEPLOYMENT_EDITION;
     process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';

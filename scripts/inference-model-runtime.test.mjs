@@ -10,7 +10,7 @@ import { resolveProviderEnvironmentReferences } from '../apps/setup-wizard/src/c
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const gptModels = ['gpt-6-astra', 'gpt-6.1-sol'];
-const claudeModels = ['claude-opus-5.5', 'claude-fable-5.1'];
+const claudeModels = ['claude-opus-5.5', 'claude-fable-5.2'];
 let fixtureRoot;
 
 before(async () => {

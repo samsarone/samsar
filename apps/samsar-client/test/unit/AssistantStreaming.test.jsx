@@ -36,6 +36,21 @@ it('subscribes with auth and accepts final snapshots without duplicating assista
   expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer token');
 });
 
+it('preserves saved history when an SSE update contains only new stream text', async () => {
+  const history = [{ id: 'old', role: 'assistant', content: 'Previous reply' },
+    { id: 'q', role: 'user', content: 'Next question' }];
+  const snapshot = { assistantSessionVersion: 2, sessionMessageGenerationPending: true,
+    assistantStream: { queryId: 'q', text: 'Partial reply', sequence: 1, status: 'streaming' } };
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(response([['snapshot', snapshot], ['settled', {}]]));
+  const onSnapshot = vi.fn();
+  const { result } = renderHook(() => useAssistantRequestGuard('session'));
+  act(() => result.current.acceptSession({ assistantSessionVersion: 2, sessionMessages: history }));
+  act(() => result.current.subscribe({ url: '/stream', onSnapshot }));
+  await waitFor(() => expect(onSnapshot).toHaveBeenCalledTimes(1));
+  expect(onSnapshot.mock.calls[0][0].sessionMessages.map(message => message.content))
+    .toEqual(['Previous reply', 'Next question', 'Partial reply']);
+});
+
 it('clear and navigation abort old streams and reject snapshots from the old session', async () => {
   let finish; let signal;
   vi.spyOn(globalThis, 'fetch').mockImplementation((_url, options) => { signal = options.signal; return new Promise(resolve => { finish = resolve; }); });

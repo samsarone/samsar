@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import http from 'node:http';
+import net from 'node:net';
 import test from 'node:test';
 import { openServerSentEvents, serveAssistantSnapshots } from './ServerSentEvents.js';
 
@@ -68,4 +70,100 @@ test('flushes each snapshot while the response remains open', () => {
   stream.send('snapshot', { text: 'First words continue' });
   assert.match(flushed, /First words continue/);
   stream.end();
+});
+
+async function createHttpSseServer(t) {
+  const requests = [];
+  const sockets = new Set();
+  const server = http.createServer(async (req, res) => {
+    requests.push({ url: req.url, connection: req.headers.connection, socket: req.socket });
+    if (req.url === '/stream') {
+      res.status = (status) => { res.statusCode = status; return res; };
+      res.set = (headers) => {
+        for (const [name, value] of Object.entries(headers)) res.setHeader(name, value);
+        return res;
+      };
+      await serveAssistantSnapshots(res, async () => ({
+        assistantSessionVersion: 1,
+        sessionMessageGenerationPending: true,
+        assistantStream: { queryId: 'query', sequence: 1, status: 'streaming' },
+      }), { pollMs: 1, maxMs: 5 });
+      return;
+    }
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ status: 'PENDING' }));
+  });
+  server.on('connection', (socket) => {
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  t.after(() => {
+    for (const socket of sockets) socket.destroy();
+    return new Promise((resolve) => server.close(resolve));
+  });
+  return { port: server.address().port, requests };
+}
+
+function getHttpResponse(port, path, agent = false) {
+  return new Promise((resolve, reject) => {
+    http.get({ hostname: '127.0.0.1', port, path, agent }, (res) => {
+      const socket = res.socket;
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { body += chunk; });
+      res.once('error', reject);
+      res.once('end', () => resolve({ status: res.statusCode, headers: res.headers, body, socket }));
+    }).once('error', reject);
+  });
+}
+
+test('SSE closes a Connection: close socket before a subsequent status request', { timeout: 3000 }, async (t) => {
+  const { port, requests } = await createHttpSseServer(t);
+  const response = await new Promise((resolve, reject) => {
+    const socket = net.connect(port, '127.0.0.1');
+    let raw = '';
+    const timer = setTimeout(() => {
+      socket.destroy();
+      reject(new Error('SSE kept a Connection: close request socket open.'));
+    }, 1000);
+    socket.setEncoding('utf8');
+    socket.once('connect', () => socket.write(
+      'GET /stream HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n',
+    ));
+    socket.on('data', (chunk) => { raw += chunk; });
+    socket.once('error', (error) => { clearTimeout(timer); reject(error); });
+    socket.once('end', () => { clearTimeout(timer); resolve(raw); });
+  });
+  assert.match(response, /^HTTP\/1\.1 200 /);
+  assert.match(response, /\r\nConnection: close\r\n/i);
+  assert.match(response, /event: reconnect/);
+  assert.ok(response.endsWith('0\r\n\r\n'));
+
+  const status = await getHttpResponse(port, '/status');
+  assert.equal(status.status, 200);
+  assert.deepEqual(JSON.parse(status.body), { status: 'PENDING' });
+  assert.deepEqual(requests.map(({ url }) => url), ['/stream', '/status']);
+  assert.notStrictEqual(requests[0].socket, requests[1].socket);
+});
+
+test('HTTP/1.1 SSE naturally reuses a keep-alive socket for the next status request', { timeout: 3000 }, async (t) => {
+  const { port, requests } = await createHttpSseServer(t);
+  const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
+  t.after(() => agent.destroy());
+  const stream = await getHttpResponse(port, '/stream', agent);
+  assert.equal(stream.status, 200);
+  assert.equal(stream.headers.connection, 'keep-alive');
+  assert.match(stream.body, /event: reconnect/);
+
+  const status = await getHttpResponse(port, '/status', agent);
+  assert.equal(status.status, 200);
+  assert.deepEqual(JSON.parse(status.body), { status: 'PENDING' });
+  assert.strictEqual(stream.socket, status.socket);
+  assert.deepEqual(requests.map(({ url }) => url), ['/stream', '/status']);
+  assert.equal(requests[0].connection, 'keep-alive');
+  assert.strictEqual(requests[0].socket, requests[1].socket);
 });

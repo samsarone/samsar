@@ -5,7 +5,7 @@ import React, { Suspense, lazy, useEffect, useContext, useCallback, useState } f
 import axios from 'axios';
 import { useUser } from '../../contexts/UserContext';
 import CommonButton from './CommonButton.tsx';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAlertDialog } from '../../contexts/AlertDialogContext';
 import { IoMdLogIn } from 'react-icons/io';
 
@@ -148,6 +148,7 @@ export default function TopNav(props) {
     location.pathname === '/vidgenie' ||
     location.pathname.startsWith('/vidgenie/');
   const isGenerationsView = location.pathname.startsWith('/generations');
+  const isCreatePage = location.pathname === '/create';
 
   const {
     downloadCurrentFrame,
@@ -166,6 +167,15 @@ export default function TopNav(props) {
 
   const navShell =
     `border-b text-fg ${colorMode === 'dark' ? 'border-[#3a4050] bg-[#12141c]/92 shadow-[0_12px_36px_rgba(0,0,0,0.34)] backdrop-blur-xl' : 'bg-gradient-to-r from-[#e9edf7] via-[#dfe7f5] to-[#eef3fb] border-[#d7deef]'}`;
+  const createShortcut = !user?.isExternalUser ? (
+    <Link
+      to="/create"
+      aria-current={isCreatePage ? 'page' : undefined}
+      className={`inline-flex min-h-9 shrink-0 items-center justify-center rounded-full border px-3 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f6c453] ${isCreatePage
+        ? 'border-[#f6c453]/60 bg-[#f6c453]/15 text-fg'
+        : 'border-line-control bg-surface-raised text-fg-body hover:bg-surface-hover'}`}
+    >{uiText("Create")}</Link>
+  ) : null;
 
   const resetSession = () => {
     closeAlertDialog();
@@ -717,7 +727,7 @@ export default function TopNav(props) {
     betaOptionVisible = true;
   }
 
-  if (user && user._id) {
+  if (user && user._id && !isCreatePage) {
     addSessionButton = (
       <div className="inline-flex items-center">
         <Suspense fallback={<div className="h-11 w-[118px]" />}>
@@ -745,7 +755,7 @@ export default function TopNav(props) {
   }
 
   let userCreditsDisplay = <span />;
-  if (user && user._id && !IS_STANDALONE_DEPLOYMENT) {
+  if (user && user._id && !IS_STANDALONE_DEPLOYMENT && !isCreatePage) {
     const creditsButtonClass = `border border-line-control text-fg ${colorMode === 'dark' ? 'bg-black/15 hover:border-[#f6c453]/60 hover:bg-[#20232e]' : 'bg-white/75 hover:border-slate-300 hover:bg-white'}`;
     const creditsLabelClass = 'text-fg-muted';
     const formattedCredits = formatCredits(userCredits);
@@ -911,6 +921,7 @@ export default function TopNav(props) {
             {controlbarView}
           </div>
           <div className="flex min-w-0 items-center justify-end gap-2 text-xs sm:text-sm">
+            {createShortcut}
             {errorMessageDisplay}
             <div className="hidden items-center lg:flex">
               {addSessionButton}
@@ -941,6 +952,7 @@ export default function TopNav(props) {
           </div>
         </div>
         <div className="flex flex-shrink-0 items-center justify-end gap-2 text-xs sm:text-sm lg:gap-3">
+          {createShortcut}
           {errorMessageDisplay}
           <div className="flex items-center">
             {addSessionButton}

@@ -42,11 +42,11 @@ CURATED_SAMSAR_MODELS: Mapping[str, CuratedModel] = {
         ("openai/gpt-6-astra",),
         ("openai/gpt-6-astra",),
     ),
-    "gemini-4-argon": CuratedModel(
+    "gemini-4-carbon": CuratedModel(
         "text",
         "chat.completions",
-        ("google/gemini-4-argon",),
-        ("google/gemini-4-argon",),
+        ("google/gemini-4-carbon",),
+        ("google/gemini-4-carbon",),
     ),
     "QWEN3.8": CuratedModel(
         "text",

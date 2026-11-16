@@ -1629,20 +1629,20 @@
     "th": "วงกลม",
     "ja": "円"
   },
-  "Claude Fable 5.1": {
-    "en": "Claude Fable 5.1",
-    "th": "Claude Fable 5.1",
-    "ja": "Claude Fable 5.1"
+  "Claude Fable 5.2": {
+    "en": "Claude Fable 5.2",
+    "th": "Claude Fable 5.2",
+    "ja": "Claude Fable 5.2"
   },
-  "Claude Fable 5.1 High": {
-    "en": "Claude Fable 5.1 High",
-    "th": "Claude Fable 5.1 — สูง",
-    "ja": "Claude Fable 5.1 — 高"
+  "Claude Fable 5.2 High": {
+    "en": "Claude Fable 5.2 High",
+    "th": "Claude Fable 5.2 — สูง",
+    "ja": "Claude Fable 5.2 — 高"
   },
-  "Claude Fable 5.1 XHigh": {
-    "en": "Claude Fable 5.1 XHigh",
-    "th": "Claude Fable 5.1 — สูงมาก",
-    "ja": "Claude Fable 5.1 — 最高"
+  "Claude Fable 5.2 XHigh": {
+    "en": "Claude Fable 5.2 XHigh",
+    "th": "Claude Fable 5.2 — สูงมาก",
+    "ja": "Claude Fable 5.2 — 最高"
   },
   "Claude Opus 5.5": {
     "en": "Claude Opus 5.5",
@@ -3479,10 +3479,10 @@
     "th": "Garamond",
     "ja": "Garamond"
   },
-  "Gemini 4 Argon": {
-    "en": "Gemini 4 Argon",
-    "th": "Gemini 4 Argon",
-    "ja": "Gemini 4 Argon"
+  "Gemini 4 Carbon High": {
+    "en": "Gemini 4 Carbon High",
+    "th": "Gemini 4 Carbon High",
+    "ja": "Gemini 4 Carbon High"
   },
   "General": {
     "en": "General",
@@ -11909,9 +11909,84 @@
     "th": "ไม่สามารถโหลดได้ โปรดลองอีกครั้ง",
     "ja": "読み込めませんでした。もう一度お試しください。"
   },
+  "Create": {
+    "en": "Create",
+    "th": "สร้าง",
+    "ja": "作成"
+  },
+  "Create video": {
+    "en": "Create video",
+    "th": "สร้างวิดีโอ",
+    "ja": "動画を作成"
+  },
+  "Creating your video...": {
+    "en": "Creating your video...",
+    "th": "กำลังสร้างวิดีโอของคุณ...",
+    "ja": "動画を作成しています..."
+  },
+  "From an idea to a video": {
+    "en": "From an idea to a video",
+    "th": "จากไอเดียสู่วิดีโอ",
+    "ja": "アイデアから動画へ"
+  },
+  "What do you want to create?": {
+    "en": "What do you want to create?",
+    "th": "คุณอยากสร้างอะไร?",
+    "ja": "何を作りたいですか？"
+  },
+  "Describe your video. Samsar takes care of the rest.": {
+    "en": "Describe your video. Samsar takes care of the rest.",
+    "th": "บอกเล่าวิดีโอที่คุณต้องการ แล้วให้ Samsar จัดการส่วนที่เหลือ",
+    "ja": "作りたい動画を説明してください。あとはSamsarにお任せください。"
+  },
+  "Describe your video": {
+    "en": "Describe your video",
+    "th": "อธิบายวิดีโอของคุณ",
+    "ja": "動画の内容を説明"
+  },
+  "A short film about a quiet city waking up...": {
+    "en": "A short film about a quiet city waking up...",
+    "th": "หนังสั้นเกี่ยวกับเมืองอันเงียบสงบที่กำลังตื่นขึ้น...",
+    "ja": "静かな街が目覚める様子を描く短編映画..."
+  },
+  "Your default models are ready to go.": {
+    "en": "Your default models are ready to go.",
+    "th": "โมเดลเริ่มต้นของคุณพร้อมใช้งานแล้ว",
+    "ja": "既定のモデルですぐに作成できます。"
+  },
+  "Your default models are unavailable. Update your model settings to continue.": {
+    "en": "Your default models are unavailable. Update your model settings to continue.",
+    "th": "โมเดลเริ่มต้นของคุณไม่พร้อมใช้งาน โปรดอัปเดตการตั้งค่าโมเดลเพื่อดำเนินการต่อ",
+    "ja": "既定のモデルを利用できません。モデル設定を更新して続行してください。"
+  },
+  "Unable to create your video. Please try again.": {
+    "en": "Unable to create your video. Please try again.",
+    "th": "ไม่สามารถสร้างวิดีโอของคุณได้ โปรดลองอีกครั้ง",
+    "ja": "動画を作成できませんでした。もう一度お試しください。"
+  },
   "Unable to send message. Please try again.": {
     "en": "Unable to send message. Please try again.",
     "th": "ไม่สามารถส่งข้อความได้ โปรดลองอีกครั้ง",
     "ja": "メッセージを送信できませんでした。もう一度お試しください。"
+  },
+  "Generation defaults": {
+    "en": "Generation defaults",
+    "th": "ค่าเริ่มต้นของการสร้าง",
+    "ja": "生成のデフォルト設定"
+  },
+  "Used for new videos. You can change these models any time.": {
+    "en": "Used for new videos. You can change these models any time.",
+    "th": "ใช้สำหรับวิดีโอใหม่ คุณสามารถเปลี่ยนโมเดลเหล่านี้ได้ทุกเมื่อ",
+    "ja": "新しい動画に使用されます。モデルはいつでも変更できます。"
+  },
+  "Text model": {
+    "en": "Text model",
+    "th": "โมเดลข้อความ",
+    "ja": "テキストモデル"
+  },
+  "Image model": {
+    "en": "Image model",
+    "th": "โมเดลภาพ",
+    "ja": "画像モデル"
   }
 }

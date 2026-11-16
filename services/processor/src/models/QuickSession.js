@@ -478,7 +478,11 @@ export async function createQuickSession(userId, payload) {
   if (musicPrompt) {
     musicTheme = musicPrompt;
   } else {
-    musicTheme = await getMusicForTextTheme(themeJsonString, userInferenceModel, musicProvider);
+    musicTheme = await getMusicForTextTheme(themeJsonString, userInferenceModel, musicProvider, {
+      originalPrompt: payload.inputPrompt || payload.prompt || lineItemString,
+      musicInstructions: payload.musicInstructions,
+      sessionId,
+    });
   }
 
 

@@ -230,7 +230,8 @@ export async function resolvePostAuthDestination({
   redirect = null,
   createIfMissing = true,
 } = {}) {
-  const normalizedRedirect = IS_STANDALONE_DEPLOYMENT ? null : sanitizeAuthRedirect(redirect);
+  const requestedRedirect = sanitizeAuthRedirect(redirect);
+  const normalizedRedirect = IS_STANDALONE_DEPLOYMENT && requestedRedirect !== '/create' ? null : requestedRedirect;
   if (normalizedRedirect) return normalizedRedirect;
 
   const destinationSearch = IS_STANDALONE_DEPLOYMENT ? '' : search;

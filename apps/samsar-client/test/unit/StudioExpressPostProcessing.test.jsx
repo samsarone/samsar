@@ -37,7 +37,7 @@ const click = name => fireEvent.click(screen.getByRole('button', { name, exact: 
 const change = (name, value) => fireEvent.change(screen.getByLabelText(name), { target: { value } });
 
 it.each([
-  ['Retranslate', 'Retranslate video', 'retranslate_video', () => change('Retranslation language', 'ja'), { language: 'ja', inference_model: 'claude-fable-5.1', effort: 'xhigh', translate_outro: true, translate_footer: true, enable_subtitles: true }],
+  ['Retranslate', 'Retranslate video', 'retranslate_video', () => change('Retranslation language', 'ja'), { language: 'ja', inference_model: 'claude-fable-5.2', effort: 'xhigh', translate_outro: true, translate_footer: true, enable_subtitles: true }],
   ['Subtitles', 'Generate / regenerate subtitles', 'add_subtitles', () => {}, {}],
   ['Subtitles', 'Remove subtitles', 'remove_subtitles', () => {}, {}],
   ['Avatar', 'Regenerate narrator avatar', 'regenerate_avatar', () => {}, {}],

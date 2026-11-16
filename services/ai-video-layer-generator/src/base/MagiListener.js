@@ -1,4 +1,5 @@
 import { fal } from "@fal-ai/client";
+import { readProviderVideoResult } from '../utils/ProviderNetworkRecovery.js';
 import { getFramesPerSecondFromValue } from '../utils/FpsUtils.js';
 
 const FAL_API_KEY = process.env.FAL_API_KEY;
@@ -52,9 +53,9 @@ export async function listenToPendingMagiImgToVidLayer(payload) {
   const responseStatus = responseStatusData.status;
   if (responseStatus === 'COMPLETED') {
 
-    const result = await fal.queue.result(FA_VIDEO_LINK, {
+    const result = await readProviderVideoResult(() => fal.queue.result(FA_VIDEO_LINK, {
       requestId: generationId
-    });
+    }));
 
     const videoURL = result.data.video.url;
 

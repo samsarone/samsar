@@ -7,7 +7,7 @@ import {
   shouldUseSamsarExternalInference,
 } from './SamsarExternalInferenceAdapter.js';
 
-const models = ['claude-opus-5.5', 'claude-opus-5.5-xhigh', 'claude-fable-5.1', 'claude-fable-5.1-xhigh'];
+const models = ['claude-opus-5.5', 'claude-opus-5.5-xhigh', 'claude-fable-5.2', 'claude-fable-5.2-xhigh'];
 const deployments = [
   { CURRENT_ENV: 'production' },
   { CURRENT_ENV: 'docker', SAMSAR_DEPLOYMENT_EDITION: 'production' },

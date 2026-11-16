@@ -1,6 +1,7 @@
 import { translateText as uiText } from "./localization.js";
 import { parseReasoningModelChoice } from './inferenceModelChoices.mjs';
-export const DEFAULT_INFERENCE_MODEL_VALUE = "gpt-6-astra";
+import { DEFAULT_TEXT_MODEL } from './generationDefaults.mjs';
+export const DEFAULT_INFERENCE_MODEL_VALUE = DEFAULT_TEXT_MODEL;
 export const EXTRA_HIGH_INFERENCE_MODEL_VALUE = "gpt-6-astra-xhigh";
 export const QWEN_INFERENCE_MODEL_VALUE = "QWEN3.8";
 export const KIMI_K3_INFERENCE_MODEL_VALUE = "kimi-k3";
@@ -46,10 +47,10 @@ const DEPLOYMENT_PROVIDER_LABELS = Object.freeze({
 
 const DEPLOYMENT_INFERENCE_MODELS_BY_PROVIDER = Object.freeze({
   openai: ["gpt-6-astra", "gpt-6.1-sol"],
-  anthropic: ["claude-opus-5.5", "claude-fable-5.1"],
-  googleCloud: ["gemini-4-argon"],
+  anthropic: ["claude-opus-5.5", "claude-fable-5.2"],
+  googleCloud: ["gemini-4-carbon"],
   kimi: [KIMI_K3_INFERENCE_MODEL_VALUE],
-  openrouter: ["gpt-6-astra", "gemini-4-argon", QWEN_INFERENCE_MODEL_VALUE, "claude-opus-5.5", "claude-fable-5.1", "gpt-6.1-sol"],
+  openrouter: ["gpt-6-astra", "gemini-4-carbon", QWEN_INFERENCE_MODEL_VALUE, "claude-opus-5.5", "claude-fable-5.2", "gpt-6.1-sol"],
   gmicloud: [QWEN_INFERENCE_MODEL_VALUE],
   // Alibaba/Qwen requires explicit, validated model provenance below. A
   // provider name by itself is not enough to make Qwen selectable.
@@ -57,9 +58,9 @@ const DEPLOYMENT_INFERENCE_MODELS_BY_PROVIDER = Object.freeze({
   samsar: [
     "gpt-6-astra",
     "claude-opus-5.5",
-    "claude-fable-5.1",
+    "claude-fable-5.2",
     "gpt-6.1-sol",
-    "gemini-4-argon",
+    "gemini-4-carbon",
     QWEN_INFERENCE_MODEL_VALUE,
     KIMI_K3_INFERENCE_MODEL_VALUE,
   ],
@@ -206,11 +207,11 @@ export function normalizeDeploymentInferenceModelValue(value) {
   ) {
     return QWEN_INFERENCE_MODEL_VALUE;
   }
-  if (["gemini-4-argon", "gemini-4", "gemini4", "gemini 4", "gemini 4 argon", "gemini4argon", "google/gemini-4-argon"].includes(normalized)) {
-    return "gemini-4-argon";
+  if (["gemini-4-carbon", "gemini-4", "gemini4", "gemini 4", "gemini 4 carbon", "gemini 4 argon", "gemini-4-argon", "google/gemini-4-argon", "gemini4argon", "gemini4carbon", "google/gemini-4-carbon"].includes(normalized)) {
+    return "gemini-4-carbon";
   }
   if (inferGPT56SolEffortFromModelValue(compact)) {
-    return DEFAULT_INFERENCE_MODEL_VALUE;
+    return "gpt-6-astra";
   }
   return "";
 }

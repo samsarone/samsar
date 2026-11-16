@@ -2,8 +2,10 @@
 // generation or hold an unbounded queue of token deltas in memory.
 export function openServerSentEvents(res) {
   res.status(200);
+  // Let Node honor the request's connection lifetime. Forcing keep-alive on a
+  // Connection: close request lets a proxy reuse a socket its parser has closed.
   res.set({ 'Content-Type': 'text/event-stream; charset=utf-8',
-    'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+    'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no' });
   res.flushHeaders?.();
   let closed = false, heartbeat;
   const close = () => { closed = true; clearInterval(heartbeat); };

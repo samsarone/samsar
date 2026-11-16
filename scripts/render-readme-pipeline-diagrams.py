@@ -3,7 +3,9 @@
 
 Run from any directory with Python 3 (standard library only). Keep the stage
 summaries aligned with pages/ and the current services. The README supplies
-click-through links and expandable details; SVGs contain no scripts or fonts.
+click-through links and expandable details. GitHub theme fragments select the
+variant using the page theme, independently of the OS preference. Transparent
+canvases and subtle stage tints blend with the page; SVGs contain no scripts or fonts.
 """
 from dataclasses import dataclass
 from html import escape
@@ -106,8 +108,8 @@ DIAGRAMS = (
 )
 
 THEMES = {
-    "light": dict(bg="#ffffff", card="#f6f8fa", ink="#1f2328", muted="#59636e", border="#d1d9e0", line="#818b98", accents=("#0969da", "#8250df", "#1a7f37", "#9a6700", "#0969da")),
-    "dark": dict(bg="#0d1117", card="#151b23", ink="#f0f6fc", muted="#b1bac4", border="#3d444d", line="#9198a1", accents=("#79c0ff", "#d2a8ff", "#7ee787", "#e3b341", "#79c0ff")),
+    "light": dict(tint_opacity="0.07", ink="#1f2328", muted="#59636e", border="#d1d9e0", line="#818b98", accents=("#0969da", "#8250df", "#1a7f37", "#9a6700", "#0969da")),
+    "dark": dict(tint_opacity="0.10", ink="#f0f6fc", muted="#b1bac4", border="#3d444d", line="#9198a1", accents=("#79c0ff", "#d2a8ff", "#7ee787", "#e3b341", "#79c0ff")),
 }
 
 
@@ -120,7 +122,6 @@ def render(diagram: Diagram, theme: dict) -> str:
         '<defs>',
         f'<marker id="arrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L8 4L0 8Z" fill="{theme["line"]}"/></marker>',
         '</defs>',
-        f'<rect width="{WIDTH}" height="{height}" rx="12" fill="{theme["bg"]}"/>',
         '<g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif">',
     ]
 
@@ -139,7 +140,7 @@ def render(diagram: Diagram, theme: dict) -> str:
         x = MARGIN + i * (card_width + GAP)
         centers.append(x + card_width / 2)
         accent = theme["accents"][i]
-        parts.append(f'<rect x="{x:g}" y="{TOP}" width="{card_width:g}" height="{CARD_HEIGHT}" rx="10" fill="{theme["card"]}" stroke="{theme["border"]}"/>')
+        parts.append(f'<rect x="{x:g}" y="{TOP}" width="{card_width:g}" height="{CARD_HEIGHT}" rx="10" fill="{accent}" fill-opacity="{theme["tint_opacity"]}" stroke="{accent}" stroke-opacity="0.45"/>')
         text(x + 16, TOP + 27, stage.label, 12, accent, 650)
         text(x + 16, TOP + 59, stage.title, 23, weight=650)
         if stage.parallel:

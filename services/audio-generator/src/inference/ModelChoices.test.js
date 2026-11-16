@@ -6,7 +6,7 @@ import { toAnthropicMessages, createAnthropicChatCompletion } from './AnthropicC
 import { createSamsarExternalChatCompletion, createOpenRouterChatCompletion, getOpenRouterModelForInferenceRequest, getConfiguredInferenceProviders } from './SamsarExternalInferenceAdapter.js';
 import { normalizeInferenceModel } from './InferenceModels.js';
 
-const models = ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1'];
+const models = ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2'];
 const messages = [{ role: 'user', content: [{ type: 'text', text: 'Describe this image' }, { type: 'image_url', image_url: { url: 'https://example.com/frame.png' } }] }];
 for (const model of models) for (const effort of ['high', 'xhigh']) {
   test(`${model}/${effort} preserves model and effort through normalization and OpenRouter vision`, async (t) => {

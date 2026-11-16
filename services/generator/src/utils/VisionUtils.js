@@ -9,7 +9,7 @@ import { getAccessibleMediaUrlForProvider } from './MediaReferenceUtils.js';
 import { getCurrentEnvironment } from './Environment.js';
 import {
   DEFAULT_INFERENCE_MODEL,
-  GEMINI_4_ARGON_INFERENCE_MODEL,
+  GEMINI_4_CARBON_INFERENCE_MODEL,
   KIMI_K3_INFERENCE_MODEL,
   QWEN_38_INFERENCE_MODEL,
   getDefaultUserInferenceModel,
@@ -119,7 +119,7 @@ function resolveVisionInferenceModel(userInferenceModel = getDefaultUserInferenc
     return KIMI_K3_INFERENCE_MODEL;
   }
   return isGeminiInferenceModel(userInferenceModel)
-    ? GEMINI_4_ARGON_INFERENCE_MODEL
+    ? GEMINI_4_CARBON_INFERENCE_MODEL
     : normalizeInferenceModel(userInferenceModel || DEFAULT_INFERENCE_MODEL);
 }
 

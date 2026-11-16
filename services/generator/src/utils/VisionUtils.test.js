@@ -49,7 +49,7 @@ test('local Docker native Claude describes mounted images without a tunnel reque
     });
     return new Response(JSON.stringify({ content: [{ type: 'text', text: 'A local frame.' }] }));
   });
-  for (const model of ['claude-fable-5.1-xhigh', 'claude-opus-5.5']) {
+  for (const model of ['claude-fable-5.2-xhigh', 'claude-opus-5.5']) {
     assert.equal(await __testOnly__.getDescriptionForImage('/assets_v2/frame.png', 'cinematic', model, '16:9', '', 'native'), 'A local frame.');
   }
   assert.equal(requests.length, 2);
@@ -59,7 +59,7 @@ test('OpenRouter vision models use operation-specific reasoning-safe output limi
   assert.equal(__testOnly__.getExternalVisionMaxTokens('QWEN3.8', 'description'), 16384);
   assert.equal(__testOnly__.getExternalVisionMaxTokens('QWEN3.8', 'score'), 8192);
   assert.equal(__testOnly__.getExternalVisionMaxTokens('gpt-6-astra', 'description'), 16384);
-  assert.equal(__testOnly__.getExternalVisionMaxTokens('gemini-4-argon', 'score'), 8192);
+  assert.equal(__testOnly__.getExternalVisionMaxTokens('gemini-4-carbon', 'score'), 8192);
   assert.equal(__testOnly__.getExternalVisionMaxTokens('kimi-k3', 'description'), undefined);
 });
 

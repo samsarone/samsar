@@ -73,7 +73,7 @@ test('supported models exposes additive branched metadata without narrowing prod
     production.body.INFERENCE_MODELS
       .filter((model) => model.isBranchedInferenceModel)
       .map((model) => model.value),
-    ['gpt-6-astra', 'claude-opus-5.5', 'gpt-6.1-sol', 'claude-fable-5.1'],
+    ['gpt-6-astra', 'claude-opus-5.5', 'gpt-6.1-sol', 'claude-fable-5.2'],
   );
   assert.deepEqual(
     production.body.IMAGE_MODELS

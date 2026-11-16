@@ -24,7 +24,7 @@ test('aggregates mixed GPT, Gemini, and Qwen inference receipts at 1.2x', () => 
     {
       stage: 'narrative_generation',
       attempt: 2,
-      model: 'gemini-4-argon',
+      model: 'gemini-4-carbon',
       provider: 'google',
       usageMetadata: {
         promptTokenCount: 100_000,

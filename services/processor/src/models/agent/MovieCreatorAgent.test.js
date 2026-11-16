@@ -11,7 +11,7 @@ import {
 import { extractThemeForImageListAndPrompt } from '../movie_session/ad_creator/AdAgentPrompts.js';
 import { extractNarrativeFromInputPayload } from '../movie_session/image_list_to_video/system/NarrativeBuilder.js';
 
-for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1']) {
+for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
   for (const effort of ['high', 'xhigh']) {
     test(`translated speech repair uses ${model}/${effort} and retains source meaning instructions across retries`, async () => {
       const requests = [];

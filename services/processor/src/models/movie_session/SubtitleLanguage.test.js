@@ -341,7 +341,7 @@ test('subtitle rerun backfills translated speech without a speaker label', async
 
   const result = await backfillTranslatedSubtitleMetadataForRerun([speechLayer], {
     sessionSubtitleLanguage: 'fr',
-    inferenceModel: 'gemini-4-argon',
+    inferenceModel: 'gemini-4-carbon',
     translateSpeech: async (_text, _targetLanguage, _inferenceModel, options) => {
       assert.equal(options.speakerCharacterName, '');
       return {
@@ -377,7 +377,7 @@ test('subtitle rerun detects an unknown source language while backfilling metada
     sessionSpeechLanguage: 'auto',
     sessionSubtitleLanguage: 'en',
     sessionTranslationRequired: true,
-    inferenceModel: 'gemini-4-argon',
+    inferenceModel: 'gemini-4-carbon',
     translateSpeech: async (_text, targetLanguage, _inferenceModel, options) => {
       assert.equal(targetLanguage, 'English');
       assert.equal(options.detectSourceLanguage, true);
@@ -552,7 +552,7 @@ test('explicit-language translation covers narrator and character speech only', 
       subtitleLanguage: 'th',
       subtitleLanguageString: 'Thai',
       subtitleLanguageExplicit: true,
-      inferenceModel: 'gemini-4-argon',
+      inferenceModel: 'gemini-4-carbon',
       translateSpeech: async (text, targetLanguage, inferenceModel, options) => {
         calls.push({ text, targetLanguage, inferenceModel, options });
         return resultByText.get(text);
@@ -586,8 +586,8 @@ test('explicit-language translation covers narrator and character speech only', 
     targetLanguage,
     inferenceModel,
   })), [
-    { text: 'Welcome.', targetLanguage: 'Thai', inferenceModel: 'gemini-4-argon' },
-    { text: 'Let us go.', targetLanguage: 'Thai', inferenceModel: 'gemini-4-argon' },
+    { text: 'Welcome.', targetLanguage: 'Thai', inferenceModel: 'gemini-4-carbon' },
+    { text: 'Let us go.', targetLanguage: 'Thai', inferenceModel: 'gemini-4-carbon' },
   ]);
   assert.ok(calls.every((call) => call.options.includeSubtitleAlignment === true));
   assert.deepEqual(
@@ -719,7 +719,7 @@ test('auto Japanese speech with explicit Japanese subtitles keeps exact narrator
     subtitleLanguage: 'ja',
     subtitleLanguageString: 'Japanese',
     subtitleLanguageExplicit: true,
-    inferenceModel: 'gemini-4-argon',
+    inferenceModel: 'gemini-4-carbon',
     translateSpeech: async () => ({
       text: 'LLM must not replace same-language text.',
       sourceLanguage: 'jpn',

@@ -4,9 +4,8 @@
 <defs>
 <marker id="arrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L8 4L0 8Z" fill="#818b98"/></marker>
 </defs>
-<rect width="1200" height="268" rx="12" fill="#ffffff"/>
 <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif">
-<rect x="12" y="22" width="271.5" height="188" rx="10" fill="#f6f8fa" stroke="#d1d9e0"/>
+<rect x="12" y="22" width="271.5" height="188" rx="10" fill="#0969da" fill-opacity="0.07" stroke="#0969da" stroke-opacity="0.45"/>
 <text x="28" y="49" font-size="12" font-weight="650" fill="#0969da" text-anchor="start">01 / INPUT</text>
 <text x="28" y="81" font-size="23" font-weight="650" fill="#1f2328" text-anchor="start">Reference</text>
 <text x="28" y="111" font-size="16" font-weight="400" fill="#1f2328" text-anchor="start">Text or structured item</text>
@@ -15,7 +14,7 @@
 <path d="M28 173 H267.5" stroke="#d1d9e0"/>
 <text x="28" y="196" font-size="14" font-weight="400" fill="#59636e" text-anchor="start">API client</text>
 <path d="M283.5 120 H313.5" fill="none" stroke="#818b98" stroke-width="1.6" marker-end="url(#arrow)"/>
-<rect x="313.5" y="22" width="271.5" height="188" rx="10" fill="#f6f8fa" stroke="#d1d9e0"/>
+<rect x="313.5" y="22" width="271.5" height="188" rx="10" fill="#8250df" fill-opacity="0.07" stroke="#8250df" stroke-opacity="0.45"/>
 <text x="329.5" y="49" font-size="12" font-weight="650" fill="#8250df" text-anchor="start">02 / CONSTRAIN</text>
 <text x="329.5" y="81" font-size="23" font-weight="650" fill="#1f2328" text-anchor="start">Match rules</text>
 <text x="329.5" y="111" font-size="16" font-weight="400" fill="#1f2328" text-anchor="start">Normalize the reference</text>
@@ -24,7 +23,7 @@
 <path d="M329.5 173 H569" stroke="#d1d9e0"/>
 <text x="329.5" y="196" font-size="14" font-weight="400" fill="#59636e" text-anchor="start">processor</text>
 <path d="M585 120 H615" fill="none" stroke="#818b98" stroke-width="1.6" marker-end="url(#arrow)"/>
-<rect x="615" y="22" width="271.5" height="188" rx="10" fill="#f6f8fa" stroke="#d1d9e0"/>
+<rect x="615" y="22" width="271.5" height="188" rx="10" fill="#1a7f37" fill-opacity="0.07" stroke="#1a7f37" stroke-opacity="0.45"/>
 <text x="631" y="49" font-size="12" font-weight="650" fill="#1a7f37" text-anchor="start">03 / REUSE</text>
 <text x="631" y="81" font-size="23" font-weight="650" fill="#1f2328" text-anchor="start">Shared search</text>
 <text x="631" y="111" font-size="16" font-weight="400" fill="#1f2328" text-anchor="start">Embed the reference</text>
@@ -33,7 +32,7 @@
 <path d="M631 173 H870.5" stroke="#d1d9e0"/>
 <text x="631" y="196" font-size="14" font-weight="400" fill="#59636e" text-anchor="start">embeddings + MongoDB</text>
 <path d="M886.5 120 H916.5" fill="none" stroke="#818b98" stroke-width="1.6" marker-end="url(#arrow)"/>
-<rect x="916.5" y="22" width="271.5" height="188" rx="10" fill="#f6f8fa" stroke="#d1d9e0"/>
+<rect x="916.5" y="22" width="271.5" height="188" rx="10" fill="#9a6700" fill-opacity="0.07" stroke="#9a6700" stroke-opacity="0.45"/>
 <text x="932.5" y="49" font-size="12" font-weight="650" fill="#9a6700" text-anchor="start">04 / RETURN</text>
 <text x="932.5" y="81" font-size="23" font-weight="650" fill="#1f2328" text-anchor="start">Matches</text>
 <text x="932.5" y="111" font-size="16" font-weight="400" fill="#1f2328" text-anchor="start">Compact ID + score pairs</text>

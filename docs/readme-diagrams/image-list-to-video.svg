@@ -4,9 +4,8 @@
 <defs>
 <marker id="arrow" viewBox="0 0 8 8" refX="8" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L8 4L0 8Z" fill="#818b98"/></marker>
 </defs>
-<rect width="1200" height="268" rx="12" fill="#ffffff"/>
 <g font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif">
-<rect x="12" y="22" width="211.2" height="188" rx="10" fill="#f6f8fa" stroke="#d1d9e0"/>
+<rect x="12" y="22" width="211.2" height="188" rx="10" fill="#0969da" fill-opacity="0.07" stroke="#0969da" stroke-opacity="0.45"/>
 <text x="28" y="49" font-size="12" font-weight="650" fill="#0969da" text-anchor="start">01 / PREPARE</text>
 <text x="28" y="81" font-size="23" font-weight="650" fill="#1f2328" text-anchor="start">Source images</text>
 <text x="28" y="111" font-size="16" font-weight="400" fill="#1f2328" text-anchor="start">Fetch and validate URLs</text>
@@ -15,7 +14,7 @@
 <path d="M28 173 H207.2" stroke="#d1d9e0"/>
 <text x="28" y="196" font-size="14" font-weight="400" fill="#59636e" text-anchor="start">processor</text>
 <path d="M223.2 120 H253.2" fill="none" stroke="#818b98" stroke-width="1.6" marker-end="url(#arrow)"/>
-<rect x="253.2" y="22" width="211.2" height="188" rx="10" fill="#f6f8fa" stroke="#d1d9e0"/>
+<rect x="253.2" y="22" width="211.2" height="188" rx="10" fill="#8250df" fill-opacity="0.07" stroke="#8250df" stroke-opacity="0.45"/>
 <text x="269.2" y="49" font-size="12" font-weight="650" fill="#8250df" text-anchor="start">02 / PLAN</text>
 <text x="269.2" y="81" font-size="23" font-weight="650" fill="#1f2328" text-anchor="start">Creative plan</text>
 <text x="269.2" y="111" font-size="16" font-weight="400" fill="#1f2328" text-anchor="start">Describe source images</text>
@@ -24,7 +23,7 @@
 <path d="M269.2 173 H448.4" stroke="#d1d9e0"/>
 <text x="269.2" y="196" font-size="14" font-weight="400" fill="#59636e" text-anchor="start">processor builder</text>
 <path d="M464.4 120 H494.4" fill="none" stroke="#818b98" stroke-width="1.6" marker-end="url(#arrow)"/>
-<rect x="494.4" y="22" width="211.2" height="188" rx="10" fill="#f6f8fa" stroke="#d1d9e0"/>
+<rect x="494.4" y="22" width="211.2" height="188" rx="10" fill="#1a7f37" fill-opacity="0.07" stroke="#1a7f37" stroke-opacity="0.45"/>
 <text x="510.4" y="49" font-size="12" font-weight="650" fill="#1a7f37" text-anchor="start">03 / PARALLEL</text>
 <text x="510.4" y="81" font-size="23" font-weight="650" fill="#1f2328" text-anchor="start">Prepare media</text>
 <path d="M520.4 105 H513.4 V151 H520.4 M680.6 105 H687.6 V151 H680.6" fill="none" stroke="#1a7f37" stroke-width="1.5"/>
@@ -34,7 +33,7 @@
 <path d="M510.4 173 H689.6" stroke="#d1d9e0"/>
 <text x="510.4" y="196" font-size="14" font-weight="400" fill="#59636e" text-anchor="start">image + audio workers</text>
 <path d="M705.6 120 H735.6" fill="none" stroke="#818b98" stroke-width="1.6" marker-end="url(#arrow)"/>
-<rect x="735.6" y="22" width="211.2" height="188" rx="10" fill="#f6f8fa" stroke="#d1d9e0"/>
+<rect x="735.6" y="22" width="211.2" height="188" rx="10" fill="#9a6700" fill-opacity="0.07" stroke="#9a6700" stroke-opacity="0.45"/>
 <text x="751.6" y="49" font-size="12" font-weight="650" fill="#9a6700" text-anchor="start">04 / FINISH</text>
 <text x="751.6" y="81" font-size="23" font-weight="650" fill="#1f2328" text-anchor="start">Animate</text>
 <text x="751.6" y="111" font-size="16" font-weight="400" fill="#1f2328" text-anchor="start">Animate eligible scenes</text>
@@ -43,7 +42,7 @@
 <path d="M751.6 173 H930.8" stroke="#d1d9e0"/>
 <text x="751.6" y="196" font-size="14" font-weight="400" fill="#59636e" text-anchor="start">AI video + listener</text>
 <path d="M946.8 120 H976.8" fill="none" stroke="#818b98" stroke-width="1.6" marker-end="url(#arrow)"/>
-<rect x="976.8" y="22" width="211.2" height="188" rx="10" fill="#f6f8fa" stroke="#d1d9e0"/>
+<rect x="976.8" y="22" width="211.2" height="188" rx="10" fill="#0969da" fill-opacity="0.07" stroke="#0969da" stroke-opacity="0.45"/>
 <text x="992.8" y="49" font-size="12" font-weight="650" fill="#0969da" text-anchor="start">05 / DELIVER</text>
 <text x="992.8" y="81" font-size="23" font-weight="650" fill="#1f2328" text-anchor="start">Render</text>
 <text x="992.8" y="111" font-size="16" font-weight="400" fill="#1f2328" text-anchor="start">Frames + audio mix</text>

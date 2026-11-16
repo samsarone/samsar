@@ -31,7 +31,8 @@ function harness() {
   const context = vm.createContext({
     createHash, normalizeAssistantContext,
     getDBConnectionString: async () => {},
-    assertVideoSessionEditableAccess: async (userId) => {
+    assertVideoSessionEditableAccess: async (userId, payload, options) => {
+      state.accessOptions = options;
       if (userId !== 'owner') throw Object.assign(new Error('Not editable'), { status: 404 });
       return structuredClone(session);
     },
@@ -167,6 +168,8 @@ test('stream snapshots enforce edit access and omit large image bytes and privat
   await assert.rejects(h.context.getAssistantStreamSnapshot('stranger', { id }), { status: 404 });
   await assert.rejects(h.context.getAssistantStreamSnapshot('owner', { id: 'invalid' }), { status: 400 });
   const snapshot = await h.context.getAssistantStreamSnapshot('owner', { id });
+  assert.equal(h.state.accessOptions.assistantConversationOnly, true);
+  assert.equal(h.state.accessOptions.markEdited, false);
   assert.equal(snapshot.sessionMessages[0].content[0].text, 'Review');
   assert.equal(snapshot.sessionMessages[0].content[1].type, 'input_image');
   assert.equal(snapshot.sessionMessages[0].content[1].image_url, undefined);

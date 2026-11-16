@@ -69,13 +69,13 @@
     },
     "googleCloud": {
       "enabled": false,
-      "gemini4ArgonModel": "gemini-4-argon",
+      "gemini4CarbonModel": "gemini-4-carbon",
       "projectId": "",
       "credentialsJsonB64": ""
     },
     "openrouter": {
       "enabled": false,
-      "gemini4ArgonModel": "google/gemini-4-argon"
+      "gemini4CarbonModel": "google/gemini-4-carbon"
     },
     "gmicloud": {
       "enabled": false,

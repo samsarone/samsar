@@ -1,4 +1,5 @@
 import PageSkeletonLoader from '../common/PageSkeletonLoader.jsx';
+import { DEFAULT_IMAGE_MODEL } from '../../utils/generationDefaults.mjs';
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
@@ -16,8 +17,8 @@ import ImageEditorToolbar from './ImageEditorToolbar.jsx';
 
 const PROCESSOR_API = import.meta.env.VITE_PROCESSOR_API;
 
-const DEFAULT_GENERATION_MODEL = 'NANOBANANA2';
-const DEFAULT_EDIT_MODEL = 'NANOBANANA2EDIT';
+const DEFAULT_GENERATION_MODEL = DEFAULT_IMAGE_MODEL;
+const DEFAULT_EDIT_MODEL = `${DEFAULT_IMAGE_MODEL}EDIT`;
 
 const getAspectRatioValue = (ratio) => {
   if (!ratio) return '1 / 1';

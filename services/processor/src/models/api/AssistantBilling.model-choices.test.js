@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { calculateAssistantCreditsFromUsage, calculateAssistantRequestBilling } from './AssistantBilling.js';
 for (const effort of ['high', 'xhigh']) for (const [model, input, output, cached, write, hour] of [
-  ['claude-fable-5.1', 10, 50, 0.25, 12.5, 20],
+  ['claude-fable-5.2', 8, 40, 0.2, 10, 16],
   ['claude-opus-5.5', 4, 20, 0.2, 5, 8],
   ['gpt-6.1-sol', 2, 10, 0.1, 2.5, 4],
 ]) {

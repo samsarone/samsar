@@ -361,14 +361,17 @@ export const ASSISTANT_MODEL_PRICES = [
     ]
   },
   {
-    key: "gemini-4-argon",
-    prices: [
-      {
-        operationType: "words",
-        tokens: 1000,
-        price: 6
-      },
-    ]
+    key: "gemini-4-carbon",
+    billing: "token_usage",
+    get prices() {
+      // Published provider USD / 1M tokens, converted at 100 credits/USD + 20%.
+      const rates = Date.now() >= Date.UTC(2026, 11, 1) ? [4, 0.2, 20] : [2, 0.1, 10];
+      return ['input_tokens', 'cached_input_tokens', 'output_tokens'].map((operationType, index) => ({
+        operationType,
+        tokens: 1_000_000,
+        price: rates[index] * 100 * 1.2,
+      }));
+    },
   }
 
 ]

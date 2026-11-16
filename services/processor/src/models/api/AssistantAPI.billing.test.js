@@ -40,7 +40,7 @@ function harness(model = 'gpt-6-astra', adapter = 'openrouter') {
   return { account, store, session, state, response, dependencies, charge, Sessions };
 }
 
-for (const [model, expectedCredits] of [['gpt-6-astra', 1.26], ['gemini-4-argon', 0.246], ['qwen3.8-max', 0.207], ['kimi-k3', 0.378], ['claude-opus-5.5', 0.492]]) {
+for (const [model, expectedCredits] of [['gpt-6-astra', 1.26], ['gemini-4-carbon', 0.246], ['qwen3.8-max', 0.207], ['kimi-k3', 0.378], ['claude-opus-5.5', 0.492]]) {
   for (const endpoint of ['session', 'external']) {
     test(`${endpoint} assistant ${model} applies 20% once and replays the saved response`, async () => {
       const h = harness(model);

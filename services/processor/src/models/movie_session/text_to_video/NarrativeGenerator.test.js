@@ -14,7 +14,7 @@ test('retries semantic narrative validation and reports usage for every inferenc
     prompt: 'Create a grounded history short.',
     duration: 20,
     videoGenerationModel: 'RUNWAYML',
-    inferenceModel: 'gemini-4-argon',
+    inferenceModel: 'gemini-4-carbon',
     videoTone: 'grounded',
     languageString: 'Thai',
     externalRequestContext: { sessionId: 'request-1', userId: 'user-1' },
@@ -29,7 +29,7 @@ test('retries semantic narrative validation and reports usage for every inferenc
         options.onInferenceResponse({
           stage: 'theme_generation',
           attempt: 1,
-          model: 'gemini-4-argon',
+          model: 'gemini-4-carbon',
           usage: { input_tokens: 10, output_tokens: 2 },
         });
         return { style: ['documentary'] };
@@ -48,7 +48,7 @@ test('retries semantic narrative validation and reports usage for every inferenc
         options.onInferenceResponse({
           stage: 'narrative_generation',
           attempt: 1,
-          model: 'gemini-4-argon',
+          model: 'gemini-4-carbon',
           usage: { input_tokens: 20, output_tokens: 5 },
         });
         return { semanticAttempt: narrativeCalls, scenes: [], sounds: [] };

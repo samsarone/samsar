@@ -2,6 +2,7 @@
 import { Schema,model } from 'mongoose';
 import { DEFAULT_LATIN_SUBTITLE_FONT, getSubtitleFontsForLanguage } from '../consts/SubtitleFonts.js';
 import { SUPPORTED_LANGUAGES } from '../consts/SupportedLanguages.js';
+import { DEFAULT_USER_INFERENCE_MODEL } from '../consts/InferenceModels.js';
 
 
 const UserAPIKey = new Schema({
@@ -157,11 +158,11 @@ const userSchema = new Schema({
   userApiKeys: [UserAPIKey],
   oauthRefreshTokens: [OAuthRefreshToken],
 
-  selectedInferenceModel: {type: String, default: 'gpt-6-astra'},
+  selectedInferenceModel: {type: String, default: DEFAULT_USER_INFERENCE_MODEL},
   selectedInferenceEffort: { type: String, enum: ['high', 'xhigh'], default: 'high' },
   selectedInferenceModelAuthorization: { type: String, enum: ['native', 'deployed'], default: 'native' }, // native uses local provider credentials; deployed uses Samsar API key fallback.
 
-  selectedAssistantModel: {type: String, default: 'gpt-6-astra'},
+  selectedAssistantModel: {type: String, default: DEFAULT_USER_INFERENCE_MODEL},
   selectedAssistantModelAuthorization: { type: String, enum: ['native', 'deployed'], default: 'native' }, // native uses local provider credentials; deployed uses Samsar API key fallback.
   assistantSystemPrompt: { type: String, default: null },
 
@@ -193,7 +194,7 @@ const userSchema = new Schema({
 
   speakerOptions: { type: SpeakerOptions, default: null },
 
-  agentVideoModel: { type: String, default: 'RUNWAYML'},
+  agentVideoModel: { type: String, default: 'KLINGIMGTOVID4'},
   agentVideoModelAuthorization: { type: String, enum: ['native', 'deployed'], default: 'native' }, // native uses local provider credentials; deployed uses Samsar API key fallback.
 
   agentImageModel: { type: String, default: 'GPTIMAGE2.5'},

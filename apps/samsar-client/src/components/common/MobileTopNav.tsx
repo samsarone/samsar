@@ -4,12 +4,13 @@ import { Suspense, lazy } from 'react';
 import axios from 'axios';
 import { useUser } from '../../contexts/UserContext';
 import CommonButton from './CommonButton.tsx';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAlertDialog } from '../../contexts/AlertDialogContext';
 import { IoMdLogIn } from 'react-icons/io';
 import { useColorMode } from '../../contexts/ColorMode.jsx';
 import './common.css';
 import { FaStar } from 'react-icons/fa6';
+import { FaCog } from 'react-icons/fa';
 import { getHeaders } from '../../utils/web.jsx';
 import BrandLogo from './BrandLogo.tsx';
 import { imageAspectRatioOptions } from '../../constants/ImageAspectRatios.js';
@@ -50,6 +51,7 @@ export default function MobileTopNav(props) {
   const isStudioEditor = location.pathname === '/video' || location.pathname.startsWith('/video/');
   const isAudioEditor = location.pathname.startsWith('/audio/studio');
   const isGenerationsView = location.pathname.startsWith('/generations');
+  const isCreatePage = location.pathname === '/create';
 
   const navShell =
     `border-b text-fg ${colorMode === 'dark' ? 'border-[#3a4050] bg-[#12141c]/94 shadow-[0_10px_28px_rgba(0,0,0,0.32)] backdrop-blur-xl' : 'bg-gradient-to-r from-[#e9edf7] via-[#dfe7f5] to-[#eef3fb] border-[#d7deef]'}`;
@@ -87,6 +89,15 @@ export default function MobileTopNav(props) {
 
   const { user, userFetching, userInitiated } = useUser();
   const navigate = useNavigate();
+  const createShortcut = !user?.isExternalUser ? (
+    <Link
+      to="/create"
+      aria-current={isCreatePage ? 'page' : undefined}
+      className={`inline-flex min-h-10 shrink-0 items-center justify-center rounded-full border px-3 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f6c453] ${isCreatePage
+        ? 'border-[#f6c453]/60 bg-[#f6c453]/15 text-fg'
+        : 'border-line-control bg-surface-raised text-fg-body hover:bg-surface-hover'}`}
+    >{uiText("Create")}</Link>
+  ) : null;
   const addNewVidGPTSession = onNewVidgenieSession || (() => {
     createBlankVidgenieSession(PROCESSOR_SERVER, getHeaders()).then(sessionId => {
       if (sessionId) navigate(`/vidgenie/${sessionId}`);
@@ -276,8 +287,14 @@ export default function MobileTopNav(props) {
       }
     }
     userProfile = (
-      <div className="flex items-center justify-end cursor-pointer" onClick={gotoUserAccount}>
-        <div className="flex flex-col text-left mr-2">
+      <div className="flex min-w-0 items-center justify-end">
+        <button
+          type="button"
+          onClick={gotoUserAccount}
+          aria-label={uiText("Account")}
+          className="inline-flex h-11 w-9 shrink-0 items-center justify-center rounded-lg text-fg transition hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f6c453] sm:hidden"
+        ><FaCog className="text-lg" /></button>
+        <div className="mr-2 hidden min-w-0 cursor-pointer flex-col text-left sm:flex" onClick={gotoUserAccount}>
           <div className="text-md max-w-[90px] whitespace-nowrap overflow-hidden text-ellipsis">
             <h1>{user.displayName ? user.displayName : user.email}</h1>
           </div>
@@ -321,7 +338,7 @@ export default function MobileTopNav(props) {
 
   let addSessionButton = <span />;
 
-  if (user && user._id) {
+  if (user && user._id && !isCreatePage) {
     addSessionButton = (
 
       <div className="">
@@ -354,6 +371,7 @@ export default function MobileTopNav(props) {
           <BrandLogo onClick={gotoHome} className={isGenerationsView ? '' : 'mt-1'} />
           {isGenerationsView && (
             <div className="flex min-w-0 items-center justify-end gap-2">
+              {createShortcut}
               <div className="text-xs inline-flex items-center">
                 {addSessionButton}
               </div>
@@ -362,11 +380,12 @@ export default function MobileTopNav(props) {
           )}
         </div>
         {!isGenerationsView && (
-          <div className="basis-2/3">
+          <div className="flex min-w-0 basis-2/3 items-center justify-end gap-2 pr-2">
+            {createShortcut}
             <div className="text-xs inline-flex items-center">
               <div>{addSessionButton}</div>
             </div>
-            <div className=" inline-flex float-right mr-2">{userProfile}</div>
+            <div className="inline-flex min-w-0">{userProfile}</div>
           </div>
         )}
         {isGenerationsView && (

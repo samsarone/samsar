@@ -3,8 +3,8 @@ import test from 'node:test';
 
 import {
   DEFAULT_INFERENCE_MODEL,
-  DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL,
-  GEMINI_4_ARGON_INFERENCE_MODEL,
+  DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL,
+  GEMINI_4_CARBON_INFERENCE_MODEL,
   GPT_56_SOL_XHIGH_INFERENCE_MODEL,
   GPT_56_SOL_REASONING_EFFORT,
   INFERENCE_MODEL_KEYS,
@@ -20,7 +20,7 @@ import {
   getPublicationMetadataInferenceSettings,
   getProviderModelForInferenceModel,
   isOpenAIInferenceModel,
-  isGeminiArgonProviderModel,
+  isGeminiCarbonProviderModel,
   isKimiInferenceModel,
   isQwenInferenceModel,
   normalizeGeminiProviderModel,
@@ -73,36 +73,36 @@ test('uses the session inference provider for publication metadata', () => {
     model: 'gpt-6-astra',
     reasoning: { effort: 'xhigh' },
   });
-  assert.deepEqual(getPublicationMetadataInferenceSettings('gemini-4-argon'), {
-    model: 'gemini-4-argon',
+  assert.deepEqual(getPublicationMetadataInferenceSettings('gemini-4-carbon'), {
+    model: 'gemini-4-carbon',
   });
   assert.deepEqual(getPublicationMetadataInferenceSettings('QWEN3.8'), {
     model: 'QWEN3.8',
   });
 });
 
-test('normalizes Gemini 4 Argon assistant model aliases to the current Vertex model', () => {
-  assert.equal(INFERENCE_MODEL_KEYS.GEMINI_4_ARGON, 'gemini-4-argon');
+test('normalizes Gemini 4 Carbon assistant model aliases to the current Vertex model', () => {
+  assert.equal(INFERENCE_MODEL_KEYS.GEMINI_4_CARBON, 'gemini-4-carbon');
   assert.equal(
-    INFERENCE_PROVIDER_MODEL_KEYS[INFERENCE_MODEL_KEYS.GEMINI_4_ARGON],
-    DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL,
+    INFERENCE_PROVIDER_MODEL_KEYS[INFERENCE_MODEL_KEYS.GEMINI_4_CARBON],
+    DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL,
   );
-  assert.equal(normalizeInferenceModel('gemini-4-argon'), GEMINI_4_ARGON_INFERENCE_MODEL);
-  assert.equal(normalizeInferenceModel('gemini-4-argon'), GEMINI_4_ARGON_INFERENCE_MODEL);
-  assert.equal(normalizeInferenceModel('gemini-4'), GEMINI_4_ARGON_INFERENCE_MODEL);
-  assert.equal(normalizeInferenceModel('gemini-4-argon'), GEMINI_4_ARGON_INFERENCE_MODEL);
-  assert.equal(normalizeInferenceModel('Gemini 4 Argon'), GEMINI_4_ARGON_INFERENCE_MODEL);
-  assert.equal(normalizeInferenceModel('GEMINI4'), GEMINI_4_ARGON_INFERENCE_MODEL);
-  assert.equal(normalizeInferenceModel('gemini4'), GEMINI_4_ARGON_INFERENCE_MODEL);
-  assert.equal(normalizeInferenceModel('Google Gemini 4 Argon'), GEMINI_4_ARGON_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('gemini-4-carbon'), GEMINI_4_CARBON_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('gemini-4-carbon'), GEMINI_4_CARBON_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('gemini-4'), GEMINI_4_CARBON_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('gemini-4-carbon'), GEMINI_4_CARBON_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('Gemini 4 Carbon'), GEMINI_4_CARBON_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('GEMINI4'), GEMINI_4_CARBON_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('gemini4'), GEMINI_4_CARBON_INFERENCE_MODEL);
+  assert.equal(normalizeInferenceModel('Google Gemini 4 Carbon'), GEMINI_4_CARBON_INFERENCE_MODEL);
 
-  assert.equal(getProviderModelForInferenceModel('gemini-4-argon'), DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL);
-  assert.equal(normalizeGeminiProviderModel('gemini-4-argon'), DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL);
-  assert.equal(normalizeGeminiProviderModel('gemini-4'), DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL);
-  assert.equal(getProviderModelForInferenceModel('Gemini 4 Argon'), DEFAULT_GEMINI_4_ARGON_VERTEX_MODEL);
-  assert.equal(getProviderModelForInferenceModel('gemini-4-argon-20261013'), 'gemini-4-argon-20261013');
-  assert.equal(isGeminiArgonProviderModel('gemini-4-argon-20261013'), true);
-  assert.equal(isGeminiArgonProviderModel('gemini-4-argonish'), false);
+  assert.equal(getProviderModelForInferenceModel('gemini-4-carbon'), DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL);
+  assert.equal(normalizeGeminiProviderModel('gemini-4-carbon'), DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL);
+  assert.equal(normalizeGeminiProviderModel('gemini-4'), DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL);
+  assert.equal(getProviderModelForInferenceModel('Gemini 4 Carbon'), DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL);
+  assert.equal(getProviderModelForInferenceModel('gemini-4-carbon-20261110'), 'gemini-4-carbon-20261110');
+  assert.equal(isGeminiCarbonProviderModel('gemini-4-carbon-20261110'), true);
+  assert.equal(isGeminiCarbonProviderModel('gemini-4-carbonish'), false);
 });
 
 test('normalizes Qwen aliases while selecting Qwen 3.8 Max by default', () => {

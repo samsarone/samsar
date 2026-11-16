@@ -67,11 +67,12 @@ test('native Claude switches to SSE and preserves cache accounting', async () =>
 
 test('native Gemini selects streaming endpoint and includes billed thinking tokens', async () => {
   const texts = [];
-  const result = await sendAssistantGeminiCompletionRequest(messages, 'gemini-4-argon', {
+  const result = await sendAssistantGeminiCompletionRequest(messages, 'gemini-4-carbon', {
     onText: text => texts.push(text), maxRetries: 0,
   }, {
     getGoogleCloudConfig: () => ({ projectId: 'test' }), getGoogleAccessToken: async () => 'token',
-    fetchImpl: async url => {
+    fetchImpl: async (url, init) => {
+      assert.equal(JSON.parse(init.body).generationConfig.thinkingConfig.thinkingLevel, 'HIGH');
       assert.match(url, /:streamGenerateContent\?alt=sse$/);
       return sse([{ candidates: [{ content: { parts: [{ text: 'Hello' }] }, finishReason: 'STOP' }],
         usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 4, thoughtsTokenCount: 2, totalTokenCount: 16 } }]);

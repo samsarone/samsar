@@ -35,7 +35,7 @@ mounted read-only and has this shape:
 
 The gateway-side allowlist currently understands these Samsar contracts:
 
-- inference/vision: `gpt-6-astra`, `gemini-4-argon`, `QWEN3.8`;
+- inference/vision: `gpt-6-astra`, `gemini-4-carbon`, `QWEN3.8`;
 - image generation: `GPTIMAGE2`, `SEEDREAM`, `NANOBANANA2`,
   `NANOBANANAPRO`;
 - image editing: `GPTIMAGE2EDIT`, `NANOBANANA2EDIT`,
@@ -57,6 +57,10 @@ inference/vision contract uses its corresponding inference model for vision,
 including `Qwen/Qwen3.8-Max` for both Qwen text and vision. If an optional
 vision mapping is absent, text remains available and a vision request gets a
 clear 400 response.
+
+Carbon text and vision use the exact `google/gemini-4-carbon` version. Calling
+services normalize legacy Argon request aliases to Carbon; gateway catalogs
+require the canonical Carbon key and verified Carbon upstream mappings.
 
 Media payloads keep Samsar's public request shape, then use strict per-model
 wire translations before GenBlaze submits them: GPT Image count becomes `n`;

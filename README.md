@@ -94,10 +94,8 @@ MinIO and Grafana bind to loopback and use generated credentials in `runtime/sec
 ## Architecture
 
 <a href="pages/architecture.md">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/readme-diagrams/architecture-dark.svg">
-    <img src="docs/readme-diagrams/architecture.svg" alt="Studio and SDK call the processor; workers consume MongoDB-backed jobs and use configured providers. The processor also calls providers directly for inference and embeddings. State and media storage are shared." width="1200">
-  </picture>
+  <img src="docs/readme-diagrams/architecture.svg#gh-light-mode-only" alt="Studio and SDK call the processor; workers consume MongoDB-backed jobs and use configured providers. The processor also calls providers directly for inference and embeddings. State and media storage are shared." width="1200">
+  <img src="docs/readme-diagrams/architecture-dark.svg#gh-dark-mode-only" alt="Studio and SDK call the processor; workers consume MongoDB-backed jobs and use configured providers. The processor also calls providers directly for inference and embeddings. State and media storage are shared." width="1200">
 </a>
 
 The **processor** owns authentication, sessions, billing, and job state. **Workers** coordinate generation and render media through configured adapters. MongoDB stores durable work and status; media lives in mounted volumes and the configured object store. Browsers retrieve local output through the processor or reverse proxy.
@@ -130,10 +128,8 @@ Expand a workflow for its overview. Select a diagram for the complete guide, or 
 <summary><strong>Text to video — prompt to narrated, rendered scenes</strong></summary>
 
 <a href="pages/text-to-video.md#docker-pipeline">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/readme-diagrams/text-to-video-dark.svg">
-    <img src="docs/readme-diagrams/text-to-video.svg" alt="Validate request → plan narrative → generate images, speech and music in parallel → animate and finish → render and deliver. Motion waits for initial media; eligible finishing jobs overlap." width="1200">
-  </picture>
+  <img src="docs/readme-diagrams/text-to-video.svg#gh-light-mode-only" alt="Validate request → plan narrative → generate images, speech and music in parallel → animate and finish → render and deliver. Motion waits for initial media; eligible finishing jobs overlap." width="1200">
+  <img src="docs/readme-diagrams/text-to-video-dark.svg#gh-dark-mode-only" alt="Validate request → plan narrative → generate images, speech and music in parallel → animate and finish → render and deliver. Motion waits for initial media; eligible finishing jobs overlap." width="1200">
 </a>
 
 [Request and plan](pages/text-to-video.md#request-and-plan) · [Parallel media](pages/text-to-video.md#parallel-media) · [Motion and finishing](pages/text-to-video.md#motion-and-finishing) · [Render and delivery](pages/text-to-video.md#render-and-delivery)
@@ -144,10 +140,8 @@ Expand a workflow for its overview. Select a diagram for the complete guide, or 
 <summary><strong>Image list to video — source images to a product or story video</strong></summary>
 
 <a href="pages/image-list-to-video.md#docker-pipeline">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/readme-diagrams/image-list-to-video-dark.svg">
-    <img src="docs/readme-diagrams/image-list-to-video.svg" alt="Prepare source images → plan scenes and CTA → prepare images and audio in parallel → animate eligible scenes → render and deliver. Generated terminal outros skip AI motion." width="1200">
-  </picture>
+  <img src="docs/readme-diagrams/image-list-to-video.svg#gh-light-mode-only" alt="Prepare source images → plan scenes and CTA → prepare images and audio in parallel → animate eligible scenes → render and deliver. Generated terminal outros skip AI motion." width="1200">
+  <img src="docs/readme-diagrams/image-list-to-video-dark.svg#gh-dark-mode-only" alt="Prepare source images → plan scenes and CTA → prepare images and audio in parallel → animate eligible scenes → render and deliver. Generated terminal outros skip AI motion." width="1200">
 </a>
 
 [Sources and plan](pages/image-list-to-video.md#sources-and-plan) · [Parallel media](pages/image-list-to-video.md#parallel-media) · [Motion and finishing](pages/image-list-to-video.md#motion-and-finishing) · [Render and delivery](pages/image-list-to-video.md#render-and-delivery)
@@ -158,10 +152,8 @@ Expand a workflow for its overview. Select a diagram for the complete guide, or 
 <summary><strong>Search — index once, query a reusable corpus</strong></summary>
 
 <a href="pages/search.md">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/readme-diagrams/search-dark.svg">
-    <img src="docs/readme-diagrams/search.svg" alt="Indexing: prepare and embed records, then store a reusable template. Querying: reuse its ID to search, filter, and optionally rerank results." width="1200">
-  </picture>
+  <img src="docs/readme-diagrams/search.svg#gh-light-mode-only" alt="Indexing: prepare and embed records, then store a reusable template. Querying: reuse its ID to search, filter, and optionally rerank results." width="1200">
+  <img src="docs/readme-diagrams/search-dark.svg#gh-dark-mode-only" alt="Indexing: prepare and embed records, then store a reusable template. Querying: reuse its ID to search, filter, and optionally rerank results." width="1200">
 </a>
 
 [Create an index](pages/search.md#create-an-index) · [Query](pages/search.md#query-search) · [Manage templates](pages/search.md#manage-templates) · [Retrieval fallbacks](pages/search.md#operational-notes)
@@ -172,10 +164,8 @@ Expand a workflow for its overview. Select a diagram for the complete guide, or 
 <summary><strong>Recommendations — find related items using the same index</strong></summary>
 
 <a href="pages/recommendations.md">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/readme-diagrams/recommendations-dark.svg">
-    <img src="docs/readme-diagrams/recommendations.svg" alt="Reference text or item → match rules → shared embedding search → compact ID and score matches. Reuses an existing index without LLM reranking." width="1200">
-  </picture>
+  <img src="docs/readme-diagrams/recommendations.svg#gh-light-mode-only" alt="Reference text or item → match rules → shared embedding search → compact ID and score matches. Reuses an existing index without LLM reranking." width="1200">
+  <img src="docs/readme-diagrams/recommendations-dark.svg#gh-dark-mode-only" alt="Reference text or item → match rules → shared embedding search → compact ID and score matches. Reuses an existing index without LLM reranking." width="1200">
 </a>
 
 [Inputs](pages/recommendations.md#required-input) · [Filters](pages/recommendations.md#optional-input) · [Usage](pages/recommendations.md#typical-flow) · [Differences from search](pages/recommendations.md#how-it-differs-from-search)

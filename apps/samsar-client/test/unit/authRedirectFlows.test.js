@@ -243,6 +243,13 @@ describe('existing account routing', () => {
     expect(state.initialPath).toHaveBeenCalledWith({ isStandaloneDeployment: true, hasTextToVideoPipeline: true });
     expect(state.resolveEntry).toHaveBeenCalledWith(expect.objectContaining({ search: '', defaultPath: '/vidgenie' }));
   });
+
+  it.each([false, true])('returns to the simple create page after signing in (standalone=%s)', async standalone => {
+    state.standalone = standalone;
+    await expect(resolvePostAuthDestination({ user: { _id: 'user' }, apiServer: '/api', redirect: '/create' })).resolves.toBe('/create');
+    expect(state.resolveEntry).not.toHaveBeenCalled();
+    expect(state.fetchConfig).not.toHaveBeenCalled();
+  });
   it('fails closed to Studio if standalone capability discovery fails', async () => {
     state.standalone = true;
     state.fetchConfig.mockRejectedValue(new Error('offline'));

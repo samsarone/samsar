@@ -59,6 +59,7 @@ vi.mock('../../src/components/image/ImageStudioLandingHome.jsx', () => ({ defaul
 vi.mock('../../src/components/audio/AudioStudioHome.jsx', () => ({ default: () => <div>Page: audio studio</div> }));
 vi.mock('../../src/components/external/ExternalStudioDashboard.jsx', () => ({ default: () => <div>Page: external studio</div> }));
 vi.mock('../../src/components/generations/GenerationsHome.jsx', () => ({ default: () => <div>Page: generations</div> }));
+vi.mock('../../src/components/landing/CreateLanding.jsx', () => ({ default: () => <div>Page: simple create</div> }));
 vi.mock('../../src/components/oneshot_editor/VidgenieSkeletonLoader.jsx', () => ({ default: () => <div>Loading Vidgenie page</div> }));
 vi.mock('../../src/components/video/util/StudioSkeletonLoader.jsx', () => ({ default: () => <div>Loading Studio page</div> }));
 
@@ -111,6 +112,23 @@ beforeEach(() => {
 });
 
 describe('routing lifecycle and single-use handoff regressions', () => {
+  it.each([false, true])('opens the additional create landing directly for guests (standalone=%s)', async standalone => {
+    scenario.standalone = standalone;
+    await mount('/create');
+    expect(location()).toBe('/create');
+    expect(screen.getByText('Page: simple create')).toBeVisible();
+    expect(scenario.resolvePostAuthDestination).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('opens the create landing for signed-in users without resuming a project (mobile=%s)', async mobile => {
+    scenario.mobile = mobile;
+    scenario.user = { _id: 'user-1' };
+    await mount('/create');
+    expect(location()).toBe('/create');
+    expect(screen.getByText('Page: simple create')).toBeVisible();
+    expect(scenario.resolvePostAuthDestination).not.toHaveBeenCalled();
+  });
+
   it.each(['/video/existing-project', '/vidgenie/existing-project'])('preserves %s after profile loading fails and allows retry', async (path) => {
     scenario.authToken = 'valid-token';
     scenario.userLoadFailed = true;

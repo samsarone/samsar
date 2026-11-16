@@ -286,7 +286,7 @@ test('Samsar is preferred ahead of OpenRouter for Qwen', () => {
     SAMSAR_API_KEY: 'samsar-key',
   }, () => {
     assert.equal(resolveConfiguredInferenceProvider('QWEN3.8'), DOCKER_INFERENCE_PROVIDER.SAMSAR);
-    for (const model of ['gemini-4-argon', 'gpt-6-astra']) {
+    for (const model of ['gemini-4-carbon', 'gpt-6-astra']) {
       assert.equal(resolveConfiguredInferenceProvider(model), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
     }
     assert.equal(getOpenRouterModelForInferenceRequest({
@@ -349,7 +349,7 @@ test('explicit deployed authorization overrides native credentials for every inf
     KIMI_K3_API_KEY: 'kimi-key',
     OPENAI_API_KEY: 'openai-key',
   }, () => {
-    for (const model of ['QWEN3.8', 'gemini-4-argon', 'kimi-k3', 'gpt-6-astra']) {
+    for (const model of ['QWEN3.8', 'gemini-4-carbon', 'kimi-k3', 'gpt-6-astra']) {
       assert.equal(shouldUseSamsarExternalInference({
         model,
         authorization: 'deployed',
@@ -364,7 +364,7 @@ test('explicit native authorization preserves Samsar fallback while provider cre
       model: 'QWEN3.8',
       authorization: 'native',
     }), true);
-    for (const model of ['gemini-4-argon', 'kimi-k3', 'gpt-6-astra']) {
+    for (const model of ['gemini-4-carbon', 'kimi-k3', 'gpt-6-astra']) {
       assert.equal(shouldUseSamsarExternalInference({
         model,
         authorization: 'native',
@@ -426,7 +426,7 @@ test('Qwen OpenRouter uses Qwen 3.8 Max for text and vision with bounded setting
     plugins: [{ id: 'existing-plugin' }],
   });
   await createOpenRouterChatCompletion({
-    model: 'gemini-4-argon',
+    model: 'gemini-4-carbon',
     messages: [{ role: 'user', content: 'hello' }],
   });
   await createOpenRouterChatCompletion({

@@ -86,3 +86,22 @@ it('keeps the full menu and project action usable on narrow screens', async () =
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expectDestinations();
 });
+
+it.each([
+  ['desktop', TopNav, 1280],
+  ['mobile', MobileTopNav, 375],
+])('keeps Create visible and opens the minimal header on %s', async (_, Nav, width) => {
+  await page.viewport(width, 812);
+  mount(Nav);
+  const createLink = page.getByRole('link', { name: 'Create', exact: true });
+  await expect.element(createLink).toBeVisible();
+  const bounds = createLink.element().getBoundingClientRect();
+  expect(bounds.left).toBeGreaterThanOrEqual(0);
+  expect(bounds.right).toBeLessThanOrEqual(width);
+  expect(document.querySelector('[data-app-top-nav]').scrollWidth).toBeLessThanOrEqual(width);
+  await createLink.click();
+  await expect.element(page.getByLabelText('Current route')).toHaveTextContent('/create');
+  await expect.element(createLink).toHaveAttribute('aria-current', 'page');
+  await expect.element(page.getByRole('button', { name: 'New Project', exact: true })).not.toBeInTheDocument();
+  await expect.element(page.getByRole('button', { name: 'Samsar Studio', exact: true })).toBeVisible();
+});

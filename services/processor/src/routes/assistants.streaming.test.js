@@ -56,3 +56,26 @@ test('opt-in polling rejects missing auth and propagates session access failures
   assert.equal(res.statusCode, 404);
   assert.equal(res.body.error, 'Session not found');
 });
+
+test('submission acknowledges the queue before a slow shared edit log so streaming can open', { timeout: 1000 }, async (t) => {
+  const routes = new Map();
+  let acknowledge, releaseLog, logStarted = false;
+  const acknowledged = new Promise(resolve => { acknowledge = resolve; });
+  const logPending = new Promise(resolve => { releaseLog = resolve; });
+  t.after(() => releaseLog());
+  const queued = { queryId: 'q', status: 'pending', stream: true };
+  vm.runInNewContext(source, {
+    express: { Router: () => ({ get() {}, post: (path, handler) => routes.set(path, handler) }) },
+    verifyUserAuth: () => 'owner',
+    createAssistantQueryRequest: async () => queued,
+    logSharedSessionEditOperation: async () => { logStarted = true; await logPending; },
+    console,
+  });
+  const res = { headersSent: false, json(body) { this.headersSent = true; this.body = body; acknowledge(); } };
+  const handling = routes.get('/submit_assistant_query')({ body: { id: 'session', stream: true }, headers: {}, get() {} }, res);
+  await acknowledged;
+  assert.equal(res.body, queued);
+  assert.equal(logStarted, true);
+  releaseLog();
+  await handling;
+});

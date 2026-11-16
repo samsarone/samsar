@@ -55,7 +55,7 @@ test('Gemini provider failures preserve HTTP status and provider code', async (t
 
   await assert.rejects(
     createGoogleGeminiChatCompletion({
-      model: 'gemini-4-argon',
+      model: 'gemini-4-carbon',
       messages: [{ role: 'user', content: 'hello' }],
     }),
     (error) => {
@@ -67,16 +67,16 @@ test('Gemini provider failures preserve HTTP status and provider code', async (t
   );
 });
 
-test('versioned Argon environment model keeps native sampling and trims trailing model turns', async (t) => {
+test('versioned Carbon environment model keeps native sampling and trims trailing model turns', async (t) => {
   const previousProject = process.env.GOOGLE_CLOUD_PROJECT;
-  const previousModel = process.env.GOOGLE_GEMINI_4_ARGON_MODEL;
+  const previousModel = process.env.GOOGLE_GEMINI_4_CARBON_MODEL;
   process.env.GOOGLE_CLOUD_PROJECT = 'argon-shape-project';
-  process.env.GOOGLE_GEMINI_4_ARGON_MODEL = 'gemini-4-argon-20261013';
+  process.env.GOOGLE_GEMINI_4_CARBON_MODEL = 'gemini-4-carbon-20261110';
   t.after(() => {
     if (previousProject === undefined) delete process.env.GOOGLE_CLOUD_PROJECT;
     else process.env.GOOGLE_CLOUD_PROJECT = previousProject;
-    if (previousModel === undefined) delete process.env.GOOGLE_GEMINI_4_ARGON_MODEL;
-    else process.env.GOOGLE_GEMINI_4_ARGON_MODEL = previousModel;
+    if (previousModel === undefined) delete process.env.GOOGLE_GEMINI_4_CARBON_MODEL;
+    else process.env.GOOGLE_GEMINI_4_CARBON_MODEL = previousModel;
   });
 
   let capturedUrl;
@@ -91,7 +91,7 @@ test('versioned Argon environment model keeps native sampling and trims trailing
   });
 
   await createGoogleGeminiChatCompletion({
-    model: 'gemini-4-argon',
+    model: 'gemini-4-carbon',
     messages: [
       { role: 'user', content: 'First prompt' },
       { role: 'assistant', content: 'Previous answer' },
@@ -102,7 +102,7 @@ test('versioned Argon environment model keeps native sampling and trims trailing
     thinking_level: 'HIGH',
   });
 
-  assert.match(capturedUrl, /models\/gemini-4-argon-20261013:generateContent$/);
+  assert.match(capturedUrl, /models\/gemini-4-carbon-20261110:generateContent$/);
   assert.deepEqual(capturedBody.contents.map(({ role }) => role), ['user']);
   assert.equal(capturedBody.generationConfig.temperature, undefined);
   assert.equal(capturedBody.generationConfig.topP, undefined);

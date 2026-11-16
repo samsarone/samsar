@@ -136,9 +136,11 @@ const IMAGE_GENERATION_PROVIDER_PENDING_TIMEOUT_MS = Math.max(
   Number(process.env.IMAGE_GENERATION_PROVIDER_PENDING_TIMEOUT_MS) || 20 * 60 * 1000
 );
 const IMAGE_FILTER_SCORE_CUTOFF = 50;
-const GROUNDED_IMAGE_FILTER_SCORE_CUTOFF = 60;
+const GROUNDED_IMAGE_FILTER_SCORE_CUTOFF = 65;
+const GROUNDED_IMAGE_RETRY_SCORE_CUTOFF = 50;
 const SCORE_ONLY_FILTER_FAILURES_BEFORE_RELAXATION = 2;
 const SCORE_ONLY_FILTER_RELAXED_CUTOFF = 50;
+const SCORE_ONLY_FILTER_FALLBACK_SCORE_CUTOFF = 42;
 const BRANCHED_IMAGE_FILTER_FALLBACK_SCORE_CUTOFF = 25;
 const IMAGE_FILTER_SCORE_RELAXATION_PER_GENERATION_FAILURE = 10;
 const MIN_IMAGE_FILTER_SCORE_CUTOFF = 35;
@@ -691,9 +693,12 @@ function getImageFilterScoreCutoff(videoTone, payload = {}) {
     return baseCutoff;
   }
 
+  const firstRetryCutoff = videoTone === 'grounded'
+    ? GROUNDED_IMAGE_RETRY_SCORE_CUTOFF
+    : baseCutoff - IMAGE_FILTER_SCORE_RELAXATION_PER_GENERATION_FAILURE;
   return Math.max(
     minCutoff,
-    baseCutoff - (generationFailureCount * IMAGE_FILTER_SCORE_RELAXATION_PER_GENERATION_FAILURE)
+    firstRetryCutoff - ((generationFailureCount - 1) * IMAGE_FILTER_SCORE_RELAXATION_PER_GENERATION_FAILURE)
   );
 }
 
@@ -711,14 +716,20 @@ function isBranchedVideoSession(sessionData = {}) {
 
 function getTerminalFilterFailurePolicy(videoTone, payload = {}, sessionData = {}) {
   const isBranchedSession = isBranchedVideoSession(sessionData);
+  const hasRepeatedScoreOnlyFailures = hasReachedScoreOnlyFilterRelaxation(payload);
+  let fallbackScoreCutoff = getScoreThresholdCutoff(videoTone, payload);
+  if (isBranchedSession) {
+    fallbackScoreCutoff = BRANCHED_IMAGE_FILTER_FALLBACK_SCORE_CUTOFF;
+  } else if (hasRepeatedScoreOnlyFailures) {
+    // Reuse a lower-scoring saved image only at terminal fallback after retries.
+    fallbackScoreCutoff = Math.min(fallbackScoreCutoff, SCORE_ONLY_FILTER_FALLBACK_SCORE_CUTOFF);
+  }
   return {
-    fallbackScoreCutoff: isBranchedSession
-      ? BRANCHED_IMAGE_FILTER_FALLBACK_SCORE_CUTOFF
-      : getScoreThresholdCutoff(videoTone, payload),
+    fallbackScoreCutoff,
     // The branched prune path preserves topology and retimes only paths that
     // reference the failed asset. Singular sessions retain their existing
     // score-only prune policy.
-    allowExpressLayerPrune: isBranchedSession || hasReachedScoreOnlyFilterRelaxation(payload),
+    allowExpressLayerPrune: isBranchedSession || hasRepeatedScoreOnlyFailures,
   };
 }
 

@@ -7,6 +7,7 @@ import { normalizeRerollLayerIndexes, getRerollCandidateLayers, getRerollLocalCr
 import { vidgenieAssistantContext } from '../../utils/assistantContext.js';
 import { getUiLanguage } from '../../utils/localization.js';
 import { normalizeKlingModelKey } from '../../utils/KlingModel.mjs';
+import { DEFAULT_TEXT_MODEL, DEFAULT_VIDEO_MODEL, DEFAULT_IMAGE_MODEL, resolvePreferredGenerationModelOption } from '../../utils/generationDefaults.mjs';
 import { useAssistantRequestGuard } from '../../hooks/useAssistantRequestGuard.js';
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { translateText as uiText } from '../../utils/localization.js';
@@ -213,7 +214,7 @@ const VIDGENIE_IMAGE_MODEL_LABELS = {
   'WAN2.7PRO': 'Wan2.7 Pro',
   [QWEN_IMAGE_3_PRO_MODEL_KEY]: 'Qwen Image 3.0 Pro',
 };
-const DEFAULT_VIDEO_GENERATION_MODEL = 'RUNWAYML';
+const DEFAULT_VIDEO_GENERATION_MODEL = DEFAULT_VIDEO_MODEL;
 const VIDGENIE_VIDEO_MODEL_ORDER = [
   'RUNWAYML',
   'VEO3.1I2V',
@@ -226,7 +227,7 @@ const VIDGENIE_VIDEO_MODEL_ORDER = [
   'HAPPYHORSEI2V',
 ];
 const VIDGENIE_VIDEO_MODEL_LABELS = {
-  get RUNWAYML() { return uiText("RunwayML Gen 4.5 (Default)"); },
+  get RUNWAYML() { return uiText("RunwayML Gen 4.5"); },
   'VEO3.1I2V': 'VEO3.1 I2V',
   'VEO3.1I2VFAST': 'VEO3.1 I2V Fast',
   COSMOS3SUPERI2V: 'Nvidia Cosmos 3',
@@ -275,7 +276,7 @@ const IMAGE_LIST_TO_VIDEO_VIDEO_MODEL_KEYS = [
   'HAPPYHORSEI2V',
   'CUSTOM_IMAGE_TO_VIDEO',
 ];
-const DEFAULT_INFERENCE_MODEL = 'gpt-6-astra';
+const DEFAULT_INFERENCE_MODEL = DEFAULT_TEXT_MODEL;
 const JSON_MODE_ASPECT_RATIOS = ['16:9', '9:16'];
 const JSON_MODE_VIDEO_MODEL_SUB_TYPES = ['anime', '3d_animation', 'clay', 'comic', 'cyberpunk'];
 const GENERATION_STEP_MODE_ONE_STEP = 'one_step';
@@ -410,15 +411,10 @@ function formatAllowedJsonValues(values) {
   return values.join(', ');
 }
 
-function findDefaultVideoModelOption(options = [], savedValue = '') {
-  const saved = savedValue ? options.find((model) => model.value === normalizeKlingModelKey(savedValue)) : null;
-  if (saved) return saved;
-
-  return (
-    options.find((model) => model.value === DEFAULT_VIDEO_GENERATION_MODEL) ||
-    options[0] ||
-    null
-  );
+function findDefaultVideoModelOption(options = [], savedValue = '', userValue = '') {
+  return resolvePreferredGenerationModelOption(options, {
+    savedValue, userValue, defaultValue: DEFAULT_VIDEO_GENERATION_MODEL, normalize: normalizeKlingModelKey,
+  });
 }
 
 function coerceSupportedInferenceModelKey(value) {
@@ -3382,27 +3378,28 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
 
   const [selectedImageModel, setSelectedImageModel] = useState(() => {
     const saved = localStorage.getItem('defaultVidGPTImageGenerationModel');
-    const found = stageImageModels.find((m) => m.value === saved);
-    return found || stageImageModels[0];
+    return resolvePreferredGenerationModelOption(stageImageModels, {
+      savedValue: saved, userValue: user?.agentImageModel, defaultValue: DEFAULT_IMAGE_MODEL,
+      normalize: normalizeStoredGPTImageModelKey,
+    });
   });
 
   useEffect(() => {
-    setSelectedImageModel((prev) => {
-      if (!stageImageModels.length) return null;
-      if (prev?.value) {
-        const existing = stageImageModels.find((m) => m.value === prev.value);
-        if (existing) return existing;
-      }
-
+    setSelectedImageModel(() => {
       const saved = localStorage.getItem('defaultVidGPTImageGenerationModel');
-      const found = stageImageModels.find((m) => m.value === saved);
-      return found || stageImageModels[0];
+      return resolvePreferredGenerationModelOption(stageImageModels, {
+        savedValue: saved, userValue: user?.agentImageModel, defaultValue: DEFAULT_IMAGE_MODEL,
+        normalize: normalizeStoredGPTImageModelKey,
+      });
     });
-  }, [stageImageModels]);
+  }, [stageImageModels, user?.agentImageModel]);
 
   const [selectedImageStyle, setSelectedImageStyle] = useState(() => {
     const saved = localStorage.getItem('defaultVidGPTImageGenerationModel');
-    const foundModel = stageImageModels.find((m) => m.value === saved) || stageImageModels[0];
+    const foundModel = resolvePreferredGenerationModelOption(stageImageModels, {
+      savedValue: saved, userValue: user?.agentImageModel, defaultValue: DEFAULT_IMAGE_MODEL,
+      normalize: normalizeStoredGPTImageModelKey,
+    });
     if (foundModel?.imageStyles?.length) {
       const savedStyle = readVidgeniePreferences().imageStyle;
       const style = foundModel.imageStyles.includes(savedStyle)
@@ -3499,36 +3496,26 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
 
   const [selectedVideoModel, setSelectedVideoModel] = useState(() => {
     const saved = localStorage.getItem(VIDGENIE_TEXT_VIDEO_MODEL_STORAGE_KEY);
-    return findDefaultVideoModelOption(expressVideoModels, saved);
+    return findDefaultVideoModelOption(expressVideoModels, saved, user?.agentVideoModel);
   });
 
   useEffect(() => {
     if (generationMode !== 'T2V' || !expressVideoModels.length) return;
 
-    setSelectedVideoModel((prev) => {
-      if (prev?.value) {
-        const existing = expressVideoModels.find((m) => m.value === normalizeKlingModelKey(prev.value));
-        if (existing) return existing;
-      }
-
+    setSelectedVideoModel(() => {
       const saved = localStorage.getItem(VIDGENIE_TEXT_VIDEO_MODEL_STORAGE_KEY);
-      return findDefaultVideoModelOption(expressVideoModels, saved);
+      return findDefaultVideoModelOption(expressVideoModels, saved, user?.agentVideoModel);
     });
-  }, [generationMode, expressVideoModels]);
+  }, [generationMode, expressVideoModels, user?.agentVideoModel]);
 
   useEffect(() => {
     if (generationMode !== 'I2V' || !imageListVideoModels.length) return;
 
-    setSelectedVideoModel((prev) => {
-      if (prev?.value) {
-        const existing = imageListVideoModels.find((m) => m.value === normalizeKlingModelKey(prev.value));
-        if (existing) return existing;
-      }
-
+    setSelectedVideoModel(() => {
       const saved = localStorage.getItem(VIDGENIE_IMAGE_LIST_VIDEO_MODEL_STORAGE_KEY);
-      return findDefaultVideoModelOption(imageListVideoModels, saved);
+      return findDefaultVideoModelOption(imageListVideoModels, saved, user?.agentVideoModel);
     });
-  }, [generationMode, imageListVideoModels]);
+  }, [generationMode, imageListVideoModels, user?.agentVideoModel]);
 
   // Video-model subtype (Pixverse or otherwise)
   const [selectedVideoModelSubType, setSelectedVideoModelSubType] = useState(() => {
@@ -3584,22 +3571,24 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
   // ─────────────────────────────────────────────────────────
   //  Persist selections to localStorage
   // ─────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (selectedImageModel?.value) {
-      localStorage.setItem('defaultVidGPTImageGenerationModel', selectedImageModel.value);
-      localStorage.setItem('defaultImageModel', selectedImageModel.value);
+  const handleImageModelChange = (model) => {
+    setSelectedImageModel(model);
+    if (model?.value) {
+      localStorage.setItem('defaultVidGPTImageGenerationModel', model.value);
+      localStorage.setItem('defaultImageModel', model.value);
     }
-  }, [selectedImageModel]);
+  };
 
-  useEffect(() => {
-    if (selectedVideoModel?.value) {
+  const handleVideoModelChange = (model) => {
+    setSelectedVideoModel(model);
+    if (model?.value) {
       const storageKey = generationMode === 'I2V'
         ? VIDGENIE_IMAGE_LIST_VIDEO_MODEL_STORAGE_KEY
         : VIDGENIE_TEXT_VIDEO_MODEL_STORAGE_KEY;
-      localStorage.setItem(storageKey, selectedVideoModel.value);
-      localStorage.setItem('defaultVideoModel', selectedVideoModel.value);
+      localStorage.setItem(storageKey, model.value);
+      localStorage.setItem('defaultVideoModel', model.value);
     }
-  }, [generationMode, selectedVideoModel]);
+  };
 
   useEffect(() => {
     if (selectedAspectRatioOption?.value) {
@@ -3625,7 +3614,9 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
       subtitleLanguage: selectedSubtitleLanguageOption?.value || '',
       isAdvancedOpen,
       advancedOptions,
-      inferenceModel: selectedInferenceModel?.value || '',
+      ...(userInitiated && !userFetching
+        ? { inferenceModel: selectedInferenceModel?.value || '' }
+        : {}),
       ...getHydratedInferenceEffortPreferenceUpdate(
         selectedInferenceEffort?.value,
         { userInitiated, userFetching },
@@ -6421,7 +6412,7 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
               <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                 <ModelAdapterSelect
                   value={requestImageModel}
-                  onChange={setSelectedImageModel}
+                  onChange={handleImageModelChange}
                   options={stageImageModels}
                   primaryAdapterByModel={primaryAdapterByModel}
                   isStandaloneDeployment={isStandaloneModelFilteringEnabled}
@@ -6465,7 +6456,7 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
                   <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                     <ModelAdapterSelect
                       value={requestVideoModel}
-                      onChange={setSelectedVideoModel}
+                      onChange={handleVideoModelChange}
                       options={expressVideoModels}
                       primaryAdapterByModel={primaryAdapterByModel}
                       isStandaloneDeployment={isStandaloneModelFilteringEnabled}
@@ -6518,7 +6509,7 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
                 <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                   <ModelAdapterSelect
                     value={requestVideoModel}
-                    onChange={setSelectedVideoModel}
+                    onChange={handleVideoModelChange}
                     options={imageListVideoModels}
                     primaryAdapterByModel={primaryAdapterByModel}
                     isStandaloneDeployment={isStandaloneModelFilteringEnabled}

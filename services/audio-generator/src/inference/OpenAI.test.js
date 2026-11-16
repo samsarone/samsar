@@ -364,7 +364,7 @@ for (const effort of ['high', 'xhigh']) {
   });
 }
 
-for (const model of ['claude-opus-5.5', 'claude-fable-5.1']) {
+for (const model of ['claude-opus-5.5', 'claude-fable-5.2']) {
   test(`speech prompt entry point forwards explicit ${model} effort`, async (t) => {
     await withEnvironment({ CURRENT_ENV: 'docker', SAMSAR_DEPLOYMENT_EDITION: 'standalone', ANTHROPIC_API_KEY: 'test-only' }, async () => {
       let sent;

@@ -37,14 +37,15 @@ import {
   prepareUserForVerifiedNewsletterSubscription,
 } from './Newsletter.js';
 import {
-  DEFAULT_INFERENCE_MODEL,
+  DEFAULT_USER_INFERENCE_MODEL,
   GPT_56_SOL_XHIGH_INFERENCE_MODEL,
   normalizeInferenceModel,
+  normalizeSupportedInferenceModel,
   normalizeInferenceReasoningEffort,
 } from '../consts/InferenceModels.js';
 import { isSetupAdminBootstrapEnabled, isStandaloneEdition } from '../utils/EnvironmentUtils.js';
 
-export const DEFAULT_TEXT_MODEL = DEFAULT_INFERENCE_MODEL;
+export const DEFAULT_TEXT_MODEL = DEFAULT_USER_INFERENCE_MODEL;
 export const API_KEY_USAGE_LIMIT_PERIODS = Object.freeze({
   MONTHLY: 'monthly',
   TOTAL: 'total',
@@ -69,7 +70,7 @@ function normalizeBackingTrackModel(value) {
 }
 
 export function normalizeAssistantModel(value) {
-  return normalizeInferenceModel(value);
+  return normalizeSupportedInferenceModel(value) || DEFAULT_TEXT_MODEL;
 }
 
 function getLegacyInferenceEffortFromModel(model) {
@@ -85,7 +86,7 @@ function getLegacyInferenceEffortFromModel(model) {
 }
 
 function normalizeUserInferencePreference(model, effort) {
-  const normalizedModel = normalizeInferenceModel(model);
+  const normalizedModel = normalizeSupportedInferenceModel(model) || DEFAULT_TEXT_MODEL;
   const isLegacyXHighModel = normalizedModel.endsWith('-xhigh');
   const explicitEffort = normalizeInferenceReasoningEffort(effort);
   const legacyModelEffort = getLegacyInferenceEffortFromModel(model);

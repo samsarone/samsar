@@ -863,7 +863,11 @@ export async function requestImageListToVideGeneration(userId, payload) {
       return totalDuration + (Number.isFinite(sceneDuration) && sceneDuration > 0 ? sceneDuration : 0);
     }, 0);
 
-    const musicTheme = await getMusicForTextTheme(themeJsonString, userInferenceModel, musicProvider);
+    const musicTheme = await getMusicForTextTheme(themeJsonString, userInferenceModel, musicProvider, {
+      originalPrompt: inputPrompt,
+      musicInstructions: payload.musicInstructions || payload.musicPrompt,
+      sessionId,
+    });
 
     const musicVolume = resolveExpressBackingTrackVolume(musicProvider);
 

@@ -37,13 +37,19 @@ router.post('/submit_assistant_query', async function(req, res) {
   }
   try {
     const response = await createAssistantQueryRequest(userId, payload);
+    // The client opens delivery after this acknowledgement. Logging a shared
+    // edit must not hold it behind an unrelated database write.
+    res.json(response);
     if (!payload.workspace) await logSharedSessionEditOperation(userId, payload, {
       operation: 'submit_assistant_query',
       category: 'generation',
       route: '/assistants/submit_assistant_query',
     });
-    res.json(response);
   } catch (error) {
+    if (res.headersSent) {
+      console.error('Unable to log assistant submission:', error);
+      return;
+    }
     if (error?.code === 'INSUFFICIENT_CREDITS') {
       res.status(402).send({ error: error.message });
       return;

@@ -63,6 +63,140 @@ function fixture(t) {
   return { job, session };
 }
 
+function baseVideoFixture(t, model = 'KLINGIMGTOVID4') {
+  const { job, session } = fixture(t);
+  job.set({ model, generationType: 'generate', status: 'PENDING',
+    generationId: 'accepted-base-video', submittedAdapter: 'fal', requestSubmitAt: new Date(),
+    startImage: 'https://cdn.example.com/original.png', prompt: '', fallbackStartImages: [],
+    numRetries: 0, dockerAdapterFailoverDisabled: true });
+  session.layers[0].set({ layerAiVideoType: 'scene', aiVideoLayer: null,
+    aiVideoGenerationStatus: 'PENDING', aiVideoGenerationPending: true,
+    hasAiVideoLayer: false, filterPasses: [] });
+  t.mock.method(AIVideoLayerGeneration, 'findById', () => ({ lean: async () => job.toObject() }));
+  t.mock.method(VideoSession, 'updateOne', async (_filter, update) => {
+    for (const [key, value] of Object.entries(update.$set)) {
+      if (key.startsWith('layers.$.')) session.layers[0].set(key.slice(9), value, { strict: false });
+      else session.set(key, value, { strict: false });
+    }
+    return { matchedCount: 1, modifiedCount: 1 };
+  });
+  t.mock.method(fal.queue, 'submit', async () => assert.fail('polling cannot submit a replacement job'));
+  return { job, session };
+}
+
+function moderationRejection() {
+  return Object.assign(new Error('Unprocessable Entity'), { name: 'ValidationError', status: 422,
+    body: { detail: [{ loc: ['body'], type: 'content_policy_violation',
+      msg: 'The content could not be processed because it contained material flagged by a content checker.',
+      categories: ['model_moderated'] }] } });
+}
+
+test('a raw Kling result 422 retains the moderation reason and reaches normal recovery without a fallback image', async t => {
+  const { job, session } = baseVideoFixture(t);
+  const error = moderationRejection();
+  t.mock.method(fal.queue, 'status', async () => ({ status: 'COMPLETED' }));
+  t.mock.method(fal.queue, 'result', async (_model, options) => {
+    assert.equal(options.requestId, 'accepted-base-video');
+    throw error;
+  });
+
+  await generatePendingAiVideoLayerRequests();
+  assert.equal(job.status, 'FAILED');
+  assert.equal(job.retryOnFail, true);
+  assert.equal(job.providerFailureDefinitive, true);
+  assert.equal(job.infrastructureFailure, false);
+  assert.equal(job.infrastructureFailureCode, null);
+  assert.equal(job.transientProviderErrorCount, 0);
+  assert.equal(job.generationId, 'accepted-base-video');
+  assert.equal(job.lastProviderFailureMessage, error.body.detail[0].msg);
+  assert.deepEqual(job.lastProviderFailureDetail, { status: 422, ...error.body });
+  assert.equal(session.get('providerNetworkFailure'), undefined);
+
+  await generatePendingAiVideoLayerRequests();
+  assert.equal(job.status, 'INIT');
+  assert.equal(job.numRetries, 1);
+  assert.equal(job.generationId, null);
+  assert.equal(job.get('aiVideoPromptOnlySameImageRetry'), true);
+  assert.equal(job.startImage, 'https://cdn.example.com/original.png');
+  assert.ok(job.nextAttemptAfter.getTime() > Date.now());
+  assert.equal(session.layers[0].aiVideoGenerationStatus, 'PENDING');
+  assert.equal(session.get('providerNetworkFailure'), undefined);
+});
+
+for (const [model, status] of [
+  ['KLINGIMGTOVID4', 401], ['KLINGIMGTOVID4', 403], ['KLINGIMGTOVID4', 404],
+  ['KLINGIMGTOVID4', 422], ['COSMOS3SUPERI2V', 401], ['HAPPYHORSEI2V', 403],
+]) {
+  test(`${model} status HTTP ${status} retains the accepted job without generation recovery`, async t => {
+    const { job, session } = baseVideoFixture(t, model);
+    session.isMovieGen = true;
+    t.mock.method(fal.queue, 'status', async () => {
+      throw Object.assign(new Error('Status lookup rejected'), { status,
+        body: { detail: [{ type: 'value_error', msg: 'Status lookup rejected' }] } });
+    });
+    t.mock.method(fal.queue, 'result', async () => assert.fail('failed status lookup cannot fetch a result'));
+    await generatePendingAiVideoLayerRequests();
+    assert.equal(job.retryOnFail, false);
+    assert.equal(job.providerFailureDefinitive, false);
+    assert.equal(job.infrastructureFailureCode, 'PROVIDER_POLL_REJECTED');
+    assert.equal(job.transientProviderErrorCount, 0);
+    assert.match(job.lastProviderFailureMessage, new RegExp(`HTTP ${status}`));
+    await generatePendingAiVideoLayerRequests();
+    assert.equal(job.status, 'FAILED');
+    assert.equal(job.numRetries, 0);
+    assert.equal(job.generationId, 'accepted-base-video');
+    assert.equal(job.infrastructureFailureFinalized, true);
+    assert.equal(session.get('providerNetworkFailure').code, 'PROVIDER_POLL_REJECTED');
+  });
+}
+
+test('a result authorization error does not enable prompt retries', async t => {
+  const { job } = baseVideoFixture(t);
+  t.mock.method(fal.queue, 'status', async () => ({ status: 'COMPLETED' }));
+  t.mock.method(fal.queue, 'result', async () => {
+    throw Object.assign(new Error('Unauthorized'), { status: 401 });
+  });
+  await generatePendingAiVideoLayerRequests();
+  assert.equal(job.retryOnFail, false);
+  assert.equal(job.providerFailureDefinitive, false);
+  assert.equal(job.infrastructureFailureCode, 'PROVIDER_POLL_REJECTED');
+  assert.match(job.lastProviderFailureMessage, /result retrieval rejected \(HTTP 401\)/);
+  assert.equal(job.generationId, 'accepted-base-video');
+});
+
+test('a raw Kling media-download 422 remains an infrastructure failure', async t => {
+  const { job, session } = baseVideoFixture(t);
+  t.mock.method(fal.queue, 'status', async () => ({ status: 'COMPLETED' }));
+  t.mock.method(fal.queue, 'result', async () => {
+    throw Object.assign(new Error('Failed to download file'), { status: 422,
+      body: { detail: [{ type: 'file_download_error', msg: 'Failed to download file' }] } });
+  });
+  await generatePendingAiVideoLayerRequests();
+  await generatePendingAiVideoLayerRequests();
+  assert.equal(job.retryOnFail, false);
+  assert.equal(job.generationId, 'accepted-base-video');
+  assert.equal(job.infrastructureFailureCode, 'PROVIDER_MEDIA_DOWNLOAD_FAILED');
+  assert.equal(session.get('providerNetworkFailure').code, 'PROVIDER_MEDIA_DOWNLOAD_FAILED');
+});
+
+for (const flag of ['providerOutputCompleted', 'videoBillingPending']) {
+  test(`${flag} prevents a delivery 422 from entering generation recovery`, async t => {
+    const { job, session } = baseVideoFixture(t);
+    const error = moderationRejection();
+    error[flag] = true;
+    t.mock.method(fal.queue, 'status', async () => ({ status: 'COMPLETED' }));
+    t.mock.method(fal.queue, 'result', async () => { throw error; });
+    await generatePendingAiVideoLayerRequests();
+    assert.equal(job.status, 'PENDING');
+    assert.equal(job.numRetries, 0);
+    assert.equal(job.generationId, 'accepted-base-video');
+    assert.equal(job.infrastructureFailureCode, undefined);
+    assert.equal(job.videoBillingError, 'Unprocessable Entity');
+    assert.ok(job.nextAttemptAfter.getTime() > Date.now());
+    assert.equal(session.get('providerNetworkFailure'), undefined);
+  });
+}
+
 test('a shared known outage defers every adapter before the submit attempt and recovers without a duplicate POST', async t => {
   const { job } = fixture(t);
   let submits = 0;
@@ -118,6 +252,53 @@ test('a DB failure after a claimed attempt leaves a scoped lease for safe identi
   assert.equal(job.rowLocked, true);
   assert.ok(job.requestOwner);
   assert.ok(job.requestLeaseExpiresAt);
+});
+
+for (const minutes of [14, 30, 31, 59]) {
+  test(`accepted lip-sync is still pending after ${minutes} minutes without submitting a replacement`, async t => {
+    const { job, session } = fixture(t);
+    job.set({ status: 'PENDING', generationId: 'accepted', submittedAdapter: 'fal',
+      requestSubmitAt: new Date(Date.now() - minutes * 60_000) });
+    let polls = 0;
+    t.mock.method(fal.queue, 'submit', async () => assert.fail('accepted polling cannot submit a replacement'));
+    t.mock.method(fal.queue, 'status', async (_model, options) => {
+      assert.equal(options.requestId, 'accepted');
+      polls++;
+      return { status: 'IN_PROGRESS' };
+    });
+    await pollForAIVideoCompletion(job);
+    assert.equal(polls, 1);
+    assert.equal(job.status, 'PENDING');
+    assert.equal(job.generationId, 'accepted');
+    assert.equal(job.submittedAdapter, 'fal');
+    assert.equal(job.numRetries, 0);
+    assert.equal(job.infrastructureFailure, undefined);
+    assert.equal(session.layers[0].lipSyncGenerationPending, true);
+    assert.equal(session.get('providerNetworkFailure'), undefined);
+  });
+}
+
+test('an overridden lip-sync deadline retains the accepted identity and reports its configured minutes', async t => {
+  const originalTimeoutMs = process.env.AI_VIDEO_LIP_SYNC_TIMEOUT_MS;
+  process.env.AI_VIDEO_LIP_SYNC_TIMEOUT_MS = String(45 * 60_000);
+  t.after(() => {
+    if (originalTimeoutMs === undefined) delete process.env.AI_VIDEO_LIP_SYNC_TIMEOUT_MS;
+    else process.env.AI_VIDEO_LIP_SYNC_TIMEOUT_MS = originalTimeoutMs;
+  });
+  const { job, session } = fixture(t);
+  job.set({ status: 'PENDING', generationId: 'accepted', submittedAdapter: 'fal',
+    requestSubmitAt: new Date(Date.now() - 46 * 60_000) });
+  t.mock.method(fal.queue, 'submit', async () => assert.fail('deadline cannot submit a replacement'));
+  t.mock.method(fal.queue, 'status', async () => assert.fail('deadline must stop polling'));
+  await pollForAIVideoCompletion(job);
+  assert.equal(job.status, 'FAILED');
+  assert.equal(job.generationId, 'accepted');
+  assert.equal(job.submittedAdapter, 'fal');
+  assert.equal(job.numRetries, 0);
+  assert.equal(job.infrastructureFailureCode, 'PROVIDER_NETWORK_WAIT_EXPIRED');
+  assert.equal(job.infrastructureFailureFinalized, true);
+  assert.match(session.layers[0].lipSyncVideoGenerationError, /45-minute lip-sync limit/);
+  assert.equal(session.get('providerNetworkFailure').providerRequestId, 'accepted');
 });
 
 test('accepted lip-sync poll outages exhaust a bounded budget while retaining the same ID and adapter', async t => {

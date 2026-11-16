@@ -80,7 +80,7 @@ describe('Vidgenie completed session models', () => {
     expect(field.querySelector('input')).toBeDisabled();
   }
 
-  it.each(['TEXT_TO_VIDEO', 'IMAGE_LIST_TO_VIDEO'])('shows the saved %s models instead of browser defaults', async (expressGenerationType) => {
+  it.each(['TEXT_TO_VIDEO', 'IMAGE_LIST_TO_VIDEO'])('shows saved %s models and migrates legacy Fable selections instead of browser defaults', async (expressGenerationType) => {
     localStorage.setItem('defaultVidGPTImageGenerationModel', 'GPTIMAGE2.5');
     localStorage.setItem('defaultVIdGPTVideoGenerationModel', 'RUNWAYML');
     localStorage.setItem('defaultVidgenieImageListVideoGenerationModel', 'RUNWAYML');
@@ -99,7 +99,7 @@ describe('Vidgenie completed session models', () => {
     expectModel('Image model', 'Seedream');
     expectModel('Video model', 'VEO3.1 I2V');
     fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
-    expect(screen.getByRole('combobox', { name: 'Claude model' })).toHaveValue('claude-fable-5.1');
+    expect(screen.getByRole('combobox', { name: 'Claude model' })).toHaveValue('claude-fable-5.2');
     expect(screen.getByRole('combobox', { name: 'Claude model' })).toBeDisabled();
     expectModel('Inference effort', 'xhigh');
     expect(localStorage.getItem('defaultVidGPTImageGenerationModel')).toBe('GPTIMAGE2.5');
@@ -131,10 +131,10 @@ describe('Vidgenie completed session models', () => {
     };
     completeSession({ expressGenerationInferenceModel: 'claude-fable-5.1', expressGenerationInferenceEffort: 'xhigh' });
     await mount();
-    expect(screen.getByText('Inference: Claude Fable 5.1')).toBeVisible();
+    expect(screen.getByText('Inference: Claude Fable 5.2')).toBeVisible();
     expandRequest();
     fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
-    expect(screen.getByRole('combobox', { name: 'Claude model' })).toHaveValue('claude-fable-5.1');
+    expect(screen.getByRole('combobox', { name: 'Claude model' })).toHaveValue('claude-fable-5.2');
     expectModel('Inference effort', 'xhigh');
   });
 

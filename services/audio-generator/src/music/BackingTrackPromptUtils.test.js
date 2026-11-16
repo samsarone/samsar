@@ -19,7 +19,7 @@ test('backing-track retry uses a session override before the saved user model', 
   assert.equal(await resolveBackingTrackRetryInferenceModel({
     request: {},
     session: { expressGenerationInferenceModel: 'QWEN3.8' },
-    user: { selectedInferenceModel: 'gemini-4-argon' },
+    user: { selectedInferenceModel: 'gemini-4-carbon' },
   }), 'QWEN3.8');
 });
 

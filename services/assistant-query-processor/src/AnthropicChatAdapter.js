@@ -3,7 +3,7 @@ import { inlineAnthropicVisionImages } from './AnthropicVisionImages.js';
 import { isClaudeModel, getClaudeProviderModel, getReasoningModelBase, resolveInferenceEffort } from './ReasoningModels.js';
 // Translates the internal OpenAI chat contract to Anthropic Messages and back.
 export { isClaudeModel };
-export const CLAUDE_FABLE_51_MODEL = 'claude-fable-5.1';
+export const CLAUDE_FABLE_52_MODEL = 'claude-fable-5.2';
 export const CLAUDE_OPUS_55_MODEL = 'claude-opus-5.5';
 export const ANTHROPIC_OPUS_55_MODEL = 'claude-opus-5-5';
 export const OPENROUTER_OPUS_55_MODEL = 'anthropic/claude-opus-5.5';

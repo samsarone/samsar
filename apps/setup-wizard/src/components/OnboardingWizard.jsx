@@ -231,13 +231,13 @@ const CAPABILITY_FAMILIES = {
     key: 'claude',
     label: 'Claude Opus / Fable',
     providerKeys: ['anthropic', 'openrouter', 'samsar'],
-    modelKeys: ['claude-opus-5.5', 'claude-fable-5.1'],
+    modelKeys: ['claude-opus-5.5', 'claude-fable-5.2'],
   },
   gemini: {
     key: 'gemini',
     label: 'Gemini',
     providerKeys: ['googleCloud', 'gmicloud', 'samsar', 'openrouter'],
-    modelKeys: ['gemini-4-argon'],
+    modelKeys: ['gemini-4-carbon'],
   },
   qwen: {
     key: 'qwen',
@@ -261,13 +261,13 @@ const CAPABILITY_FAMILIES = {
     key: 'claudeAssistant',
     label: 'Claude Opus / Fable Assistant',
     providerKeys: ['anthropic', 'openrouter', 'samsar'],
-    modelKeys: ['claude-opus-5.5', 'claude-fable-5.1'],
+    modelKeys: ['claude-opus-5.5', 'claude-fable-5.2'],
   },
   geminiAssistant: {
     key: 'geminiAssistant',
     label: 'Gemini Assistant',
     providerKeys: ['googleCloud', 'gmicloud', 'samsar', 'openrouter'],
-    modelKeys: ['gemini-4-argon'],
+    modelKeys: ['gemini-4-carbon'],
   },
   qwenAssistant: {
     key: 'qwenAssistant',

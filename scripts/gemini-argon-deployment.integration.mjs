@@ -64,7 +64,7 @@ after(async () => {
 
 for (const [provider, credentialField, variableName, credentialValue] of providerCases) {
   for (const credentialSource of ['direct', 'environment']) {
-    test(`${provider}: ${credentialSource} wizard credentials configure Argon for Docker inference and vision`, async (t) => {
+    test(`${provider}: ${credentialSource} wizard credentials configure Carbon for Docker inference and vision`, async (t) => {
       const credentials = credentialSource === 'direct'
         ? { [credentialField]: provider === 'googleCloud' ? JSON.stringify(googleCredentials) : credentialValue }
         : resolveProviderEnvironmentReferences({ [credentialField]: `$${variableName}` }, {
@@ -72,7 +72,7 @@ for (const [provider, credentialField, variableName, credentialValue] of provide
         }).credentials;
       const validation = { [provider]: { ok: true, provider, status: 'valid' } };
       const wizardAvailability = buildDockerAvailableModelsFromProviderResults(validation);
-      assert.equal(wizardAvailability.modelProviders['gemini-4-argon'], provider);
+      assert.equal(wizardAvailability.modelProviders['gemini-4-carbon'], provider);
       const payload = {
         credentials,
         deployment: { available: wizardAvailability },
@@ -85,10 +85,10 @@ for (const [provider, credentialField, variableName, credentialValue] of provide
       assert.equal(config.deploymentEdition, 'standalone');
       assert.equal(config.providers[provider].enabled, true);
       if (provider === 'openrouter') {
-        assert.equal(config.providers.openrouter.gemini4ArgonModel, 'google/gemini-4-argon');
+        assert.equal(config.providers.openrouter.gemini4CarbonModel, 'google/gemini-4-carbon');
       }
       if (provider === 'googleCloud') {
-        assert.equal(config.providers.googleCloud.gemini4ArgonModel, 'gemini-4-argon');
+        assert.equal(config.providers.googleCloud.gemini4CarbonModel, 'gemini-4-carbon');
       }
       await wizard.writeProviderSecrets(payload);
       await fs.mkdir(path.join(fixtureRoot, 'runtime/config'), { recursive: true });
@@ -97,18 +97,20 @@ for (const [provider, credentialField, variableName, credentialValue] of provide
         cwd: fixtureRoot, stdio: 'pipe', timeout: 10000,
       });
       const runtimeEnv = parseEnvironment(await fs.readFile(path.join(fixtureRoot, 'runtime/secrets/root.env'), 'utf8'));
+      assert.equal(runtimeEnv.GOOGLE_GEMINI_THINKING_LEVEL, 'HIGH');
+      assert.equal(runtimeEnv.OPENROUTER_GEMINI_REASONING_EFFORT, 'high');
       const available = JSON.parse(await fs.readFile(path.join(fixtureRoot, 'runtime/config/available-models.json'), 'utf8'));
-      assert.equal(available.modelProviders['gemini-4-argon'], provider);
+      assert.equal(available.modelProviders['gemini-4-carbon'], provider);
       assert.ok(!available.models.includes('gemini-3.1-pro'));
       assert.ok(available.actions.includes('chat'));
       assert.ok(available.actions.includes('assistant'));
       if (provider === 'googleCloud') {
-        assert.equal(runtimeEnv.GOOGLE_GEMINI_4_ARGON_MODEL, 'gemini-4-argon');
+        assert.equal(runtimeEnv.GOOGLE_GEMINI_4_CARBON_MODEL, 'gemini-4-carbon');
         assert.equal(runtimeEnv.GOOGLE_CLOUD_PROJECT, googleCredentials.project_id);
       } else {
         assert.equal(runtimeEnv[variableName], credentialValue);
       }
-      if (provider === 'openrouter') assert.equal(runtimeEnv.OPENROUTER_GEMINI_4_ARGON_MODEL, 'google/gemini-4-argon');
+      if (provider === 'openrouter') assert.equal(runtimeEnv.OPENROUTER_GEMINI_4_CARBON_MODEL, 'google/gemini-4-carbon');
 
       const originalEnv = process.env;
       process.env = { ...runtimeEnv,
@@ -145,7 +147,7 @@ for (const [provider, credentialField, variableName, credentialValue] of provide
                 { type: 'image_url', image_url: { url: 'data:image/png;base64,QUJD' } },
               ] : 'Describe a scene.' }];
               const request = { model: 'GEMINI4', messages, externalMaxRetries: 0, maxRetries: 0 };
-              assert.deepEqual(adapter.getConfiguredInferenceProviders('gemini-4-argon', request), [provider], service);
+              assert.deepEqual(adapter.getConfiguredInferenceProviders('gemini-4-carbon', request), [provider], service);
               if (provider === 'googleCloud') {
                 assert.equal(adapter.shouldUseSamsarExternalInference(request), false, service);
                 assert.equal(adapter.shouldUseOpenRouterInference(request), false, service);
@@ -155,7 +157,7 @@ for (const [provider, credentialField, variableName, credentialValue] of provide
               const result = provider === 'openrouter'
                 ? await adapter.createOpenRouterChatCompletion(request)
                 : await adapter.createSamsarExternalChatCompletion(request);
-              assert.equal(sent.model, provider === 'openrouter' ? 'google/gemini-4-argon' : 'gemini-4-argon', service);
+              assert.equal(sent.model, provider === 'openrouter' ? 'google/gemini-4-carbon' : 'gemini-4-carbon', service);
               assert.deepEqual(messages, originalMessages, service);
               assert.equal(result.choices[0].message.content, 'verified', service);
               if (vision) assert.ok(JSON.stringify(sent.messages).includes('QUJD'), service);

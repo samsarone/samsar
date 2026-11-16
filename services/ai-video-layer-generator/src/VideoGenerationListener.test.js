@@ -19,6 +19,7 @@ import {
   getInferenceModelForSession,
   getInferenceSettingsForSession,
   getMaxConcurrentGmiCloudVideoRequests,
+  getLipSyncTimeoutMs,
   getRetryLipSyncModel,
   getRetryPromptSeedAction,
   isTransientProviderError,
@@ -59,22 +60,36 @@ test('base AI-video completion marks the generated media as available', () => {
 
 test('accepted lip-sync requests have a bounded wait without resubmitting while still pending', () => {
   const submittedAt = new Date('2026-10-22T18:00:00Z');
-  const now = new Date('2026-10-22T18:20:00Z').getTime();
+  const submittedAtMs = submittedAt.getTime();
   for (const submittedAdapter of ['fal', 'samsar']) {
     const request = {
       model: 'SYNCLIPSYNC', submittedAdapter,
       generationId: 'accepted-request', requestSubmitAt: submittedAt,
     };
-    assert.equal(shouldFailStaleLipSyncProviderPoll(request, submittedAt.getTime() + 9 * 60_000), false);
-    assert.equal(shouldFailStaleLipSyncProviderPoll(request, now), true);
+    for (const minutes of [14, 30, 31, 59, 60]) {
+      assert.equal(shouldFailStaleLipSyncProviderPoll(request, submittedAtMs + minutes * 60_000, {}), false);
+    }
+    assert.equal(shouldFailStaleLipSyncProviderPoll(request, submittedAtMs + 60 * 60_000 + 1, {}), true);
   }
   assert.equal(shouldFailStaleLipSyncProviderPoll({
     model: 'SYNCLIPSYNC', submittedAdapter: 'fal', requestSubmitAt: submittedAt,
-  }, now), true);
+  }, submittedAtMs + 61 * 60_000, {}), true);
   assert.equal(shouldFailStaleLipSyncProviderPoll({
     model: 'CREATIFYLIPSYNC', submittedAdapter: 'fal',
     generationId: 'other-request', requestSubmitAt: submittedAt,
-  }, now), true);
+  }, submittedAtMs + 61 * 60_000, {}), true);
+});
+
+test('lip-sync polling accepts a positive finite timeout override and otherwise waits 60 minutes', () => {
+  const defaultTimeoutMs = 60 * 60_000;
+  for (const value of [undefined, '', 'invalid', '0', '-1', 'Infinity', 'NaN']) {
+    assert.equal(getLipSyncTimeoutMs({ AI_VIDEO_LIP_SYNC_TIMEOUT_MS: value }), defaultTimeoutMs);
+  }
+  const env = { AI_VIDEO_LIP_SYNC_TIMEOUT_MS: String(45 * 60_000) };
+  assert.equal(getLipSyncTimeoutMs(env), 45 * 60_000);
+  const request = { createdAt: new Date('2026-10-22T18:00:00Z') };
+  assert.equal(shouldFailStaleLipSyncProviderPoll(request, request.createdAt.getTime() + 45 * 60_000, env), false);
+  assert.equal(shouldFailStaleLipSyncProviderPoll(request, request.createdAt.getTime() + 45 * 60_000 + 1, env), true);
 });
 
 test('new AI-video queue rows survive provider capacity waits', () => {
@@ -380,11 +395,11 @@ test('Infinitezoom retries retain the resolved swirl and zoom strategy', () => {
 test('session inference override wins for express generation retries', async () => {
   assert.equal(await getInferenceModelForSession({
     expressGenerationInferenceModel: 'Qwen 3.8 Max',
-    inferenceModel: 'gemini-4-argon',
+    inferenceModel: 'gemini-4-carbon',
   }), 'QWEN3.8');
   assert.equal(await getInferenceModelForSession({
-    inferenceModel: 'gemini-4-argon',
-  }), 'gemini-4-argon');
+    inferenceModel: 'gemini-4-carbon',
+  }), 'gemini-4-carbon');
   assert.equal(await getInferenceModelForSession({
     expressGenerationInferenceModel: 'Kimi K3',
   }), 'kimi-k3');
@@ -392,7 +407,7 @@ test('session inference override wins for express generation retries', async () 
 
 test('request inference settings win over express session and account fallbacks', async () => {
   assert.deepEqual(await getInferenceSettingsForSession({
-    expressGenerationInferenceModel: 'gemini-4-argon',
+    expressGenerationInferenceModel: 'gemini-4-carbon',
     expressGenerationInferenceModelAuthorization: 'deployed',
   }, {
     inferenceModel: 'Qwen 3.8 Max',
@@ -406,7 +421,7 @@ test('request inference settings win over express session and account fallbacks'
 test('express session authorization wins over generic session authorization', async () => {
   assert.deepEqual(await getInferenceSettingsForSession({
     expressGenerationInferenceModel: 'Qwen 3.8 Max',
-    inferenceModel: 'gemini-4-argon',
+    inferenceModel: 'gemini-4-carbon',
     expressGenerationInferenceModelAuthorization: 'deployed',
     inferenceModelAuthorization: 'native',
   }), {
@@ -1066,7 +1081,7 @@ test('non-Mongo application errors are not treated as transient DB errors', () =
   assert.equal(isTransientMongoError(error), false);
 });
 
-for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.1']) {
+for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
   test(`${model} keeps explicit and persisted effort for video vision retries`, async () => {
     assert.deepEqual(await getInferenceSettingsForSession({
       inferenceModel: model, inferenceEffort: 'xhigh',

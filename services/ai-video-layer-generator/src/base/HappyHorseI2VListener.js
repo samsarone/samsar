@@ -1,4 +1,5 @@
 import { fal } from "@fal-ai/client";
+import { readProviderVideoResult } from '../utils/ProviderNetworkRecovery.js';
 
 const FAL_API_KEY = process.env.FAL_API_KEY;
 const HAPPY_HORSE_IMAGE_TO_VIDEO_LINK = "alibaba/happy-horse/v1.1/image-to-video";
@@ -68,9 +69,9 @@ export async function listenToPendingHappyHorseImgToVidRequests(payload) {
 
   const responseStatus = responseStatusData.status;
   if (responseStatus === 'COMPLETED') {
-    const result = await fal.queue.result(HAPPY_HORSE_IMAGE_TO_VIDEO_LINK, {
+    const result = await readProviderVideoResult(() => fal.queue.result(HAPPY_HORSE_IMAGE_TO_VIDEO_LINK, {
       requestId: generationId
-    });
+    }));
 
     return {
       responseStatus: 'COMPLETED',
