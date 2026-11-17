@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import VideoSession from '../schema/VideoSession.js';
 import User from '../schema/User.js';
-import { createGenerativeVideoAnimationsForFrames } from './AIVideoGenerator.js';
+import { createGenerativeVideoAnimationsForFrames, setSessionLayerAiVideoGenerationPending } from './AIVideoGenerator.js';
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 function deferred() {
@@ -21,7 +21,7 @@ function setup(t, concurrency = 2) {
   const state = {
     _id: 'session', userId: 'user', isExpressGeneration: true,
     expressGenerationPending: true, expressGenerativeVideoModel: 'KLINGIMGTOVID4',
-    expressGenerationInferenceModel: 'gpt-6-astra', aspectRatio: '16:9', framesPerSecond: 24,
+    expressGenerationInferenceModel: 'gpt-6.2-astra', aspectRatio: '16:9', framesPerSecond: 24,
     layers: [0, 1, 2].map(index => ({
       _id: `layer-${index}`, layerAiVideoType: 'narration', duration: 5,
       aiVideoGenerationStatus: 'INIT', prompt: `scene-${index}`,
@@ -35,7 +35,7 @@ function setup(t, concurrency = 2) {
   const camera = deferred();
   const events = [], queued = [];
   t.mock.method(VideoSession, 'findById', async () => structuredClone(state));
-  t.mock.method(User, 'findById', async () => ({ selectedInferenceModel: 'gpt-6-astra' }));
+  t.mock.method(User, 'findById', async () => ({ selectedInferenceModel: 'gpt-6.2-astra' }));
   const operations = {
     getDBConnectionString: async () => {},
     getTransitionListForLayerSceneDescriptions: async descriptions => {
@@ -148,3 +148,146 @@ test('failed prompt preparation preserves earlier queue work and leaves remainin
   assert.equal(f.state.layers[1].aiVideoGenerationStatus, 'INIT');
   assert.equal(f.state.layers[2].aiVideoGenerationStatus, 'INIT');
 });
+
+function matches(document, filter) {
+  return Object.entries(filter).every(([key, expected]) => {
+    const actual = document?.[key];
+    if (expected && typeof expected === 'object') {
+      if ('$ne' in expected) return actual !== expected.$ne;
+      if ('$in' in expected) return expected.$in.some(value => value === null ? actual == null
+        : value instanceof RegExp ? typeof actual === 'string' && value.test(actual) : actual === value);
+      if ('$elemMatch' in expected) return Array.isArray(actual) && actual.some(item => matches(item, expected.$elemMatch));
+    }
+    return actual === expected;
+  });
+}
+
+function applySet(document, fields, layerIndex = 0) {
+  for (const [key, value] of Object.entries(fields)) {
+    const parts = key.replace('layers.$.', `layers.${layerIndex}.`).split('.');
+    let target = document;
+    for (const part of parts.slice(0, -1)) target = target[part];
+    target[parts.at(-1)] = value;
+  }
+}
+
+function atomicSession(state, { beforeClaim, beforeTiming } = {}) {
+  const claims = [], timingWrites = [];
+  const Model = {
+    async findById() { return structuredClone(state); },
+    async findOneAndUpdate(filter, update) {
+      beforeClaim?.(state);
+      if (!matches(state, filter)) return null;
+      claims.push({ filter, update });
+      const layerIndex = state.layers.findIndex(layer => layer._id === filter.layers.$elemMatch._id);
+      applySet(state, update.$set, layerIndex);
+      return structuredClone(state);
+    },
+    async updateOne(filter, update) {
+      beforeTiming?.(state);
+      timingWrites.push({ filter, update });
+      applySet(state, update.$set);
+      return { matchedCount: 1 };
+    },
+  };
+  return { Model, claims, timingWrites, dependencies: { VideoSession: Model, getDBConnectionString: async () => {} } };
+}
+
+function claimState() {
+  return {
+    _id: 'session', expressGenerationPending: true,
+    layers: [{ _id: 'layer', layerAiVideoType: 'narration', aiVideoGenerationStatus: 'INIT',
+      aiVideoGenerationPending: false, hasAiVideoLayer: true, duration: 5, durationOffset: 0 }],
+    audioLayers: [],
+  };
+}
+
+for (const [name, update] of [
+  ['completed clip', { aiVideoGenerationStatus: 'COMPLETED', aiVideoLayer: 'finished.mp4' }],
+  ['new pending request', { aiVideoGenerationStatus: 'PENDING', aiVideoGenerationPending: true }],
+  ['usable remote clip with stale enable flag', { aiVideoRemoteLink: 'https://media.example/finished.mp4', hasAiVideoLayer: false }],
+]) {
+  test(`atomic pending claim cannot overwrite a ${name} appearing after validation`, async () => {
+    const state = claimState();
+    const f = atomicSession(state, { beforeClaim: current => Object.assign(current.layers[0], update) });
+    const result = await setSessionLayerAiVideoGenerationPending({ videoSessionId: 'session', layerId: 'layer', duration: 8 }, f.dependencies);
+    assert.equal(result, undefined);
+    assert.deepEqual(f.claims, []);
+    assert.deepEqual(f.timingWrites, []);
+    for (const [field, value] of Object.entries(update)) assert.equal(state.layers[0][field], value);
+  });
+}
+
+test('two listeners can claim and enqueue an unfinished AI-video layer only once', async t => {
+  const f = setup(t);
+  for (const index of [1, 2]) Object.assign(f.state.layers[index], {
+    aiVideoGenerationStatus: 'COMPLETED', aiVideoLayer: `saved-${index}.mp4`,
+  });
+  const atomic = atomicSession(f.state);
+  f.operations.setSessionLayerAiVideoGenerationPending = payload => setSessionLayerAiVideoGenerationPending(payload, atomic.dependencies);
+  const first = f.run();
+  const second = f.run();
+  f.camera.resolve();
+  f.prompts[0].resolve('motion-0');
+  await Promise.all([first, second]);
+  assert.equal(atomic.claims.length, 1);
+  assert.equal(f.queued.length, 1);
+  assert.equal(f.queued[0].layerId, 'layer-0');
+  assert.equal(f.state.layers[0].aiVideoGenerationStatus, 'PENDING');
+  assert.equal(f.state.layers[1].aiVideoLayer, 'saved-1.mp4');
+  assert.equal(f.state.layers[2].aiVideoLayer, 'saved-2.mp4');
+});
+
+test('retiming an unfinished scene preserves another scene and audio completed by their workers', async () => {
+  const state = claimState();
+  state.layers.push({ _id: 'other', duration: 5, durationOffset: 5, aiVideoGenerationStatus: 'PENDING' });
+  state.audioLayers.push({ _id: 'speech', connectedLayerId: 'layer', generationType: 'speech', duration: 3,
+    generationStatus: 'PENDING', startTime: 0, endTime: 3 });
+  const f = atomicSession(state, { beforeTiming: current => {
+    Object.assign(current.layers[1], { aiVideoGenerationStatus: 'COMPLETED', aiVideoGenerationPending: false,
+      aiVideoLayer: 'freshly-completed.mp4' });
+    Object.assign(current.audioLayers[0], { generationStatus: 'COMPLETED', audio: 'fresh-speech.mp3' });
+  } });
+  const result = await setSessionLayerAiVideoGenerationPending({ videoSessionId: 'session', layerId: 'layer', duration: 8 }, f.dependencies);
+  assert.ok(result);
+  assert.equal(state.layers[0].duration, 8);
+  assert.equal(state.layers[1].durationOffset, 8);
+  assert.equal(state.layers[1].aiVideoGenerationStatus, 'COMPLETED');
+  assert.equal(state.layers[1].aiVideoLayer, 'freshly-completed.mp4');
+  assert.equal(state.audioLayers[0].generationStatus, 'COMPLETED');
+  assert.equal(state.audioLayers[0].audio, 'fresh-speech.mp3');
+  assert.equal(state.audioLayers[0].startTime, 2.5);
+  assert.equal(Object.hasOwn(f.timingWrites[0].update.$set, 'layers'), false);
+  assert.equal(Object.hasOwn(f.timingWrites[0].update.$set, 'audioLayers'), false);
+});
+
+test('actual local and remote AI clips are preserved even with stale INIT or disabled flags', async t => {
+  const f = setup(t);
+  Object.assign(f.state.layers[0], { hasAiVideoLayer: false, aiVideoLayer: 'keep-local.mp4' });
+  Object.assign(f.state.layers[1], { hasAiVideoLayer: false, aiVideoRemoteLink: 'https://media.example/keep.mp4' });
+  const task = f.run();
+  f.camera.resolve(); f.prompts[2].resolve('motion-2');
+  await task;
+  assert.deepEqual(f.queued.map(item => item.layerId), ['layer-2']);
+  assert.equal(f.state.layers[0].aiVideoLayer, 'keep-local.mp4');
+  assert.equal(f.state.layers[1].aiVideoRemoteLink, 'https://media.example/keep.mp4');
+});
+
+test('the AI-video enable flag alone does not suppress a missing clip', async () => {
+  const state = claimState();
+  const f = atomicSession(state);
+  assert.equal(state.layers[0].hasAiVideoLayer, true);
+  assert.ok(await setSessionLayerAiVideoGenerationPending({ videoSessionId: 'session', layerId: 'layer', duration: 5 }, f.dependencies));
+  assert.equal(f.claims.length, 1);
+});
+
+for (const initialStatus of ['init', ' INIT ', '', '   ', null, undefined]) {
+  test(`legacy ${JSON.stringify(initialStatus)} initial status remains eligible for one atomic claim`, async () => {
+    const state = claimState();
+    state.layers[0].aiVideoGenerationStatus = initialStatus;
+    const f = atomicSession(state);
+    assert.ok(await setSessionLayerAiVideoGenerationPending({ videoSessionId: 'session', layerId: 'layer', duration: 5 }, f.dependencies));
+    assert.equal(f.claims.length, 1);
+    assert.equal(state.layers[0].aiVideoGenerationStatus, 'PENDING');
+  });
+}

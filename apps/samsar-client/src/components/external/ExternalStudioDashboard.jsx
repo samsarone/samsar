@@ -10,6 +10,7 @@ import { getHeaders } from '../../utils/web.jsx';
 import { useDeploymentModelAvailability } from '../../hooks/useDeploymentModelAvailability.js';
 import { filterOptionsForDeploymentModelValues } from '../../utils/deploymentProviders.js';
 import { isVideoModelAllowedForDeploymentScope } from '../../utils/videoModelAvailability.mjs';
+import { KLING_IMAGE_V4_MODEL_KEY } from '../../utils/KlingImageModel.mjs';
 import {
   QWEN_IMAGE_3_PRO_MODEL_KEY,
   isImageModelAllowedForDeploymentScope,
@@ -25,6 +26,7 @@ const TEXT_MODELS = [
   { get label() { return uiText("Seedance 1.5"); }, value: 'SEEDANCEI2V' },
   { get label() { return uiText("Seedance 2.0"); }, value: 'SEEDANCE2.0I2V' },
   { get label() { return uiText("Seedance 2.5"); }, value: 'SEEDANCE2.5I2V' },
+  { get label() { return uiText("Seedance 2.5 Flash"); }, value: 'SEEDANCE2.5FLASHI2V' },
   { get label() { return uiText("Kling 4"); }, value: 'KLINGIMGTOVID4' },
   { get label() { return uiText("Custom Image to Video"); }, value: 'CUSTOM_IMAGE_TO_VIDEO' },
 ];
@@ -32,12 +34,13 @@ const TEXT_MODELS = [
 const IMAGE_MODELS = [
   { get label() { return uiText("GPTImage 2.6"); }, value: 'GPTIMAGE2.5' },
   { get label() { return uiText("NanoBanana Pro"); }, value: 'NANOBANANAPRO' },
-  { get label() { return uiText("Seedream"); }, value: 'SEEDREAM' },
+  { get label() { return uiText("Seedream 5.5"); }, value: 'SEEDREAM' },
   { get label() { return uiText("Wan2.7 Pro"); }, value: 'WAN2.7PRO' },
   {
     get label() { return uiText("Qwen Image 3.0 Pro"); },
     value: QWEN_IMAGE_3_PRO_MODEL_KEY,
   },
+  { get label() { return uiText("Kling Image 4"); }, value: KLING_IMAGE_V4_MODEL_KEY },
 ];
 
 const IMAGE_LIST_VIDEO_MODELS = [
@@ -47,6 +50,7 @@ const IMAGE_LIST_VIDEO_MODELS = [
   { get label() { return uiText("Seedance 1.5"); }, value: 'SEEDANCEI2V' },
   { get label() { return uiText("Seedance 2.0"); }, value: 'SEEDANCE2.0I2V' },
   { get label() { return uiText("Seedance 2.5"); }, value: 'SEEDANCE2.5I2V' },
+  { get label() { return uiText("Seedance 2.5 Flash"); }, value: 'SEEDANCE2.5FLASHI2V' },
   { get label() { return uiText("Kling 4"); }, value: 'KLINGIMGTOVID4' },
   { get label() { return uiText("RunwayML Gen 4.5"); }, value: 'RUNWAYML' },
   { get label() { return uiText("Custom Image to Video"); }, value: 'CUSTOM_IMAGE_TO_VIDEO' },
@@ -72,6 +76,7 @@ function formatCredits(value) {
 }
 
 function getDurationOptionsForModel(model) {
+  if (model === 'SEEDANCE2.5FLASHI2V') return [5, 10, 15, 20, 25, 30];
   return model === 'SEEDANCE2.5I2V' ? SEEDANCE_25_DURATION_OPTIONS : DURATION_OPTIONS;
 }
 

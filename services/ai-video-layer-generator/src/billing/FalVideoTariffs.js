@@ -8,7 +8,7 @@ import { falSoundEffectTariff } from './FalSoundEffectTariffs.js';
 // Keep the selected rate in each submitted receipt so a later deploy cannot
 // reprice a completed request. These URLs are the Fal model cards checked on
 // 2026-10-23; unsupported configurations must fail before queue.submit.
-export const FAL_VIDEO_TARIFF_VERSION = '2026-11-07';
+export const FAL_VIDEO_TARIFF_VERSION = '2026-11-16';
 const SNAPSHOT_2026_10_23 = '2026-10-23';
 const card = endpoint => `https://fal.ai/models/${endpoint}`;
 const entry = (endpoint, unit, rateUsd, verifiedOn = SNAPSHOT_2026_10_23) => Object.freeze({
@@ -54,12 +54,17 @@ const FAL_VIDEO_TARIFFS_2026_10_23 = Object.freeze({
   'SEEDANCE2.5I2V': entry('bytedance/seedance-2.5/image-to-video', 'thousandVideoTokens', 0.0214),
 });
 
-export const FAL_VIDEO_TARIFF_VERSIONS = Object.freeze({
-  '2026-10-23': FAL_VIDEO_TARIFFS_2026_10_23,
-  '2026-11-07': Object.freeze({ ...FAL_VIDEO_TARIFFS_2026_10_23,
+const FAL_VIDEO_TARIFFS_2026_11_07 = Object.freeze({ ...FAL_VIDEO_TARIFFS_2026_10_23,
     MAGIDISTILLED: entry('fal-ai/magi-distilled/image-to-video', 'video', 0.32, '2026-10-24'),
     KLINGIMGTOVID4: entry('kling/v4/image-to-video', 'second', 0.157, '2026-11-07'),
     KLINGTXTTOVID4: entry('kling/v4/text-to-video', 'second', 0.157, '2026-11-07'),
+});
+
+export const FAL_VIDEO_TARIFF_VERSIONS = Object.freeze({
+  '2026-10-23': FAL_VIDEO_TARIFFS_2026_10_23,
+  '2026-11-07': FAL_VIDEO_TARIFFS_2026_11_07,
+  '2026-11-16': Object.freeze({ ...FAL_VIDEO_TARIFFS_2026_11_07,
+    'SEEDANCE2.5FLASHI2V': entry('bytedance/seedance-2.5/flash/image-to-video', 'thousandVideoTokens', 0.014, '2026-11-16'),
   }),
   '2026-10-24': Object.freeze({ ...FAL_VIDEO_TARIFFS_2026_10_23,
     // The current listener does not send num_frames, resolution, or steps.

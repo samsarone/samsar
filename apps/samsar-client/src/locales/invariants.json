@@ -25,7 +25,7 @@
   "ElevenLabs",
   "FLUX.2 Klein 4B",
   "Fable",
-  "GPT 6 Astra",
+  "GPT 6.2 Astra",
   "GPT 6.1 Sol",
   "GPTImage 2.6",
   "Garamond",
@@ -42,6 +42,7 @@
   "Jennifer",
   "Kimi K3",
   "Kling 4",
+  "Kling Image 4",
   "Latent Sync",
   "Lucida Console",
   "Lyria 3",
@@ -78,5 +79,7 @@
   "Verdana",
   "VidGenie",
   "Wan2.7 Pro",
-  "you@example.com"
+  "you@example.com",
+  "Seedance 2.5 Flash",
+  "Seedream 5.5"
 ]

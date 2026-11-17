@@ -1,4 +1,5 @@
 import { normalizeKlingModelKey, isKlingV4Model, validateKlingV4Duration } from '../../utils/KlingModel.js';
+import { isSeedanceFlashModel, normalizeSeedanceFlashVideoOptions } from '../../utils/SeedanceFlash.js';
 import AIVideoLayerGeneration from '../../schema/AIVideoLayerGeneration.js';
 import { prepareVideoRequestBilling } from './VideoRequestBilling.js';
 import { requestRenderLumaVideo } from './Luma.js';
@@ -146,6 +147,9 @@ async function assertLayerCanQueueAiVideoGeneration(payload = {}) {
 
 export async function requestGenerateCustomAIVideo(userId, payload) {
   payload = { ...payload, model: normalizeKlingModelKey(payload?.model) };
+  if (isSeedanceFlashModel(payload.model)) {
+    payload = { ...payload, ...normalizeSeedanceFlashVideoOptions(payload) };
+  }
   if (isKlingV4Model(payload.model)) {
     payload.duration = validateKlingV4Duration(payload.duration ?? 5);
     payload.generateAudio = false;
@@ -218,6 +222,7 @@ export async function requestGenerateCustomAIVideo(userId, payload) {
     payload.model === 'SEEDANCEI2V' ||
     payload.model === 'SEEDANCE2.0I2V' ||
     payload.model === 'SEEDANCE2.5I2V' ||
+    payload.model === 'SEEDANCE2.5FLASHI2V' ||
     payload.model === 'HAPPYHORSEI2V'
   ) {
     await requestRenderGenericVideo(payload);

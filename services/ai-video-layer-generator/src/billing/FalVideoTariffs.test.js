@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildFalVideoSubmissionReceipt, FAL_VIDEO_TARIFFS,
+import { buildFalVideoSubmissionReceipt, FAL_VIDEO_TARIFFS, FAL_VIDEO_TARIFF_VERSION,
   FAL_VIDEO_TARIFF_VERSIONS, calculateFalVideoUsd,
   sealFalVideoSubmissionReceipt } from './FalVideoTariffs.js';
 import { calculateVideoCallCredits } from './VideoPricing.js';
@@ -15,7 +15,7 @@ test('every supported Fal video tariff identifies its exact endpoint and a dated
   for (const [model, tariff] of Object.entries(FAL_VIDEO_TARIFFS)) {
     assert.ok(tariff.endpoint, model);
     assert.equal(tariff.source, `https://fal.ai/models/${tariff.endpoint}`);
-    assert.equal(tariff.verifiedOn, model.endsWith('TOVID4') ? '2026-11-07' : model === 'MAGIDISTILLED' ? '2026-10-24' : '2026-10-23');
+    assert.equal(tariff.verifiedOn, model === 'SEEDANCE2.5FLASHI2V' ? '2026-11-16' : model.endsWith('TOVID4') ? '2026-11-07' : model === 'MAGIDISTILLED' ? '2026-10-24' : '2026-10-23');
   }
 });
 
@@ -67,7 +67,7 @@ test('hosted adapter seals before submit; pipeline, lip sync, and standalone byp
   };
   await sealFalVideoSubmissionReceipt(hosted, 'fal', persist,
     { SAMSAR_DEPLOYMENT_EDITION: 'production' });
-  assert.equal(hosted.videoBillingNativeReceipt.falVideoTariffVersion, '2026-11-07');
+  assert.equal(hosted.videoBillingNativeReceipt.falVideoTariffVersion, FAL_VIDEO_TARIFF_VERSION);
   events.push('submit');
   assert.deepEqual(events, ['persist', 'submit']);
 
@@ -125,10 +125,29 @@ test('Seedance token rates are sealed before submit and use only completed media
 test('Magi bills the exact listener provider defaults while preserving dated snapshots', () => {
   assert.equal(FAL_VIDEO_TARIFF_VERSIONS['2026-10-23'].MAGIDISTILLED, undefined);
   const receipt = buildFalVideoSubmissionReceipt({ model: 'MAGIDISTILLED', duration: 8, framesPerSecond: 30 });
-  assert.equal(receipt.falVideoTariffVersion, '2026-11-07');
+  assert.equal(receipt.falVideoTariffVersion, FAL_VIDEO_TARIFF_VERSION);
   assert.equal(receipt.submittedConfig.numFrames, 96);
   assert.equal(receipt.submittedConfig.duration, 4);
   assert.equal(calculateVideoCallCredits({ ...receipt, costUsd: 999 }).credits, 38.4);
+});
+
+test('Flash seals its verified token rate without changing prior Seedance receipts', async () => {
+  assert.equal(FAL_VIDEO_TARIFF_VERSIONS['2026-11-07']['SEEDANCE2.5FLASHI2V'], undefined);
+  assert.equal(FAL_VIDEO_TARIFF_VERSIONS['2026-11-07']['SEEDANCE2.5I2V'].rateUsd, 0.0214);
+  const receipt = buildFalVideoSubmissionReceipt({ model: 'SEEDANCE2.5FLASHI2V', duration: 30,
+    generationType: 'sound_effect' });
+  assert.equal(receipt.endpoint, 'bytedance/seedance-2.5/flash/image-to-video');
+  assert.equal(receipt.tariffRateUsd, 0.014);
+  assert.equal(receipt.submittedConfig.duration, '30');
+  assert.equal(receipt.submittedConfig.generateAudio, true);
+  const resolved = await resolveVideoAdapterReceipt(receipt,
+    { result: { localVideoLink: '/saved/flash.mp4' } }, {
+      probeVideo: async () => ({ width: 1280, height: 720, seconds: 30, framesPerSecond: 24 }),
+      fetchImpl: async () => assert.fail('No runtime pricing request'),
+      lookupGeneration: async () => assert.fail('The tariff was sealed before submission'),
+    });
+  assert.equal(resolved.billableQuantity, 648);
+  assert.equal(calculateVideoCallCredits(resolved).credits, 1088.64);
 });
 
 test('legacy completed Fal video recovers its queue rate; an orphaned variable-price job stays pending', async () => {

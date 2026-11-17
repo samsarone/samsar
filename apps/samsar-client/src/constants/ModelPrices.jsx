@@ -7,6 +7,12 @@ import {
 } from './pricing/ExpressVideoPricingDistribution.js';
 import { IS_STANDALONE_DEPLOYMENT } from '../utils/environment.jsx';
 import { QWEN_IMAGE_3_PRO_MODEL_KEY } from '../utils/imageModelAvailability.mjs';
+import {
+  KLING_IMAGE_V4_MODEL_KEY,
+  KLING_IMAGE_V4_ASPECT_RATIOS,
+  KLING_IMAGE_V4_RESOLUTION,
+  KLING_IMAGE_V4_STUDIO_CREDITS_PER_IMAGE,
+} from '../utils/KlingImageModel.mjs';
 
 export const COSMOS3_SUPER_MODEL_KEY = 'COSMOS3SUPERI2V';
 const COSMOS3_SUPER_MAX_FRAMES = 189;
@@ -128,6 +134,16 @@ export const IMAGE_MODEL_PRICES = [
       { aspectRatio: '16:9', price: IS_STANDALONE_DEPLOYMENT ? 0 : 46 },
       { aspectRatio: '9:16', price: IS_STANDALONE_DEPLOYMENT ? 0 : 46 },
     ],
+  },
+  {
+    key: KLING_IMAGE_V4_MODEL_KEY,
+    resolution: KLING_IMAGE_V4_RESOLUTION,
+    isExpressModel: true,
+    isBranchedImageModel: true,
+    prices: KLING_IMAGE_V4_ASPECT_RATIOS.map((aspectRatio) => ({
+      aspectRatio,
+      price: KLING_IMAGE_V4_STUDIO_CREDITS_PER_IMAGE,
+    })),
   },
 ]
 
@@ -288,6 +304,22 @@ export const VIDEO_MODEL_PRICES = [
     ],
     pricingDistribution: getExpressVideoPricingDistributionPerSecond('SEEDANCE2.5I2V'),
     units: [5, 10, 15, 20],
+  },
+  {
+    key: 'SEEDANCE2.5FLASHI2V',
+    name: 'Seedance 2.5 Flash I2V',
+    isExpressModel: true,
+    isBranchedVideoModel: false,
+    isImageToVideoModel: true,
+    isTextToVideoModel: false,
+    providerBilled: IS_STANDALONE_DEPLOYMENT,
+    isPerSecondPricing: true,
+    prices: [
+      { aspectRatio: '16:9', price: 50 },
+      { aspectRatio: '9:16', price: 50 },
+    ],
+    pricingDistribution: getExpressVideoPricingDistributionPerSecond('SEEDANCE2.5FLASHI2V'),
+    units: [5, 10, 15, 20, 25, 30],
   },
   {
     key: 'VEO3.1',

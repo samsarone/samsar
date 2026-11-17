@@ -7,7 +7,7 @@ import { assistantRequestIdentity, debitAssistantOwnerOnce } from './AssistantRe
 import { memoryCreditAccount, memoryRequestStore } from '../../test_helpers/AssistantBillingHarness.js';
 
 const sessionId = '67df0d8ebc4f9d0b7f4fd123';
-function harness(model = 'gpt-6-astra', adapter = 'openrouter') {
+function harness(model = 'gpt-6.2-astra', adapter = 'openrouter') {
   const account = memoryCreditAccount();
   const store = memoryRequestStore();
   const session = { userId: 'user', sessionMessages: [] };
@@ -40,7 +40,51 @@ function harness(model = 'gpt-6-astra', adapter = 'openrouter') {
   return { account, store, session, state, response, dependencies, charge, Sessions };
 }
 
-for (const [model, expectedCredits] of [['gpt-6-astra', 1.26], ['gemini-4-carbon', 0.246], ['qwen3.8-max', 0.207], ['kimi-k3', 0.378], ['claude-opus-5.5', 0.492]]) {
+test('session assistant defaults missing preferences to Opus for provider routing and billing', async () => {
+  for (const selectedAssistantModel of [undefined, null, '', '   ']) {
+    const h = harness('claude-opus-5.5');
+    h.dependencies.User.findById = async () => ({
+      selectedInferenceModel: 'gpt-6.2-astra', selectedAssistantModel,
+    });
+    const generate = h.dependencies.createCompletion;
+    h.dependencies.createCompletion = async (request, inferenceModel, ...args) => {
+      assert.equal(inferenceModel, 'claude-opus-5.5');
+      assert.equal(request.model, 'claude-opus-5-5');
+      assert.equal(request.previous_response_id, undefined);
+      return generate(request, inferenceModel, ...args);
+    };
+    const result = await createAssistantCompletion('user', {
+      session_id: sessionId, input: 'Hello', previous_response_id: 'old-openai-response',
+    }, { dependencies: h.dependencies });
+    assert.equal(result.creditsCharged, 0.492);
+    assert.equal(h.state.providerCalls, 1);
+    assert.equal([...h.store.records.values()][0].billing.pricingModel, 'claude-opus-5.5');
+  }
+});
+
+test('session assistant preserves explicit model choices for provider routing', async () => {
+  for (const [model, providerModel, canonicalModel = model] of [
+    ['gpt-6.2-astra', 'gpt-6.2-astra'],
+    ['gpt-6-astra', 'gpt-6.2-astra', 'gpt-6.2-astra'],
+    ['gpt-6-astra-xhigh', 'gpt-6.2-astra', 'gpt-6.2-astra-xhigh'],
+    ['gemini-4-carbon', 'gemini-4-carbon'],
+    ['claude-opus-5.5-xhigh', 'claude-opus-5-5'],
+  ]) {
+    const h = harness(model);
+    const generate = h.dependencies.createCompletion;
+    h.dependencies.createCompletion = async (request, inferenceModel, ...args) => {
+      assert.equal(inferenceModel, canonicalModel);
+      assert.equal(request.model, providerModel);
+      return generate(request, inferenceModel, ...args);
+    };
+    await createAssistantCompletion('user', { session_id: sessionId, input: 'Hello' }, {
+      dependencies: h.dependencies,
+    });
+    assert.equal(h.state.providerCalls, 1);
+  }
+});
+
+for (const [model, expectedCredits] of [['gpt-6.2-astra', 0.984], ['gemini-4-carbon', 0.246], ['qwen3.8-max', 0.207], ['kimi-k3', 0.378], ['claude-opus-5.5', 0.492]]) {
   for (const endpoint of ['session', 'external']) {
     test(`${endpoint} assistant ${model} applies 20% once and replays the saved response`, async () => {
       const h = harness(model);
@@ -66,13 +110,13 @@ for (const [model, expectedCredits] of [['gpt-6-astra', 1.26], ['gemini-4-carbon
 
 for (const endpoint of ['session', 'external']) {
   test(`${endpoint} native cached-input and reasoning-inclusive output are charged once`, async () => {
-    const h = harness('gpt-6-astra', null);
+    const h = harness('gpt-6.2-astra', null);
     const request = { session_id: sessionId, input: 'Hi', messages: [{ role: 'user', content: 'Hi' }] };
     const result = endpoint === 'session'
       ? await createAssistantCompletion('user', request, { dependencies: h.dependencies })
       : await createExternalChatCompletion({ userId: 'user', payload: request }, { ...h.dependencies, deductCredits: h.charge });
-    // 500 uncached × $10/M + 500 cached × $1/M + 100 output × $50/M.
-    assert.equal(result.creditsCharged, 1.26);
+    // 500 uncached × $8/M + 500 cached × $0.40/M + 100 output × $40/M.
+    assert.equal(result.creditsCharged, 0.984);
   });
 }
 
@@ -93,7 +137,7 @@ test('background recovery settles a retained SDK response without a client retry
   assert.equal(results.length, 1);
   assert.equal(h.state.providerCalls, 1);
   assert.equal(h.account.debits, 1);
-  assert.equal(h.account.account.generationCredits, 98.74);
+  assert.equal(h.account.account.generationCredits, 99.016);
 });
 
 test('session output persistence failure recovers one debit and one assistant message', async () => {
@@ -141,7 +185,7 @@ for (const failure of ['ledger', 'queue-result']) {
   test(`async SDK settlement recovers a ${failure} failure with one provider response and debit`, async () => {
     const h = harness();
     const job = { _id: 'job', userId: 'user', status: 'PENDING', clientRequestId: 'async-request',
-      billingKey: 'async-request', apiKeyUsage: { apiKeyId: 'original-api-key' }, payload: { model: 'gpt-6-astra', messages: [{ role: 'user', content: 'Hi' }] } };
+      billingKey: 'async-request', apiKeyUsage: { apiKeyId: 'original-api-key' }, payload: { model: 'gpt-6.2-astra', messages: [{ role: 'user', content: 'Hi' }] } };
     let fail = true;
     const Requests = {
       findById() { return { select: () => ({ lean: async () => structuredClone(job) }) }; },
@@ -170,7 +214,7 @@ for (const failure of ['ledger', 'queue-result']) {
     assert.equal(job.payload.messages[0].content, 'Hi');
     const completed = await processExternalChatCompletionRequest('job', dependencies);
     assert.equal(completed.status, 'COMPLETED');
-    assert.equal(completed.creditsCharged, 1.26);
+    assert.equal(completed.creditsCharged, 0.984);
     assert.equal(h.state.providerCalls, 1);
     assert.equal(h.account.debits, 1);
     assert.equal(h.account.transactions.size, 1);

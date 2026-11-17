@@ -70,6 +70,7 @@ function normalizeGmiAspectRatio(value) {
 
 export function isGenBlazeImageRequestApplicable(payload = {}) {
   if (isGenBlazeImageRequestId(payload.apiRequestId)) return true;
+  if (normalizeModel(payload.model) === 'SEEDREAM') return false;
   if (normalizeModel(payload.model) === 'GPTIMAGE2.5') return false;
   if (normalizeModel(payload.model) !== 'NANOBANANAPRO') return true;
   const aspectRatio = normalizeGmiAspectRatio(
@@ -80,6 +81,10 @@ export function isGenBlazeImageRequestApplicable(payload = {}) {
 
 export function buildGenBlazeImageRequest(payload = {}) {
   const model = normalizeModel(payload.model);
+  if (model === 'SEEDREAM') {
+    throw Object.assign(new Error('Seedream 5.5 has no verified GMICloud image generation route.'),
+      { code: 'GENBLAZE_MODEL_UNSUPPORTED' });
+  }
   if (!GENBLAZE_IMAGE_MODELS.has(model)) {
     const error = new Error(`Model ${model || '<missing>'} is not supported by the GenBlaze image adapter.`);
     error.code = 'GENBLAZE_MODEL_UNSUPPORTED';

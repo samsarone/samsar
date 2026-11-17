@@ -1,5 +1,6 @@
 import SamsarClient from 'samsar-js';
 import { isSubmissionOutcomeUnknown } from '../utils/ProviderSubmissionSafety.js';
+import { buildKlingImageInput, getKlingImageOutputDimensions, KLING_IMAGE_APP_RESOLUTION, KLING_IMAGE_MODEL } from '../consts/KlingImageModel.js';
 
 import { getDBConnectionString } from '../DBString.js';
 import ImageGeneration from '../schema/ImageGeneration.js';
@@ -46,6 +47,7 @@ const EXTERNAL_IMAGE_MODELS = new Set([
   'GPTIMAGE1',
   'FLITE',
   'SEEDREAM',
+  'KLINGIMAGE4',
   'NANOBANANA2',
   'NANOBANANAPRO',
   'WAN2.7PRO',
@@ -459,14 +461,18 @@ export async function submitSamsarExternalTextToImageRequest(payload = {}, depen
   await imageGenerationModel.findByIdAndUpdate(_id, { rowLocked: true });
 
   try {
+    const klingInput = normalizeString(model).toUpperCase() === KLING_IMAGE_MODEL
+      ? buildKlingImageInput(payload) : null;
     const response = await client.requestV2ExternalImage(
       EXTERNAL_TEXT_TO_IMAGE_PATH,
       {
         input: {
           prompt,
           model,
-          aspect_ratio: aspectRatio || '1:1',
+          aspect_ratio: klingInput?.aspect_ratio || aspectRatio || '1:1',
           ...(normalizeString(model).toUpperCase() === 'WAN2.7PRO' ? { resolution: '1K' } : {}),
+          ...(klingInput ? { resolution: getKlingImageOutputDimensions(payload)
+            ? KLING_IMAGE_APP_RESOLUTION : klingInput.resolution } : {}),
           num_images: Number.isFinite(Number(numImages)) ? Number(numImages) : 1,
           metadata: {
             local_request_id: _id?.toString?.() || _id,
@@ -649,6 +655,8 @@ export async function pollSamsarExternalTextToImageRequest(payload = {}, depende
     }
 
     const imageName = await saveFile(resultUrl);
+    const klingDimensions = normalizeString(payload.model).toUpperCase() === KLING_IMAGE_MODEL
+      ? getKlingImageOutputDimensions(payload) : null;
     // Keep ownership after a terminal provider result. The caller still has to
     // score and persist this image, and will either delete the request on
     // success or explicitly unlock it when scheduling a legitimate retry.
@@ -656,6 +664,7 @@ export async function pollSamsarExternalTextToImageRequest(payload = {}, depende
       image: imageName,
       resultUrl,
       resultUrls: [resultUrl],
+      ...(klingDimensions ? { ...klingDimensions, resolution: KLING_IMAGE_APP_RESOLUTION } : {}),
     };
   } catch (error) {
     const message = error?.message || 'Error polling Samsar external image API.';

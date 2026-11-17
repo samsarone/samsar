@@ -10,6 +10,8 @@ function fixture(initial = {}) {
   const events = [];
   const Model = {
     async updateOne(filter, update) {
+      if (Object.hasOwn(filter, 'imageSubmissionAttempt') && filter.imageSubmissionAttempt === null &&
+          row.imageSubmissionAttempt != null) return { matchedCount: 0 };
       if (filter.$or && row.imageSubmissionAttempt &&
           !['ACCEPTED', 'COMPLETED', 'REJECTED'].includes(row.imageSubmissionAttempt.state)) return { matchedCount: 0 };
       if (filter['imageSubmissionAttempt.token'] && row.imageSubmissionAttempt?.token !== filter['imageSubmissionAttempt.token']) {
@@ -17,6 +19,13 @@ function fixture(initial = {}) {
       }
       if (filter['imageSubmissionAttempt.state'] &&
           !filter['imageSubmissionAttempt.state'].$in.includes(row.imageSubmissionAttempt?.state)) return { matchedCount: 0 };
+      if (Object.hasOwn(filter, 'imageSubmissionAttempt.pollFailures')) {
+        const expected = filter['imageSubmissionAttempt.pollFailures'];
+        const actual = row.imageSubmissionAttempt?.pollFailures;
+        if (expected && typeof expected === 'object' && expected.$exists === false
+          ? actual !== undefined : actual !== expected) return { matchedCount: 0 };
+      }
+      if (filter.submissionOutcomeUnknown?.$ne === true && row.submissionOutcomeUnknown === true) return { matchedCount: 0 };
       if (filter.apiRequestId && row.apiRequestId !== filter.apiRequestId) return { matchedCount: 0 };
       for (const field of ['apiGenerationStatus', 'apiEditStatus']) {
         if (filter[field] && row[field] !== filter[field]) return { matchedCount: 0 };
@@ -84,8 +93,10 @@ test('accepted upstream work whose receipt cannot be persisted is never resubmit
 test('legacy pending rows continue polling their saved IDs without new marker writes', async () => {
   const f = fixture({ apiGenerationStatus: 'PENDING', apiRequestId: 'legacy-id' });
   let polls = 0;
-  await runImageSubmissionAttempt(f.payload(), async () => { polls++; }, { Model: f.Model });
-  assert.equal(polls, 1);
+  for (let count = 0; count < 100; count++) {
+    await runImageSubmissionAttempt(f.payload(), async () => { polls++; }, { Model: f.Model });
+  }
+  assert.equal(polls, 100);
   assert.equal(f.row().apiRequestId, 'legacy-id');
   assert.deepEqual(f.events, []);
 });
@@ -95,15 +106,122 @@ test('accepted polling failures keep one request ID and fail after a bounded num
   await runImageSubmissionAttempt(f.payload(), async () => {
     f.row().apiGenerationStatus = 'PENDING'; f.row().apiRequestId = 'same-id';
   }, { Model: f.Model });
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
     assert.equal(await deferAcceptedImagePoll(f.payload(), { Model: f.Model, now: 1000 }), true);
     assert.equal(f.row().apiRequestId, 'same-id');
     assert.equal(f.row().apiGenerationStatus, 'PENDING');
     assert.equal(f.row().imageSubmissionAttempt.pollFailures, attempt);
+    assert.equal(f.row().nextAttemptAfter.getTime(), 1000 + 15000 * (2 ** (attempt - 1)));
   }
   await assert.rejects(deferAcceptedImagePoll(f.payload(), { Model: f.Model }), /polling failed repeatedly/);
   f.row().apiGenerationStatus = 'INIT';
   await assert.rejects(beginImageSubmissionAttempt(f.payload(), { Model: f.Model }), /refusing to submit/);
+});
+
+for (const initialMarker of [undefined, null]) {
+  test(`legacy pending row with ${initialMarker === null ? 'null' : 'missing'} marker gets three backed-off reads without another generation`, async () => {
+    const submittedAt = new Date('2026-11-17T16:56:25Z');
+    const f = fixture({ apiGenerationStatus: 'PENDING', apiRequestId: 'legacy-accepted-id',
+      apiSubmittedAt: submittedAt, submittedAdapter: 'fal', rowLocked: true,
+      imageSubmissionAttempt: initialMarker, generationRetryCount: 2, filterRetryCount: 1 });
+    let reads = 0;
+    for (const [index, delay] of [15000, 30000, 60000].entries()) {
+      const payload = f.payload();
+      await runImageSubmissionAttempt(payload, async () => { reads++; }, { Model: f.Model });
+      assert.equal(await deferAcceptedImagePoll(payload, { Model: f.Model, now: 1000, token: 'legacy-owner' }), true);
+      assert.equal(f.row().nextAttemptAfter.getTime(), 1000 + delay);
+      assert.equal(f.row().imageSubmissionAttempt.pollFailures, index + 1);
+      assert.equal(f.row().imageSubmissionAttempt.state, 'ACCEPTED');
+      assert.equal(f.row().imageSubmissionAttempt.token, 'legacy-owner');
+      assert.equal(f.row().imageSubmissionAttempt.startedAt.getTime(), submittedAt.getTime());
+      assert.equal(f.row().apiRequestId, 'legacy-accepted-id');
+      assert.equal(f.row().submittedAdapter, 'fal');
+      assert.equal(f.row().apiGenerationStatus, 'PENDING');
+      assert.equal(f.row().generationRetryCount, 2);
+      assert.equal(f.row().filterRetryCount, 1);
+    }
+    await runImageSubmissionAttempt(f.payload(), async () => { reads++; }, { Model: f.Model });
+    await assert.rejects(deferAcceptedImagePoll(f.payload(), { Model: f.Model }), {
+      code: 'IMAGE_PROVIDER_POLL_RETRIES_EXHAUSTED',
+    });
+    assert.equal(reads, 4); // The initial failed read plus three additional reads.
+    assert.equal(f.row().imageSubmissionAttempt.pollFailures, 3);
+    assert.equal(f.row().apiRequestId, 'legacy-accepted-id');
+    f.row().apiGenerationStatus = 'INIT';
+    await assert.rejects(beginImageSubmissionAttempt(f.payload(), { Model: f.Model }), /refusing to submit/);
+  });
+}
+
+test('a successful pending read does not consume the accepted failure budget', async () => {
+  const f = fixture({ apiGenerationStatus: 'PENDING', apiRequestId: 'still-running',
+    imageSubmissionAttempt: { state: 'ACCEPTED', token: 'owner', pollFailures: 2 } });
+  for (let count = 0; count < 100; count++) {
+    await runImageSubmissionAttempt(f.payload(), async () => null, { Model: f.Model });
+  }
+  assert.equal(f.row().imageSubmissionAttempt.pollFailures, 2);
+  assert.deepEqual(f.events, []);
+  await deferAcceptedImagePoll(f.payload(), { Model: f.Model, now: 1000 });
+  assert.equal(f.row().imageSubmissionAttempt.pollFailures, 3);
+  assert.equal(f.row().nextAttemptAfter.getTime(), 61000);
+});
+
+for (const withMarker of [false, true]) {
+  test(`${withMarker ? 'guarded' : 'legacy'} concurrent polling recoveries cannot duplicate or reset their retry allowance`, async () => {
+    const f = fixture({ apiGenerationStatus: 'PENDING', apiRequestId: 'same-request',
+      ...(withMarker ? { imageSubmissionAttempt: { state: 'ACCEPTED', token: 'owner' } } : {}) });
+    const first = f.payload();
+    const second = f.payload();
+    const outcomes = await Promise.allSettled([
+      deferAcceptedImagePoll(first, { Model: f.Model, token: 'first' }),
+      deferAcceptedImagePoll(second, { Model: f.Model, token: 'second' }),
+    ]);
+    assert.equal(outcomes.filter(result => result.status === 'fulfilled').length, 1);
+    assert.equal(outcomes.filter(result => result.status === 'rejected').length, 1);
+    assert.equal(f.row().imageSubmissionAttempt.pollFailures, 1);
+    assert.equal(f.events.length, 1);
+    assert.equal(f.row().apiRequestId, 'same-request');
+  });
+}
+
+for (const state of ['SUBMITTING', 'UNKNOWN', 'REJECTED', 'COMPLETED']) {
+  test(`poll recovery cannot turn a ${state} marker into accepted work`, async () => {
+    const f = fixture({ apiGenerationStatus: 'PENDING', apiRequestId: 'saved-id',
+      imageSubmissionAttempt: { state, token: 'original' } });
+    assert.equal(await deferAcceptedImagePoll(f.payload(), { Model: f.Model }), false);
+    assert.deepEqual(f.events, []);
+  });
+}
+
+test('poll recovery cannot alter a different provider request or a concurrently rejected marker', async () => {
+  for (const mutate of [
+    row => { row.apiRequestId = 'new-request'; },
+    row => { row.imageSubmissionAttempt.state = 'REJECTED'; },
+    row => { row.submissionOutcomeUnknown = true; },
+  ]) {
+    const f = fixture({ apiGenerationStatus: 'PENDING', apiRequestId: 'old-request',
+      imageSubmissionAttempt: { state: 'ACCEPTED', token: 'owner' } });
+    const payload = f.payload();
+    mutate(f.row());
+    await assert.rejects(deferAcceptedImagePoll(payload, { Model: f.Model }), /acceptance is unknown/);
+    assert.deepEqual(f.events, []);
+  }
+});
+
+test('an explicitly unknown legacy submission is not upgraded or resubmitted', async () => {
+  const f = fixture({ apiGenerationStatus: 'PENDING', apiRequestId: 'legacy-id', submissionOutcomeUnknown: true });
+  assert.equal(await deferAcceptedImagePoll(f.payload(), { Model: f.Model }), false);
+  assert.deepEqual(f.events, []);
+});
+
+test('edit and upscale poll retries preserve edit provider state and request identity', async () => {
+  for (const operationType of ['EDIT', 'UPSCALE']) {
+    const f = fixture({ operationType, apiGenerationStatus: 'INIT', apiEditStatus: 'PENDING', apiRequestId: 'edit-id' });
+    assert.equal(await deferAcceptedImagePoll(f.payload(), { Model: f.Model, now: 1000 }), true);
+    assert.equal(f.row().apiEditStatus, 'PENDING');
+    assert.equal(f.row().apiGenerationStatus, 'INIT');
+    assert.equal(f.row().apiRequestId, 'edit-id');
+    assert.equal(f.row().nextAttemptAfter.getTime(), 16000);
+  }
 });
 
 test('an explicit failed accepted job permits normal retry, while polling errors cannot release it', async () => {

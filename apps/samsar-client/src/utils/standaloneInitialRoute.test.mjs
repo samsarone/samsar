@@ -7,7 +7,7 @@ import {
 } from './standaloneInitialRoute.mjs';
 
 const completePipeline = {
-  inferenceModelValues: ['gpt-6-astra'],
+  inferenceModelValues: ['gpt-6.2-astra'],
   textToVideoImageModelValues: ['GPTIMAGE2.5'],
   textToVideoVideoModelValues: ['SEEDANCE2.0I2V'],
 };

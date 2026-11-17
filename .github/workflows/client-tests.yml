@@ -15,7 +15,8 @@ concurrency:
 jobs:
   client:
     name: Node, Vitest and Chromium regressions
-    runs-on: ubuntu-latest
+    # Match the Ubuntu version supported by the locked Playwright release.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6

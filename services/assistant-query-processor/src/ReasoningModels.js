@@ -1,7 +1,9 @@
 // Shared contract copied into each independently deployed inference service.
 // The suffix is an internal queue alias; providers receive the base model ID.
 const MODEL_TOKENS = Object.freeze({
-  GPT6ASTRA: 'gpt-6-astra',
+  GPT62ASTRA: 'gpt-6.2-astra',
+  GPT6ASTRA: 'gpt-6.2-astra', // Saved Astra choices upgrade without losing effort.
+  GPT56SOL: 'gpt-6.2-astra',
   GPT61SOL: 'gpt-6.1-sol',
   CLAUDEOPUS55: 'claude-opus-5.5',
   CLAUDE55OPUS: 'claude-opus-5.5',

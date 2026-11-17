@@ -125,13 +125,13 @@ test("resolves model aliases and custom adapter models", () => {
     deployment: {
       modelProviders: {
         KIMIK3: "kimi",
-        "gpt-6-astra": "openai",
+        "gpt-6.2-astra": "openai",
       },
     },
   });
 
   assert.equal(getPrimaryAdapterKeyForModel("kimi-k3", adapters), "kimi");
-  assert.equal(getPrimaryAdapterKeyForModel("GPT 6 Astra", adapters), "openai");
+  assert.equal(getPrimaryAdapterKeyForModel("GPT 6.2 Astra", adapters), "openai");
   assert.equal(
     getPrimaryAdapterKeyForModel("CUSTOM_TEXT_TO_IMAGE:product-shots", adapters),
     "custom",

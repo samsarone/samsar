@@ -8,12 +8,54 @@ import { saveRemoteFile } from "../utils/FileUtils.js";
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import { isSubmissionOutcomeUnknown } from '../utils/ProviderSubmissionSafety.js';
+import { getSeedreamFalEndpoint } from '../consts/SeedreamModel.js';
 
 const FAL_API_KEY = process.env.FAL_API_KEY;
 
 fal.config({
   credentials: FAL_API_KEY
 });
+
+function providerMessage(value, depth = 0) {
+  if (depth > 6 || value == null) return '';
+  if (typeof value === 'string') return value.trim();
+  if (Array.isArray(value)) {
+    return [...new Set(value.map(entry => providerMessage(entry, depth + 1)).filter(Boolean))].join('; ');
+  }
+  if (typeof value !== 'object') return '';
+  for (const field of ['detail', 'msg', 'message', 'error', 'body']) {
+    const message = providerMessage(value[field], depth + 1);
+    if (message) return message;
+  }
+  return '';
+}
+
+function providerErrorDetails(error) {
+  const visited = new Set();
+  let current = error, status = null, message = '';
+  while (current && typeof current === 'object' && !visited.has(current)) {
+    visited.add(current);
+    const candidate = Number(current.status ?? current.statusCode ?? current.response?.status);
+    if (status === null && Number.isInteger(candidate) && candidate > 0) status = candidate;
+    // Fal's ValidationError.message is usually just "Unprocessable Entity".
+    // Preserve the actual failure detail, including Pydantic-style msg arrays.
+    message ||= providerMessage(current.body) || providerMessage(current.response?.data);
+    current = current.cause;
+  }
+  return { status, message: message || providerMessage(error) || 'Unknown provider error' };
+}
+
+function acceptedPollError(error, phase) {
+  const failure = error instanceof Error ? error : new Error(providerErrorDetails(error).message, { cause: error });
+  // A failed read/download does not establish that the accepted generation
+  // failed. Shared recovery must keep its provider ID and bound polling retries.
+  return Object.assign(failure, {
+    nonPromptProviderFailure: true,
+    preserveExpressImageLayer: true,
+    providerPollFailure: true,
+    providerPollPhase: phase,
+  });
+}
 
 
 export async function handleSeedreamRequest(payload, dependencies = {}) {
@@ -52,7 +94,7 @@ export async function submitSeedreamRequest(payload, dependencies = {}) {
   await imageGenerationModel.findByIdAndUpdate(_id, { rowLocked: true });
 
 
-  const falLink = getFalLinkForModel(model);
+  const falLink = getSeedreamFalEndpoint(payload);
 
   const imageSize = getImageSizeFromAspectRatio(aspectRatio);
 
@@ -61,6 +103,7 @@ export async function submitSeedreamRequest(payload, dependencies = {}) {
     prompt: prompt,
     "image_size": imageSize,
     output_format: "png",
+    num_images: 1,
   };
 
 
@@ -80,6 +123,7 @@ export async function submitSeedreamRequest(payload, dependencies = {}) {
       apiRequestId: requestId,
       apiGenerationStatus: "PENDING",
       apiSubmittedAt: new Date(),
+      seedreamFalEndpoint: falLink,
       rowLocked: false
     });
 
@@ -114,7 +158,7 @@ export async function pollSeedreamRequest(payload, dependencies = {}) {
     { rowLocked: true }
   );
 
-  const falLink = getFalLinkForModel(model);
+  const falLink = getSeedreamFalEndpoint(payload);
 
   
   let responseStatusData;
@@ -124,41 +168,46 @@ export async function pollSeedreamRequest(payload, dependencies = {}) {
       logs: true,
     });
   } catch (error) {
-    await imageGenerationModel.findOneAndUpdate({ _id }, { rowLocked: false });
-    return null;
+    logger.error('Error checking Seedream request status from FAL: ', error);
+    throw acceptedPollError(error, 'status');
   }
 
   const responseStatus = responseStatusData.status;
 
   if (responseStatus === "COMPLETED") {
-
+    let result;
     try {
-      const result = await queueResult(falLink, {
+      result = await queueResult(falLink, {
         requestId: apiRequestId,
       });
-
-      await imageGenerationModel.findOneAndUpdate(
-        { _id: _id },
-        { rowLocked: true }
-      );
-
-
-
-
-      const fileImages = result.images || result.data?.images;
-      const imageRemoteUrl = fileImages?.[0]?.url;
-      if (!imageRemoteUrl) {
-        throw new Error("Seedream result did not include an image URL.");
-      }
-
-      const imageName = await saveFile(imageRemoteUrl);
-
-      return { image: imageName };
     } catch (error) {
       logger.error("Error retrieving Seedream image from FAL: ", error);
-      await imageGenerationModel.findOneAndUpdate({ _id }, { rowLocked: false });
-      return null;
+      const details = providerErrorDetails(error);
+      // Fal's completed result endpoint reports a rejected generation as 400/422.
+      // Authentication, missing results, throttling and server/transport failures
+      // do not prove the generation failed and must not create another image.
+      if ([400, 422].includes(details.status)) {
+        return {
+          image: null,
+          error: `Seedream result failed (${details.status}): ${details.message}`,
+          status: details.status,
+          definitiveAdapterFailure: true,
+        };
+      }
+      throw acceptedPollError(error, 'result');
+    }
 
+    const fileImages = result.images || result.data?.images;
+    const imageRemoteUrl = fileImages?.[0]?.url;
+    if (!imageRemoteUrl) {
+      throw acceptedPollError(new Error('Seedream result did not include an image URL.'), 'result');
+    }
+    try {
+      const imageName = await saveFile(imageRemoteUrl);
+      return { image: imageName };
+    } catch (error) {
+      logger.error('Error saving Seedream image from FAL: ', error);
+      throw acceptedPollError(error, 'download');
     }
 
   } else if (responseStatus === "FAILED") {
@@ -181,13 +230,6 @@ export async function pollSeedreamRequest(payload, dependencies = {}) {
   }
 }
 
-
-
-
-function getFalLinkForModel(model) {
-  return 'bytedance/seedream/v5/pro/text-to-image';
-
-}
 
 
 

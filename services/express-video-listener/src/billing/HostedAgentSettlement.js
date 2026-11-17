@@ -4,6 +4,22 @@ import { calculateHostedAgentUsage, hasHostedAgentProviderOverrides, HOSTED_AGEN
 const failure = (message, code = 'AGENT_BILLING_PENDING') => Object.assign(new Error(message), { code, status: 409 });
 const terminal = state => ['FAILED', 'CANCELLED', 'COMPLETED'].includes(state);
 
+function validFailedImageRecovery(session, recovery, controlRevision) {
+  return session?.hostedAgentBilling?.state === 'FAILED' && recovery?.version === 1 &&
+    recovery.stage === 'image_generation' && recovery.status === 'PENDING' &&
+    typeof recovery.id === 'string' && recovery.id.length > 0 &&
+    recovery.sessionId === String(session._id) &&
+    recovery.failedBillingRevision === session.hostedAgentBilling.revision &&
+    recovery.controlRevision === controlRevision &&
+    !session.expressGenerationCancelled && !session.videoLink && !session.remoteURL;
+}
+
+function isFundedImageRecoveryIntent(session) {
+  return session?.hostedAgentBilling?.controlIntent === 'ACTIVE' &&
+    session.hostedAgentBilling.controlFields?.expressImageRecovery?.id === session.expressImageRecovery?.id &&
+    validFailedImageRecovery(session, session.expressImageRecovery, session.hostedAgentBilling.controlRevision);
+}
+
 // A durable session operation serializes funding/refunds. Its wallet mutation
 // and permanent identity are one atomic write on the account document. Ledger
 // and session writes can then be retried without moving money a second time.
@@ -135,7 +151,7 @@ export function createHostedAgentSettlement({ VideoSession, resolveAccount, Ledg
         throw failure('A newer render control request superseded this request.', 'AGENT_CONTROL_SUPERSEDED');
       }
       if (billing.pendingOperation) { await recover(session, { cancelFunding: outcome !== 'ACTIVE' }); continue; }
-      if (terminal(billing.state)) {
+      if (terminal(billing.state) && !(outcome === 'ACTIVE' && isFundedImageRecoveryIntent(session))) {
         await afterSettlement(sessionId);
         if (outcome === 'ACTIVE') throw failure('A terminal agent request cannot be resumed.');
         return { ok: billing.state === outcome, blocked: billing.state !== outcome, alreadySettled: true, billing };
@@ -218,19 +234,55 @@ export function createHostedAgentSettlement({ VideoSession, resolveAccount, Ledg
     if (session?.postProcessingBilling?.version === 1) return { legacy: true, postProcessing: true };
     if (bypass() || session?.hostedAgentBilling?.version !== 2) return { legacy: true };
     await assertOwnership(session);
+    if (outcome === 'ACTIVE' && fields.expressImageRecovery) {
+      const recovery = fields.expressImageRecovery;
+      const current = session.expressImageRecovery;
+      if (current?.id === recovery.id && session.hostedAgentBilling.state === 'ACTIVE' &&
+          session.hostedAgentBilling.controlIntent === 'ACTIVE') {
+        // A repeated API call completes the original funding fence. Never
+        // reapply old layer-index writes after an image finishes or is moved.
+        if (session.expressGenerationPending && !session.expressGenerationPaused &&
+            !session.hostedAgentBilling.pendingOperation) return { ok: true, alreadyResumed: true, billing: session.hostedAgentBilling };
+        return recoverControl(session);
+      }
+      const changedOrder = recovery.layerOrder &&
+        JSON.stringify(recovery.layerOrder) !== JSON.stringify((session.layers || []).map(layer => String(layer?._id)));
+      if (recovery.controlRevision !== Number(session.hostedAgentBilling.controlRevision || 0) + 1 || changedOrder ||
+          (current && current.id !== recovery.id && !session.expressGenerationFailed)) {
+        throw failure('Image recovery changed before resume; reload the session and retry.', 'AGENT_CONTROL_SUPERSEDED');
+      }
+    }
     if (terminal(session.hostedAgentBilling.pendingOperation?.outcome)) {
       await transition(sessionId, session.hostedAgentBilling.pendingOperation.outcome);
       throw failure('Agent completion is already being settled.');
     }
-    if (terminal(session.hostedAgentBilling.state)) {
+    const imageRecovery = outcome === 'ACTIVE' &&
+      validFailedImageRecovery(session, fields.expressImageRecovery, Number(session.hostedAgentBilling.controlRevision || 0) + 1) &&
+      ((session.expressGenerationFailed && session.expressGenerationStatus?.image_generation === 'FAILED' &&
+        session.expressGenerationStatus?.prompt_generation === 'COMPLETED') ||
+        (session.expressImageRecovery?.id === fields.expressImageRecovery.id && session.expressImageRecovery.status === 'PENDING'));
+    if (terminal(session.hostedAgentBilling.state) && !imageRecovery) {
       if (session.hostedAgentBilling.state === outcome) return transition(sessionId, outcome);
       throw failure('A terminal agent request cannot be controlled.');
     }
     // Persist intent before moving money. A newer intent fences the older
     // caller, including its final write that makes generation runnable again.
+    const imageLayerGuard = {};
+    if (fields.expressImageRecovery) {
+      for (const [index, layerId] of (fields.expressImageRecovery.layerOrder || []).entries()) imageLayerGuard[`layers.${index}._id`] = layerId;
+      for (const [key, value] of Object.entries(fields)) {
+        const index = key.match(/^layers\.(\d+)\.imageSession\.generationStatus$/)?.[1];
+        if (index === undefined || value !== 'PENDING') continue;
+        const image = session.layers?.[index]?.imageSession || {};
+        for (const field of ['generationStatus', 'activeGeneratedImage', 'activeSelectedImage']) {
+          imageLayerGuard[`layers.${index}.imageSession.${field}`] = image[field] === undefined ? { $exists: false } : image[field];
+        }
+      }
+    }
     const claimed = await VideoSession.findOneAndUpdate({ _id: sessionId,
       'hostedAgentBilling.revision': session.hostedAgentBilling.revision,
       'hostedAgentBilling.controlRevision': session.hostedAgentBilling.controlRevision,
+      ...imageLayerGuard,
     }, { $inc: { 'hostedAgentBilling.controlRevision': 1 }, $set: {
       'hostedAgentBilling.controlIntent': outcome, 'hostedAgentBilling.controlFields': fields, ...fields,
       expressGenerationPending: false, videoGenerationPending: false,
@@ -258,11 +310,12 @@ export function createHostedAgentSettlement({ VideoSession, resolveAccount, Ledg
       throw error;
     }
     if (outcome === 'ACTIVE') {
+      const activationFields = Object.fromEntries(Object.entries(fields).filter(([key]) => !key.startsWith('layers.')));
       const activated = await VideoSession.updateOne({ _id: sessionId,
         'hostedAgentBilling.controlRevision': controlRevision, 'hostedAgentBilling.state': 'ACTIVE',
         'hostedAgentBilling.pendingOperation': null,
         expressGenerationCancelled: { $ne: true }, expressGenerationFailed: { $ne: true },
-      }, { $set: { ...fields, expressGenerationPending: true,
+      }, { $set: { ...activationFields, expressGenerationPending: true,
         videoGenerationPending: Boolean(fields.videoGenerationPending) && !(claimed.videoLink || claimed.remoteURL), expressGenerationPaused: false } });
       if (!activated.matchedCount) throw failure('Render control changed before resume.', 'AGENT_CONTROL_SUPERSEDED');
     }

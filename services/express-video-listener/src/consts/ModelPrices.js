@@ -81,6 +81,15 @@ export const IMAGE_MODEL_PRICES = [
       { aspectRatio: '9:16', price: 15 },
     ],
   },
+  {
+    key: 'KLINGIMAGE4',
+    isExpressModel: true,
+    resolutions: ['720p'],
+    // 720p output uses Fal's minimum 2K generation at $0.063/image,
+    // plus 20%, at 100 credits/USD. Resizing does not change its base rate.
+    prices: ['16:9', '9:16']
+      .map((aspectRatio) => ({ aspectRatio, price: 7.56 })),
+  },
 ]
 
 
@@ -239,6 +248,21 @@ export const VIDEO_MODEL_PRICES = [
     units: [5, 10, 15],
   },
   {
+    key: 'SEEDANCE2.5FLASHI2V',
+    name: 'Seedance 2.5 Flash I2V',
+    isExpressModel: true,
+    isImageToVideoModel: true,
+    isTextToVideoModel: false,
+    providerBilled: true,
+    isPerSecondPricing: true,
+    prices: [
+      { aspectRatio: '16:9', price: EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL['SEEDANCE2.5FLASHI2V'] },
+      { aspectRatio: '9:16', price: EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL['SEEDANCE2.5FLASHI2V'] },
+    ],
+    pricingDistribution: getExpressVideoPricingDistributionPerSecond('SEEDANCE2.5FLASHI2V'),
+    units: Array.from({ length: 27 }, (_, index) => index + 4),
+  },
+  {
     key: 'VEO3.1I2V',
     isExpressModel: true,
     isImageToVideoModel: true,
@@ -351,14 +375,17 @@ export const TTS_TYPES = [
 
 export const ASSISTANT_MODEL_PRICES = [
   {
-    key: "gpt-6-astra",
-    prices: [
-      {
-        operationType: "words",
-        tokens: 1000,
-        price: 6
-      },
-    ]
+    key: "gpt-6.2-astra",
+    billing: "token_usage",
+    get prices() {
+      // Published provider USD / 1M tokens, converted at 100 credits/USD + 20%.
+      const rates = [8, 0.4, 40];
+      return ['input_tokens', 'cached_input_tokens', 'output_tokens'].map((operationType, index) => ({
+        operationType,
+        tokens: 1_000_000,
+        price: rates[index] * 100 * 1.2,
+      }));
+    },
   },
   {
     key: "gemini-4-carbon",

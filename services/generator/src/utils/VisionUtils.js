@@ -44,6 +44,20 @@ const ImageScore = z.object({
 }).strict();
 const ImageScoreValue = z.number().int().min(0).max(100);
 
+function parseImageScoreMessage(message) {
+  let parsed = message?.parsed;
+  if (parsed == null) {
+    const content = typeof message?.content === 'string' ? message.content.trim() : '';
+    // Native providers may wrap otherwise valid JSON in a Markdown code block.
+    // Accept only a complete JSON block, keeping surrounding prose, malformed
+    // JSON, and invalid score objects subject to the existing validation/retry.
+    const fenced = /^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```$/i.exec(content);
+    parsed = JSON.parse(fenced ? fenced[1] : content);
+  }
+  const result = ImageScore.parse(parsed);
+  return ImageScoreValue.parse(result.score);
+}
+
 function normalizeNonNegativeInteger(value, fallback) {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
@@ -530,8 +544,7 @@ Return only a JSON object containing "score", a single integer between 0 and 100
         if (message?.refusal || (choice?.finish_reason && choice.finish_reason !== 'stop')) {
           throw new Error('Image scoring response was refused or incomplete.');
         }
-        const result = ImageScore.parse(message?.parsed ?? JSON.parse(message?.content || ''));
-        return ImageScoreValue.parse(result.score);
+        return parseImageScoreMessage(message);
       },
       {
         operationName: 'image score',

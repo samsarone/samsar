@@ -14,10 +14,10 @@ test('new users get Claude Opus 5.5, GPT Image 2.6 and Kling 4', () => {
 
 test('saved model choices and reasoning effort remain explicit', () => {
   assert.deepEqual(resolveGenerationModelDefaults({
-    selectedInferenceModel: 'gpt-6-astra', selectedAssistantModel: 'claude-fable-5.2-xhigh',
+    selectedInferenceModel: 'gpt-6.2-astra', selectedAssistantModel: 'claude-fable-5.2-xhigh',
     agentImageModel: 'SEEDREAM', agentVideoModel: 'RUNWAYML',
   }), {
-    inferenceModel: 'gpt-6-astra', assistantModel: 'claude-fable-5.2-xhigh',
+    inferenceModel: 'gpt-6.2-astra', assistantModel: 'claude-fable-5.2-xhigh',
     imageModel: 'SEEDREAM', videoModel: 'RUNWAYML',
   });
 });

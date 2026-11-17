@@ -1,6 +1,6 @@
 import { normalizeReasoningModel, getReasoningModelBase, isGPTModel, isClaudeModel, resolveInferenceEffort } from './ReasoningModels.js';
-export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-6-astra';
-export const GPT_56_SOL_XHIGH_INFERENCE_MODEL = 'gpt-6-astra-xhigh';
+export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-6.2-astra';
+export const GPT_56_SOL_XHIGH_INFERENCE_MODEL = 'gpt-6.2-astra-xhigh';
 export const DEFAULT_INFERENCE_MODEL = GPT_56_SOL_INFERENCE_MODEL;
 export const GPT_56_SOL_REASONING_EFFORT = 'high';
 export const GPT_56_SOL_XHIGH_REASONING_EFFORT = 'xhigh';
@@ -84,7 +84,7 @@ export function normalizeInferenceModel(value) {
   if (reasoningModel) return reasoningModel;
   const gptToken = typeof value === 'string' ? value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
   // Legacy GPT selections retain Astra compatibility.
-  if (/^GPT(?:6ASTRA|56SOL|56|6)(?:HIGH|XHIGH|EXTRAHIGH)?$/.test(gptToken)) {
+  if (/^GPT(?:62ASTRA|6ASTRA|56SOL|56|6)(?:HIGH|XHIGH|EXTRAHIGH)?$/.test(gptToken)) {
     return /(?:XHIGH|EXTRAHIGH)$/.test(gptToken)
       ? GPT_56_SOL_XHIGH_INFERENCE_MODEL
       : DEFAULT_INFERENCE_MODEL;

@@ -14,7 +14,7 @@ class Response extends EventEmitter {
   end() { this.writableEnded = true; this.emit('close'); }
 }
 const usage = { prompt_tokens: 1000, completion_tokens: 100 };
-const payload = { model: 'gpt-6-astra', messages: [{ role: 'user', content: 'hello' }], stream: true };
+const payload = { model: 'gpt-6.2-astra', messages: [{ role: 'user', content: 'hello' }], stream: true };
 const req = { userId: 'owner', body: payload, get: () => 'same-key' };
 
 function harness() {
@@ -25,7 +25,7 @@ function harness() {
       generations++;
       assert.equal(request.stream, undefined);
       await request.onText('Hello');
-      return { id: 'provider', model: 'gpt-6-astra', usage, choices: [{ message: { content: 'Hello' } }] };
+      return { id: 'provider', model: 'gpt-6.2-astra', usage, choices: [{ message: { content: 'Hello' } }] };
     },
     deductCredits: async (_user, credits, { idempotencyKey }) => debitAssistantOwnerOnce({
       ...account, ownerId: 'owner', credits, idempotencyKey,
@@ -41,7 +41,7 @@ test('SSE streams provider text then a settled receipt; REST replay bills once',
   assert.match(res.frames.join(''), /event: snapshot/);
   assert.match(res.frames.at(-1), /event: completed/);
   const result = await h.createCompletion({ userId: 'owner', payload: { ...payload, stream: false }, idempotencyKey: 'same-key' });
-  assert.equal(result.creditsCharged, 1.8); // (1000 * $10 + 100 * $50) / 1M * 100 * 1.2
+  assert.equal(result.creditsCharged, 1.44); // (1000 * $10 + 100 * $50) / 1M * 100 * 1.2
   assert.equal(h.generations, 1);
   assert.equal(h.account.debits, 1);
 });
@@ -71,7 +71,7 @@ test('an active replay watches the existing receipt without dispatching inferenc
 
 test('usage failures are terminal SSE errors and preserve a reconcilable receipt', async () => {
   const h = harness(), res = new Response();
-  h.dependencies.createCompletion = async (_client, request) => { await request.onText('Partial'); return { model: 'gpt-6-astra' }; };
+  h.dependencies.createCompletion = async (_client, request) => { await request.onText('Partial'); return { model: 'gpt-6.2-astra' }; };
   await serveExternalChatStream(req, res, h);
   assert.match(res.frames.at(-1), /ASSISTANT_BILLING_USAGE_REQUIRED/);
   assert.equal(h.account.debits, 0);

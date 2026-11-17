@@ -1,8 +1,8 @@
 import { normalizeReasoningModel, getReasoningModelBase, isGPTModel, isClaudeModel, resolveInferenceEffort } from '../inference/ReasoningModels.js';
 export const INFERENCE_MODELS = Object.freeze({
-  Inference: 'gpt-6-astra',
-  BranchedInferenceExtraHigh: 'gpt-6-astra-xhigh',
-  PublicationMetadata: 'gpt-6-astra',
+  Inference: 'gpt-6.2-astra',
+  BranchedInferenceExtraHigh: 'gpt-6.2-astra-xhigh',
+  PublicationMetadata: 'gpt-6.2-astra',
 });
 
 export const INFERENCE_REASONING_EFFORTS = Object.freeze({
@@ -89,7 +89,7 @@ export const SUPPORTED_INFERENCE_MODEL_VALUES = Object.freeze([
 
 export const INFERENCE_MODEL_OPTIONS = Object.freeze([
   Object.freeze({
-    label: 'GPT 6 Astra High',
+    label: 'GPT 6.2 Astra High',
     value: DEFAULT_INFERENCE_MODEL,
     providerModel: INFERENCE_MODELS.Inference,
     availabilityModel: INFERENCE_MODELS.Inference,
@@ -97,7 +97,7 @@ export const INFERENCE_MODEL_OPTIONS = Object.freeze([
     isBranchedInferenceModel: true,
   }),
   Object.freeze({
-    label: 'GPT 6 Astra Extra High',
+    label: 'GPT 6.2 Astra Extra High',
     value: GPT_56_SOL_XHIGH_INFERENCE_MODEL,
     providerModel: INFERENCE_MODELS.Inference,
     availabilityModel: INFERENCE_MODELS.Inference,
@@ -314,6 +314,8 @@ export function isOpenAIInferenceModel(value) {
 }
 
 export function normalizeOpenAIInferenceModel(value) {
+  const reasoningModel = normalizeReasoningModel(value);
+  if (reasoningModel) return reasoningModel;
   const normalized = normalizeString(value).toLowerCase();
   return isOpenAIInferenceModel(normalized)
     ? normalized

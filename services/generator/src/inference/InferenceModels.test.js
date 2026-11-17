@@ -15,13 +15,13 @@ import {
   normalizeInferenceModel,
 } from './InferenceModels.js';
 
-test('uses high reasoning for GPT 6 Astra inference', () => {
+test('uses high reasoning for GPT 6.2 Astra inference', () => {
   assert.equal(GPT_56_SOL_REASONING_EFFORT, 'high');
-  assert.equal(normalizeInferenceModel('gpt-6-astra-high'), 'gpt-6-astra');
-  assert.equal(normalizeInferenceModel('gpt-6-astra-xhigh'), 'gpt-6-astra-xhigh');
-  assert.equal(getGPT56SolReasoningEffort('gpt-6-astra-xhigh'), 'xhigh');
-  assert.equal(getGPT56SolReasoningEffort('gpt-6-astra-xhigh', 'high'), 'high');
-  assert.equal(getProviderModelForInferenceModel('gpt-6-astra-xhigh'), 'gpt-6-astra');
+  assert.equal(normalizeInferenceModel('gpt-6.2-astra-high'), 'gpt-6.2-astra');
+  assert.equal(normalizeInferenceModel('gpt-6.2-astra-xhigh'), 'gpt-6.2-astra-xhigh');
+  assert.equal(getGPT56SolReasoningEffort('gpt-6.2-astra-xhigh'), 'xhigh');
+  assert.equal(getGPT56SolReasoningEffort('gpt-6.2-astra-xhigh', 'high'), 'high');
+  assert.equal(getProviderModelForInferenceModel('gpt-6.2-astra-xhigh'), 'gpt-6.2-astra');
 });
 
 test('normalizes Qwen 3.8 Max aliases to the logical provider choice', () => {
@@ -67,18 +67,18 @@ test('normalizes Kimi K3 aliases to the native provider model', () => {
 });
 
 
-test('upgrades saved GPT 5.6 selections to GPT 6 Astra without losing xhigh effort', () => {
-  assert.equal(normalizeInferenceModel('gpt-5.6-sol'), 'gpt-6-astra');
-  assert.equal(normalizeInferenceModel('gpt-5.6-sol-xhigh'), 'gpt-6-astra-xhigh');
+test('upgrades saved GPT 5.6 selections to GPT 6.2 Astra without losing xhigh effort', () => {
+  assert.equal(normalizeInferenceModel('gpt-5.6-sol'), 'gpt-6.2-astra');
+  assert.equal(normalizeInferenceModel('gpt-5.6-sol-xhigh'), 'gpt-6.2-astra-xhigh');
 });
 
 
-test('migrates saved Astra selections to GPT 6 Astra and preserves explicit xhigh', () => {
-  for (const alias of ['gpt-6-astra', 'GPT 6 Astra High', 'gpt-6-astra', 'GPT 6 Astra High']) {
-    assert.equal(normalizeInferenceModel(alias), 'gpt-6-astra');
+test('migrates saved Astra selections to GPT 6.2 Astra and preserves explicit xhigh', () => {
+  for (const alias of ['gpt-6.2-astra', 'GPT 6.2 Astra High', 'gpt-6-astra', 'GPT 6 Astra High']) {
+    assert.equal(normalizeInferenceModel(alias), 'gpt-6.2-astra');
     assert.equal(getGPT56SolReasoningEffort(alias), 'high');
   }
-  for (const alias of ['gpt-6-astra-xhigh', 'GPT 6 Astra Extra High', 'gpt-6-astra-xhigh']) {
+  for (const alias of ['gpt-6.2-astra-xhigh', 'GPT 6.2 Astra Extra High', 'gpt-6-astra-xhigh', 'GPT 6 Astra Extra High']) {
     assert.equal(getGPT56SolReasoningEffort(alias), 'xhigh');
   }
 });

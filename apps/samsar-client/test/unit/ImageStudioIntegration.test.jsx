@@ -280,6 +280,23 @@ describe('image studio integration', () => {
     expect(boundary.getUserAPI).toHaveBeenCalledOnce();
   });
 
+  it.each(['16:9', '9:16'])('preserves the standard 720p Kling setting through the %s Image Studio request boundary', async (aspectRatio) => {
+    loadedProject = project({ aspectRatio });
+    axios.get.mockImplementation(async (url) => ({ data: url.includes('/generate_status')
+      ? { status: 'FAILED', generationError: 'provider rejected request' }
+      : loadedProject }));
+    mount();
+    await loaded();
+    await act(async () => boundary.canvas.setSelectedGenerationModel('KLINGIMAGE4'));
+    await act(async () => boundary.canvas.submitGenerateRequest({
+      prompt: 'A mountain railway', aspectRatio, resolution: '720p',
+    }));
+    expect(requests('/image_sessions/request_generate')[0][1]).toEqual({
+      prompt: 'A mountain railway', aspectRatio, resolution: '720p',
+      videoSessionId: 'image-project', layerId: 'layer-1', model: 'KLINGIMAGE4',
+    });
+  });
+
   it('clears generation pending state and surfaces a rejected submission', async () => {
     axios.post.mockRejectedValue(new Error('Request failed with status code 429'));
     mount();

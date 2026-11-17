@@ -1,4 +1,6 @@
 import { videoQueueBillingFields } from './VideoRequestBilling.js';
+import { isSeedanceFlashModel, normalizeSeedanceFlashVideoOptions } from '../../utils/SeedanceFlash.js';
+import { getInitialGenericVideoAdapter } from './GenericVideoAdapter.js';
 import AIVideoLayerGeneration from '../../schema/AIVideoLayerGeneration.js';
 
 function normalizeString(value) {
@@ -21,6 +23,7 @@ export function buildDirectExternalI2VGenerationDocument(payload = {}) {
   if (!model) {
     throw new Error('Direct external image-to-video requires a video model.');
   }
+  const flashOptions = isSeedanceFlashModel(model) ? normalizeSeedanceFlashVideoOptions(payload) : null;
 
   return {
     _id: generationRequestId,
@@ -31,7 +34,7 @@ export function buildDirectExternalI2VGenerationDocument(payload = {}) {
     status: 'INIT',
     startImage,
     useStartFrame: !payload.directExternalTextToVideo,
-    useEndFrame: false,
+    useEndFrame: Boolean(flashOptions?.endImage),
     combineLayers: false,
     aspectRatio: normalizeString(payload.aspectRatio) || '16:9',
     clipLayerToAiVideo: false,
@@ -41,6 +44,8 @@ export function buildDirectExternalI2VGenerationDocument(payload = {}) {
     isAudioVideoGeneration: payload.generateAudio === true || payload.generate_audio === true ||
       payload.isAudioVideoGeneration === true,
     duration: Number(payload.duration) || 5,
+    ...(flashOptions || {}),
+    ...(getInitialGenericVideoAdapter(model) ? { dockerVideoProvider: getInitialGenericVideoAdapter(model) } : {}),
     framesPerSecond: Number(payload.framesPerSecond) || 24,
     userId: payload.userId?.toString?.() || payload.userId,
     retryOnFail: false,

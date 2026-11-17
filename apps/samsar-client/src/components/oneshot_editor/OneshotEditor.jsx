@@ -27,6 +27,7 @@ import TextareaAutosize from 'react-textarea-autosize';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Tooltip } from 'react-tooltip';
 import { resolveVidgenieLoadedProjectView } from './vidgenieProjectViewState.mjs';
+import { canRetryVidgenieImageStage } from './vidgenieImageRetry.mjs';
 import { createVidgenieDownloadFilename } from './vidgenieDownloadFilename.mjs';
 import {
   VIDGENIE_POLL_ACTION,
@@ -135,6 +136,7 @@ import {
   normalizeStoredGPTImageModelKey,
 } from '../../utils/imageModelAvailability.mjs';
 import { isVidgenieImageToVideoModeAvailable } from '../../utils/vidgenieModeAvailability.mjs';
+import { KLING_IMAGE_V4_MODEL_KEY } from '../../utils/KlingImageModel.mjs';
 import useRealtimeTranscription from '../../hooks/useRealtimeTranscription.js';
 import { useDeploymentModelAvailability } from '../../hooks/useDeploymentModelAvailability.js';
 import { useInferenceModelAvailability } from '../../hooks/useInferenceModelAvailability.js';
@@ -206,13 +208,15 @@ const VIDGENIE_IMAGE_MODEL_ORDER = [
   'SEEDREAM',
   'WAN2.7PRO',
   QWEN_IMAGE_3_PRO_MODEL_KEY,
+  KLING_IMAGE_V4_MODEL_KEY,
 ];
 const VIDGENIE_IMAGE_MODEL_LABELS = {
   'GPTIMAGE2.5': 'GPTImage 2.6',
   NANOBANANAPRO: 'NanoBanana Pro',
-  SEEDREAM: 'Seedream',
+  SEEDREAM: 'Seedream 5.5',
   'WAN2.7PRO': 'Wan2.7 Pro',
   [QWEN_IMAGE_3_PRO_MODEL_KEY]: 'Qwen Image 3.0 Pro',
+  [KLING_IMAGE_V4_MODEL_KEY]: 'Kling Image 4',
 };
 const DEFAULT_VIDEO_GENERATION_MODEL = DEFAULT_VIDEO_MODEL;
 const VIDGENIE_VIDEO_MODEL_ORDER = [
@@ -223,6 +227,7 @@ const VIDGENIE_VIDEO_MODEL_ORDER = [
   'SEEDANCEI2V',
   'SEEDANCE2.0I2V',
   'SEEDANCE2.5I2V',
+  'SEEDANCE2.5FLASHI2V',
   'KLINGIMGTOVID4',
   'HAPPYHORSEI2V',
 ];
@@ -234,6 +239,7 @@ const VIDGENIE_VIDEO_MODEL_LABELS = {
   SEEDANCEI2V: 'Seedance 1.5',
   'SEEDANCE2.0I2V': 'Seedance 2.0',
   'SEEDANCE2.5I2V': 'Seedance 2.5',
+  'SEEDANCE2.5FLASHI2V': 'Seedance 2.5 Flash',
   KLINGIMGTOVID4: 'Kling 4',
   HAPPYHORSEI2V: 'Happy Horse 1.1 I2V',
 };
@@ -247,6 +253,7 @@ const VIDGENIE_IMAGE_LIST_VIDEO_MODEL_ORDER = [
   'SEEDANCEI2V',
   'SEEDANCE2.0I2V',
   'SEEDANCE2.5I2V',
+  'SEEDANCE2.5FLASHI2V',
   'KLINGIMGTOVID4',
   'HAPPYHORSEI2V',
 ];
@@ -260,6 +267,7 @@ const TEXT_TO_VIDEO_VIDEO_MODEL_KEYS = [
   'SEEDANCEI2V',
   'SEEDANCE2.0I2V',
   'SEEDANCE2.5I2V',
+  'SEEDANCE2.5FLASHI2V',
   'KLINGIMGTOVID4',
   'HAPPYHORSEI2V',
   'CUSTOM_IMAGE_TO_VIDEO',
@@ -272,6 +280,7 @@ const IMAGE_LIST_TO_VIDEO_VIDEO_MODEL_KEYS = [
   'SEEDANCEI2V',
   'SEEDANCE2.0I2V',
   'SEEDANCE2.5I2V',
+  'SEEDANCE2.5FLASHI2V',
   'KLINGIMGTOVID4',
   'HAPPYHORSEI2V',
   'CUSTOM_IMAGE_TO_VIDEO',
@@ -4446,6 +4455,8 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
         status: 'PENDING',
         expressGenerationPaused: false,
         expressGenerationPending: true,
+        expressGenerationFailed: false,
+        expressGenerationError: null,
         expressGenerationStatus: data?.expressGenerationStatus || current?.expressGenerationStatus || expressGenerationStatus,
       }));
       setSessionDetails((current) => current
@@ -4453,6 +4464,8 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
             ...current,
             expressGenerationPaused: false,
             expressGenerationPending: true,
+            expressGenerationFailed: false,
+            expressGenerationError: null,
             videoGenerationPending: true,
             expressGenerationStatus: data?.expressGenerationStatus || current.expressGenerationStatus,
           }
@@ -5756,12 +5769,18 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
   // ─────────────────────────────────────────────────────────
   //  Render-state helpers
   // ─────────────────────────────────────────────────────────
+  const canRetryFailedImages = canRetryVidgenieImageStage({
+    session: sessionDetails,
+    statusDetails: generationStatusDetails,
+    isPending: isGenerationPending || isGenerationWaitingForApproval,
+  });
   const renderState = useMemo(() => {
     if (isPaused) return 'paused';
     if (isGenerationPending || isGenerationWaitingForApproval) return 'pending';
     if (videoLink) return 'complete';
+    if (canRetryFailedImages) return 'failed';
     return 'idle';
-  }, [isGenerationPending, isGenerationWaitingForApproval, isPaused, videoLink]);
+  }, [canRetryFailedImages, isGenerationPending, isGenerationWaitingForApproval, isPaused, videoLink]);
   useEffect(() => {
     // Save only layout metadata for this exact project; live state always wins.
     const loadedId = String(sessionDetails?._id?.$oid || sessionDetails?._id || sessionDetails?.id || '');
@@ -5781,7 +5800,7 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
   // Completed requests are a record of this session, independent of the
   // editable defaults used for a new request. Do not persist these display
   // values into the user's image/video generation preferences.
-  const completedRequestSession = renderState === 'complete' ? sessionDetails : null;
+  const completedRequestSession = ['complete', 'failed'].includes(renderState) ? sessionDetails : null;
   const requestImageModel = getSavedSessionModelOption(
     resolveSavedSessionSetting(completedRequestSession, ['expressGenerationImageModel', 'imageModel', 'image_model']),
     stageImageModels,
@@ -5813,7 +5832,7 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
   const requestInferenceEffort = savedInferenceEffort
     ? getInferenceEffortOption(savedInferenceEffort)
     : selectedInferenceEffort;
-  const shouldCollapseOriginalRequest = renderState === 'complete' && Boolean(videoLink);
+  const shouldCollapseOriginalRequest = renderState === 'failed' || (renderState === 'complete' && Boolean(videoLink));
   const shouldShowOriginalRequestInputs =
     !shouldCollapseOriginalRequest || isCompletedRequestExpanded;
   useEffect(() => {
@@ -5833,11 +5852,12 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
       isGenerationPending ||
       isGenerationWaitingForApproval ||
       isPaused ||
+      renderState === 'failed' ||
       Boolean(videoLink)
     );
 
   const isFormDisabled = renderState !== 'idle' || isDisabled;
-  const isModeToggleDisabled = isDisabled || renderState === 'pending' || renderState === 'paused' || isSubmitting;
+  const isModeToggleDisabled = isDisabled || ['pending', 'paused', 'failed'].includes(renderState) || isSubmitting;
   const isGenerationActionDisabled =
     isFormDisabled ||
     isSubmitting ||
@@ -6355,6 +6375,22 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
                   )}
                 </button>
               </div>
+            )}
+
+            {renderState === 'failed' && !isGuestPreview && (
+              <button
+                type="button"
+                onClick={handleResumeRender}
+                disabled={isRenderPauseResumePending}
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition ${
+                  colorMode === 'dark' ? 'border-white/20 hover:bg-white/5' : 'border-slate-300 hover:bg-slate-50'
+                } ${isRenderPauseResumePending ? 'cursor-not-allowed opacity-60' : ''}`}
+              >
+                {isRenderPauseResumePending
+                  ? <FaSpinner className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  : <FaRedo className="h-3.5 w-3.5" aria-hidden="true" />}
+                {uiText("Retry image generation")}
+              </button>
             )}
 
           </div>
@@ -7385,7 +7421,7 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
         )}
       </form>
       )}
-      {shouldShowOriginalRequestInputs && renderSubmitButton()}
+      {shouldShowOriginalRequestInputs && renderState !== 'failed' && renderSubmitButton()}
 
       {/* ───────── Assistant Chat ───────── */}
       {shouldShowOriginalRequestInputs && (

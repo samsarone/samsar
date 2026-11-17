@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { normalizeDeploymentInferenceModelValue, inferGPT56SolEffortFromModelValue, resolveAllowedInferenceModelOption, filterOptionsForDeploymentInferenceModels } from './deploymentInferencePolicy.mjs';
 import { supportsInferenceEffort } from './inferenceModelChoices.mjs';
 
-for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
+for (const model of ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
   test(`${model} retains its identity, saved effort, and deployment filtering`, () => {
     assert.equal(normalizeDeploymentInferenceModelValue(model + '-xhigh'), model);
     assert.equal(inferGPT56SolEffortFromModelValue(model + '-xhigh'), 'xhigh');
@@ -16,6 +16,20 @@ for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fa
 test('unrelated providers do not acquire a GPT/Claude effort selector', () => {
   assert.equal(supportsInferenceEffort('gemini-4-carbon'), false);
   assert.equal(supportsInferenceEffort('QWEN3.8'), false);
+});
+
+test('saved Astra and Sol legacy choices migrate to Astra 6.2 with their effort', () => {
+  const options = [{ value: 'gpt-6.2-astra' }, { value: 'gpt-6.2-astra-xhigh' }];
+  for (const alias of ['gpt-6-astra', 'GPT 6 Astra', 'openai/gpt-6-astra', 'gpt-5.6-sol']) {
+    for (const [suffix, effort] of [['', 'high'], ['-high', 'high'], ['-xhigh', 'xhigh'], [' Extra High', 'xhigh']]) {
+      const saved = alias + suffix;
+      assert.equal(normalizeDeploymentInferenceModelValue(saved), 'gpt-6.2-astra');
+      assert.equal(inferGPT56SolEffortFromModelValue(saved), effort);
+      assert.equal(supportsInferenceEffort(saved), true);
+      assert.equal(resolveAllowedInferenceModelOption(saved, options).value,
+        'gpt-6.2-astra' + (effort === 'xhigh' ? '-xhigh' : ''));
+    }
+  }
 });
 
 

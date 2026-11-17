@@ -10,7 +10,7 @@ const seed = {
   sessionId: 'music-session',
 };
 
-for (const model of ['gpt-6-astra', 'claude-fable-5.2', 'gemini-4-carbon', 'QWEN3.8', 'kimi-k3']) {
+for (const model of ['gpt-6.2-astra', 'claude-fable-5.2', 'gemini-4-carbon', 'QWEN3.8', 'kimi-k3']) {
   for (const musicModel of ['CASSETTEAI', 'ELEVENLABS_MUSIC']) {
     test(`successful ${model}/${musicModel} request preserves its payload and output`, async () => {
       const output = '  Somber cello accompaniment.\n';
@@ -47,7 +47,7 @@ test('music generation retains the existing default inference model', async () =
   await getMusicForTextTheme(theme, undefined, undefined, {
     createChatCompletion: async (_client, payload) => { request = payload; return completion('Instrumental cello.'); },
   });
-  assert.equal(request.model, 'gpt-6-astra');
+  assert.equal(request.model, 'gpt-6.2-astra');
 });
 
 test('temporary failure regenerates only music from the original seed', async (t) => {
@@ -81,7 +81,7 @@ test('temporary failure regenerates only music from the original seed', async (t
 test('progressive fallback remains anchored to the same original requirements', async (t) => {
   t.mock.method(console, 'warn', () => {});
   const requests = [];
-  const result = await getMusicForTextTheme(theme, 'gpt-6-astra', 'ELEVENLABS_MUSIC', {
+  const result = await getMusicForTextTheme(theme, 'gpt-6.2-astra', 'ELEVENLABS_MUSIC', {
     ...seed,
     createChatCompletion: async (_client, request) => {
       requests.push(request);
@@ -121,7 +121,7 @@ test('exhausted invalid responses use a bounded, context-preserving local fallba
   t.mock.method(console, 'warn', () => {});
   let calls = 0;
   const responses = [completion(null, { refusal: 'Cannot respond.' }), completion(''), completion('Long '.repeat(40))];
-  const result = await getMusicForTextTheme(theme, 'gpt-6-astra', 'ELEVENLABS_MUSIC', {
+  const result = await getMusicForTextTheme(theme, 'gpt-6.2-astra', 'ELEVENLABS_MUSIC', {
     ...seed,
     createChatCompletion: async () => responses[calls++],
   });
@@ -132,7 +132,7 @@ test('exhausted invalid responses use a bounded, context-preserving local fallba
 test('exhausted provider quota uses the local fallback without another charged inference attempt', async (t) => {
   t.mock.method(console, 'warn', () => {});
   let calls = 0;
-  const result = await getMusicForTextTheme(theme, 'gpt-6-astra', 'ELEVENLABS_MUSIC', {
+  const result = await getMusicForTextTheme(theme, 'gpt-6.2-astra', 'ELEVENLABS_MUSIC', {
     ...seed,
     createChatCompletion: async () => {
       calls++;
@@ -153,7 +153,7 @@ for (const failure of [
 ]) {
   test(`recovery propagates ${failure.message}`, async () => {
     let calls = 0;
-    await assert.rejects(getMusicForTextTheme(theme, 'gpt-6-astra', 'ELEVENLABS_MUSIC', {
+    await assert.rejects(getMusicForTextTheme(theme, 'gpt-6.2-astra', 'ELEVENLABS_MUSIC', {
       createChatCompletion: async () => { calls++; throw failure; },
     }), (error) => error === failure);
     assert.equal(calls, 1);
@@ -165,7 +165,7 @@ test('explicit cancellation during backoff prevents another inference request', 
   const controller = new AbortController();
   const reason = new Error('Cancelled');
   let calls = 0;
-  await assert.rejects(getMusicForTextTheme(theme, 'gpt-6-astra', 'ELEVENLABS_MUSIC', {
+  await assert.rejects(getMusicForTextTheme(theme, 'gpt-6.2-astra', 'ELEVENLABS_MUSIC', {
     signal: controller.signal,
     createChatCompletion: async () => { calls++; throw Object.assign(new Error('Temporary outage'), { status: 503 }); },
     delay: async () => controller.abort(reason),
@@ -174,7 +174,7 @@ test('explicit cancellation during backoff prevents another inference request', 
 });
 
 test('the shared assistant wrapper retains its existing public error for other callers', async () => {
-  await assert.rejects(sendAssistantMessageRequest([], 'gpt-6-astra', {
+  await assert.rejects(sendAssistantMessageRequest([], 'gpt-6.2-astra', {
     createChatCompletion: async () => { throw Object.assign(new Error('Provider detail'), { status: 503 }); },
   }), { message: 'An error occurred while sending the message. Please try again with a different message.' });
 });

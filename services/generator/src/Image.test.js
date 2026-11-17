@@ -8,6 +8,106 @@ import { Types } from 'mongoose';
 import { __testOnly__ } from './Image.js';
 import VideoSession from './schema/VideoSession.js';
 
+test('definitive provider rejections prune singular express scenes only after three additional generations', () => {
+  const session = { isExpressGeneration: true, narrativeType: 'singular' };
+  const rejected = { image: null, status: 422, definitiveAdapterFailure: true,
+    error: 'The content could not be processed because it contained material flagged by a content checker.' };
+  let payload = { generationRetryCount: 0, failureRetryCount: 0 };
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    assert.equal(__testOnly__.getTerminalGenerationPruneOptions(session, payload, rejected).pruneLayer, false);
+    const retry = __testOnly__.getImageGenerationRetryPlan(payload, 1000);
+    assert.ok(retry, 'each of the first three failures has one new-generation retry');
+    payload = { ...payload, ...retry.setFields, failureRetryCount: attempt + 1 };
+  }
+  assert.equal(__testOnly__.getImageGenerationRetryPlan(payload, 1000), null);
+  assert.deepEqual(__testOnly__.getTerminalGenerationPruneOptions(session, payload, rejected), {
+    pruneLayer: true, allowExpressImageLayerPrune: true,
+  });
+  assert.equal(__testOnly__.getTerminalGenerationPruneOptions(
+    { ...session, narrativeType: 'branched' }, payload, rejected,
+  ).pruneLayer, true);
+  assert.equal(__testOnly__.getTerminalGenerationPruneOptions(
+    { ...session, isExpressGeneration: false }, payload, rejected,
+  ).pruneLayer, false);
+});
+
+test('terminal provider prune requires the current rejection and preserves uncertain or infrastructure outcomes', () => {
+  const session = { isExpressGeneration: true };
+  const payload = { generationRetryCount: 3, imageSubmissionAttempt: { state: 'REJECTED' } };
+  const rejected = { image: null, status: 422, definitiveAdapterFailure: true, error: 'Provider content checker rejected the image.' };
+  for (const failure of [
+    { ...rejected, definitiveAdapterFailure: false },
+    { ...rejected, submissionOutcomeUnknown: true },
+    { ...rejected, nonPromptProviderFailure: true },
+    { ...rejected, preserveExpressImageLayer: true },
+    { ...rejected, providerPollFailure: true },
+    { ...rejected, imageBillingPending: true },
+    { ...rejected, status: 503 },
+    { ...rejected, status: 401 },
+    { ...rejected, error: 'API key is not configured.' },
+    { ...rejected, image: 'already-returned.png' },
+  ]) {
+    assert.equal(__testOnly__.getTerminalGenerationPruneOptions(session, payload, failure).pruneLayer, false);
+  }
+  for (const state of ['SUBMITTING', 'UNKNOWN', 'ACCEPTED', 'COMPLETED']) {
+    assert.equal(__testOnly__.getTerminalGenerationPruneOptions(session, {
+      ...payload, imageSubmissionAttempt: { state },
+    }, rejected).pruneLayer, false, state);
+  }
+  assert.equal(__testOnly__.getTerminalGenerationPruneOptions(session, {
+    ...payload, submissionOutcomeUnknown: true,
+  }, rejected).pruneLayer, false);
+});
+
+test('prune plans preserve completed images, clips, and selected base-image assets regardless of stale stage flags', () => {
+  const surviving = { _id: 'surviving', duration: 5 };
+  for (const asset of [
+    { imageSession: { generationStatus: 'COMPLETED' } },
+    { imageSession: { activeGeneratedImage: 'saved.png' } },
+    { imageSession: { activeSelectedImage: 'selected.png' } },
+    { imageSession: { activeEditedImage: 'edited.png' } },
+    { imageSession: { activeImageRemoteLink: 'https://cdn.example/image.png' } },
+    { imageSession: { activeItemList: [{ type: 'image', is_base_image: true, src: 'base.png' }] } },
+    { aiVideoGenerationStatus: 'completed' },
+    { aiVideoLayer: 'saved.mp4' },
+    { aiVideoRemoteLink: 'https://cdn.example/clip.mp4' },
+  ]) {
+    const result = __testOnly__.buildExpressLayerPrunePlan({
+      isExpressGeneration: true,
+      layers: [{ _id: 'target', duration: 5, ...asset }, surviving],
+    }, 'target');
+    assert.deepEqual(result, { pruned: false, handled: true, reason: 'completed_layer' });
+  }
+  assert.equal(__testOnly__.hasCompletedLayerVisual({ hasAiVideoLayer: true, aiVideoGenerationStatus: 'INIT' }), false);
+  assert.equal(__testOnly__.hasCompletedLayerVisual({ imageSession: { activeItemList: [
+    { type: 'image', src: 'overlay.png' }, { type: 'image', is_base_image: true, src: ' ' },
+  ] } }), false);
+});
+
+test('image failure reflow respects parent stop intent and leaves source timeline snapshots intact', () => {
+  const active = { isExpressGeneration: true, expressGenerationPending: true };
+  assert.equal(__testOnly__.isExpressImageFailureSessionStopped(active), false);
+  for (const fields of [
+    { expressGenerationPending: false }, { expressGenerationPaused: true },
+    { expressGenerationCancelled: true }, { expressGenerationFailed: true },
+    { videoLink: 'finished.mp4' }, { remoteURL: 'https://cdn.example/video.mp4' },
+    { expressGenerationStatus: { status: 'COMPLETED' } },
+    { hostedAgentBilling: { controlIntent: 'PAUSED' } },
+  ]) {
+    assert.equal(__testOnly__.isExpressImageFailureSessionStopped({ ...active, ...fields }), true);
+  }
+  const session = { ...active, layers: [
+    { _id: 'failed', duration: 5, durationOffset: 0 },
+    { _id: 'retained', duration: 5, durationOffset: 5 },
+  ], audioLayers: [{ _id: 'audio', connectedLayerId: 'retained', startTime: 6, endTime: 9, duration: 3 }] };
+  const before = structuredClone(session);
+  const plan = __testOnly__.buildExpressLayerPrunePlan(session, 'failed');
+  assert.equal(plan.pruned, true);
+  assert.equal(plan.layers[0].durationOffset, 0);
+  assert.equal(plan.audioLayers[0].startTime, 1);
+  assert.deepEqual(session, before, 'planning must not mutate the snapshot used by compare-and-set guards');
+});
+
 test('F2P: joined reroll scoring takes source scene context from the request snapshot', () => {
   const details = __testOnly__.buildImageThemeScoringContextDetailsForPayload({
     movieResourceList: { scenes: [{ visual: 'First-session anime astronaut.' }] },
@@ -447,6 +547,54 @@ test('image generation retries use bounded exponential backoff', () => {
     61000,
   );
 });
+
+test('image failures and quality rejections share at most three new generation attempts', () => {
+  let row = { generationRetryCount: 0, failureRetryCount: 0, filterRetryCount: 0 };
+  for (let retry = 1; retry <= 3; retry++) {
+    const plan = __testOnly__.getImageGenerationRetryPlan(row, 1000);
+    assert.equal(plan.setFields.generationRetryCount, retry);
+    assert.equal(plan.setFields.nextAttemptAfter.getTime(),
+      1000 + __testOnly__.getImageGenerationRetryDelayMs(retry));
+    for (const field of ['apiRequestId', 'apiSubmittedAt', 'providerSubmissionAccepted', 'providerResultUrl']) {
+      assert.equal(plan.unsetFields[field], '');
+    }
+    row = { ...row, ...plan.setFields };
+    if (retry % 2) row.failureRetryCount++;
+    else row.filterRetryCount++;
+  }
+  assert.equal(__testOnly__.getImageGenerationRetryPlan(row), null);
+  assert.equal(__testOnly__.getImageGenerationRetryPlan({ generationRetryCount: 4 }), null);
+});
+
+test('old failure and filter counters cannot grant a fresh three-retry budget', () => {
+  assert.equal(__testOnly__.getImageGenerationRetryCount({ failureRetryCount: 1, filterRetryCount: 2 }), 3);
+  assert.equal(__testOnly__.getImageGenerationRetryPlan({ generationRetryCount: null,
+    failureRetryCount: 1, filterRetryCount: 2 }), null);
+  assert.equal(__testOnly__.getImageGenerationRetryCount({ generationRetryCount: 2,
+    failureRetryCount: 2, filterRetryCount: 2 }), 2);
+});
+
+for (const failureMessage of ['Seedream result failed (422): Generation rejected.',
+  'Input text data may contain inappropriate content.']) {
+  test(`every retry repairs the prompt when the rewrite model echoes or fails: ${failureMessage}`, async () => {
+    const original = 'A cinematic wide shot of a fictional scientist in a subway station.';
+    const prompts = new Set([original]);
+    let previous = original;
+    for (let retry = 1; retry <= 3; retry++) {
+      const prompt = await __testOnly__.getAlteredPromptForRetry(original, retry, failureMessage,
+        previous, 'generation_failure', 'gemini-4-carbon', undefined, {
+          getAlternatePromptFromPrompt: async () => {
+            if (retry === 2) throw new Error('Rewrite unavailable');
+            return previous;
+          },
+        });
+      assert.equal(prompts.has(prompt), false);
+      assert.match(prompt, /subway station/);
+      prompts.add(prompt);
+      previous = prompt;
+    }
+  });
+}
 
 test('concurrent schedulers can claim an unlocked ImageGeneration only once', async () => {
   let rowLocked = false;

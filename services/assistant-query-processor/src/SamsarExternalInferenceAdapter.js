@@ -21,6 +21,7 @@ import { hasKimiK3NativeCredential } from './KimiK3.js';
 import { runExternalInferenceWithRetry } from './ExternalInferenceRetry.js';
 import { resolveProviderMediaPayload } from './ProviderMediaPayload.js';
 import { isStandaloneEdition } from './DeploymentEnvironment.js';
+import { resolveGoogleGeminiTransport } from './GoogleGeminiTransport.js';
 import {
   applyModelAdapterPreferenceOrder,
   normalizeModelAdapterModelKey,
@@ -40,11 +41,11 @@ const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_GENBLAZE_BASE_URL = 'http://genblaze:8080/v1';
 const GENBLAZE_INFERENCE_MODELS = new Set([
   'QWEN3.8',
-  'gpt-6-astra',
+  'gpt-6.2-astra',
   'gemini-4-carbon',
 ]);
 const GENBLAZE_HIGH_REASONING_MODELS = new Set([
-  'gpt-6-astra',
+  'gpt-6.2-astra',
   'gemini-4-carbon',
 ]);
 const GOOGLE_NATIVE_CREDENTIAL_KEYS = Object.freeze([
@@ -90,7 +91,7 @@ export const DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
     DOCKER_INFERENCE_PROVIDER.KIMI,
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
   ]),
-  'gpt-6-astra': Object.freeze([
+  'gpt-6.2-astra': Object.freeze([
     DOCKER_INFERENCE_PROVIDER.OPENAI,
     DOCKER_INFERENCE_PROVIDER.GMICLOUD,
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
@@ -337,10 +338,7 @@ function getCanonicalGenblazeInferenceModel(model) {
   if (isGeminiInferenceModel(model) && normalizeInferenceModel(model) === 'gemini-4-carbon') {
     return 'gemini-4-carbon';
   }
-  const normalized = normalizeString(model).toLowerCase();
-  return normalized === 'gpt-6-astra' || normalized.startsWith('gpt-6-astra-')
-    ? 'gpt-6-astra'
-    : '';
+  return getReasoningModelBase(model) === 'gpt-6.2-astra' ? 'gpt-6.2-astra' : '';
 }
 
 function hasGenblazeModelMapping(model, chatRequest = {}, env = process.env) {
@@ -351,7 +349,11 @@ function hasGenblazeModelMapping(model, chatRequest = {}, env = process.env) {
   try {
     const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
     const route = catalog?.models?.[canonicalModel]?.[getGenblazeInferenceModality(chatRequest)];
-    return Boolean(normalizeString(route?.modelId));
+    const providerModel = normalizeString(route?.modelId);
+    return Boolean(providerModel) && (canonicalModel !== 'gpt-6.2-astra' || (
+      providerModel.split('/').filter(Boolean).at(-1).toLowerCase() === canonicalModel &&
+      route.operation === 'chat.completions'
+    ));
   } catch {
     return false;
   }
@@ -362,7 +364,7 @@ function hasConfiguredInferenceProvider(provider, model, chatRequest = {}) {
     return hasAlibabaQwenNativeCredential();
   }
   if (provider === DOCKER_INFERENCE_PROVIDER.GOOGLE_CLOUD) {
-    return hasGoogleNativeCredential();
+    return resolveGoogleGeminiTransport(model).kind === 'developer' || hasGoogleNativeCredential();
   }
   if (provider === DOCKER_INFERENCE_PROVIDER.KIMI) {
     return hasKimiK3NativeCredential();
@@ -409,7 +411,7 @@ function getInferenceProviderPriority(model, chatRequest = {}) {
   } else {
     preferenceModelKey = normalizeInferenceModel(model);
     const genblazePriority = DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL[preferenceModelKey] ||
-      DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gpt-6-astra'];
+      DOCKER_INFERENCE_PROVIDER_PRIORITY_BY_MODEL['gpt-6.2-astra'];
     defaultPriority = Boolean(getGenblazeClient()) && hasGenblazeModelMapping(model, chatRequest)
       ? genblazePriority
       : [
@@ -487,11 +489,12 @@ export function getOpenRouterModelForInferenceRequest(chatRequest = {}, env = pr
       ? 'google/gemini-4-carbon'
       : configuredGeminiModel || 'google/gemini-4-carbon';
   }
-  const configuredModel = normalizeString(env?.OPENROUTER_GPT_6_ASTRA_MODEL) ||
+  const configuredModel = normalizeString(env?.OPENROUTER_GPT_62_ASTRA_MODEL) ||
+    normalizeString(env?.OPENROUTER_GPT_6_ASTRA_MODEL) ||
     normalizeString(env?.OPENROUTER_GPT_56_SOL_MODEL);
-  return /^(?:openai\/)?gpt-(?:6\.1-sol|5\.6-sol)(?:-(?:high|xhigh))?$/i.test(configuredModel)
-    ? 'openai/gpt-6-astra'
-    : configuredModel || 'openai/gpt-6-astra';
+  return /^(?:openai\/)?gpt-(?:6-astra|6\.1-sol|5\.6-sol)(?:-(?:high|xhigh))?$/i.test(configuredModel)
+    ? 'openai/gpt-6.2-astra'
+    : configuredModel || 'openai/gpt-6.2-astra';
 }
 
 export function shouldUseOpenRouterInference(chatRequest = {}) {

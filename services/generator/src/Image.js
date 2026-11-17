@@ -7,6 +7,8 @@ import { checkpointForAttempt } from './billing/ImageResultCheckpoint.js';
 import { sealFalImageSubmission } from './billing/FalImageSubmission.js';
 import { sealImageAdapterSubmission } from './billing/ImageAdapterSubmission.js';
 import { deferAcceptedImagePoll, observeImageSubmissionFailure, resolveImageSubmissionAttempt, runImageSubmissionAttempt } from './utils/ImageSubmissionAttempt.js';
+import { prepareImageRecoveryDispatch } from './utils/ImageRecoveryDispatch.js';
+import { isSafetyRejectionMessage } from './utils/ImageFailureClassification.js';
 import { normalizeStoredGPTImageModelKey } from './consts/GPTImageModelKeys.js';
 import { getImageFromText, getEditImageFromText } from './Dispatcher.js';
 import { getDBConnectionString } from './DBString.js';
@@ -41,6 +43,7 @@ import { handleGPTImageTwoRequest } from './providers/GPTImageOne.js';
 import { handleFalGPTImageTwoRequest } from './providers/GPTImageTwoFal.js';
 import { handleFLiteRequest } from './providers/FLite.js';
 import { handleSeedreamRequest } from './providers/Seedream.js';
+import { handleKlingImageRequest } from './providers/KlingImage.js';
 import { handleHunyuanRequest } from './providers/Hunyuan.js';
 import { handleCustomTextToImageRequest } from './providers/CustomTextToImage.js';
 import {
@@ -121,8 +124,9 @@ const SHARP_THREADS_PER_REQUEST = resolvePerTaskCpuUpperBound(
 // This configures an upper bound only. libvips creates worker threads when a
 // Sharp operation actually runs, and the outer queue owns request parallelism.
 sharp.concurrency(SHARP_THREADS_PER_REQUEST);
-const MAX_IMAGE_GENERATION_FAILURES = 3;
-const MAX_IMAGE_GENERATION_FILTER_RETRIES = 3;
+const MAX_IMAGE_GENERATION_RETRIES = 3;
+const MAX_IMAGE_GENERATION_FAILURES = MAX_IMAGE_GENERATION_RETRIES + 1;
+const MAX_IMAGE_GENERATION_FILTER_RETRIES = MAX_IMAGE_GENERATION_RETRIES + 1;
 const IMAGE_GENERATION_RETRY_BASE_DELAY_MS = Math.max(
   250,
   Number(process.env.IMAGE_GENERATION_RETRY_BASE_DELAY_MS) || 2000,
@@ -167,6 +171,35 @@ function normalizeRetryCount(value) {
     return 0;
   }
   return Math.floor(count);
+}
+
+function getImageGenerationRetryCount(payload = {}) {
+  if (payload.generationRetryCount != null) {
+    return normalizeRetryCount(payload.generationRetryCount);
+  }
+  // Old workers tracked failure and scoring retries separately, sometimes
+  // incrementing both for one retry. Count conservatively until this worker
+  // persists the shared budget, rather than granting old jobs extra attempts.
+  return normalizeRetryCount(payload.failureRetryCount) +
+    normalizeRetryCount(payload.filterRetryCount) + normalizeRetryCount(payload.retryCount);
+}
+
+function getImageGenerationRetryPlan(payload = {}, now = Date.now(), minimumDelayMs = 0) {
+  const retries = getImageGenerationRetryCount(payload);
+  if (retries >= MAX_IMAGE_GENERATION_RETRIES) return null;
+  const generationRetryCount = retries + 1;
+  return {
+    setFields: {
+      generationRetryCount,
+      nextAttemptAfter: getImageGenerationNextAttemptAfter(generationRetryCount, now, minimumDelayMs),
+    },
+    // Only used after a definitive failure or an intentionally rejected image.
+    // Accepted/uncertain work stays on the read-only polling recovery path.
+    unsetFields: {
+      apiRequestId: '', apiSubmittedAt: '', providerResultUrl: '',
+      providerSubmissionAccepted: '', submittedAdapter: '', externalProvider: '',
+    },
+  };
 }
 
 function getImageGenerationRetryDelayMs(nextFailureCount = 1) {
@@ -733,9 +766,22 @@ function getTerminalFilterFailurePolicy(videoTone, payload = {}, sessionData = {
   };
 }
 
-function getBranchedTerminalGenerationPruneOptions(sessionData = {}) {
+function getTerminalGenerationPruneOptions(sessionData = {}, payload = {}, imageData = {}) {
+  const status = Number(imageData?.status ?? imageData?.statusCode ?? imageData?.response?.status);
+  const isInfrastructureFailure = imageData?.nonPromptProviderFailure === true ||
+    imageData?.preserveExpressImageLayer === true || imageData?.providerPollFailure === true ||
+    imageData?.imageBillingPending === true ||
+    [401, 403, 404, 408, 409, 425, 429].includes(status) || status >= 500 ||
+    /authentication|unauthori[sz]ed|api.?key|billing|insufficient (?:funds|credits)|configuration|not configured|unsupported model|model not found|rate.?limit|quota|timed? ?out|network|connection|fetch failed/i.test(
+      getImageGenerationFailureMessage(imageData),
+    );
+  const markerState = normalizeString(payload?.imageSubmissionAttempt?.state).toUpperCase();
   const allowExpressImageLayerPrune = Boolean(
-    sessionData?.isExpressGeneration && isBranchedVideoSession(sessionData),
+    sessionData?.isExpressGeneration &&
+    getImageGenerationRetryCount(payload) >= MAX_IMAGE_GENERATION_RETRIES &&
+    imageData?.definitiveAdapterFailure === true && !imageData?.image &&
+    !hasUnsafeImageSubmissionOutcome(imageData, payload) && !isInfrastructureFailure &&
+    (!markerState || markerState === 'REJECTED'),
   );
   return {
     pruneLayer: allowExpressImageLayerPrune,
@@ -1060,12 +1106,6 @@ function normalizePromptForComparison(value) {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
 }
 
-function isSafetyRejectionMessage(message = '') {
-  return /safety system|safety_violations|content policy|policy violation|request was rejected|inappropriate content/i.test(
-    String(message || '')
-  );
-}
-
 function extractSafetyViolationLabels(message = '') {
   const match = String(message || '').match(/safety_violations=\[([^\]]+)\]/i);
   if (!match) {
@@ -1135,6 +1175,29 @@ function buildThemePreservingSafetyRetryPrompt(originalPrompt = '', failureMessa
   ].join(' ');
 }
 
+function buildDistinctImageRetryPrompt(originalPrompt, failureMessage, previousPrompt, retryCount) {
+  const guidance = [
+    'Simplify background detail and emphasize one clearly readable main action.',
+    'Separate the main subjects spatially and use an uncluttered camera composition.',
+    'Use a clear establishing composition with fewer competing secondary elements.',
+  ];
+  const safety = isSafetyRejectionMessage(failureMessage);
+  const base = safety
+    ? buildThemePreservingSafetyRetryPrompt(originalPrompt, failureMessage, retryCount)
+    : [
+      sanitizePromptForThemePreservingRetry(originalPrompt, failureMessage) || 'Image for the same storyboard scene and visual theme.',
+      'Preserve the original subject, setting, mood, composition, lighting, visual medium, genre, and visual style.',
+      'Use fictional non-identifying characters and brand-free details where needed.',
+    ].join(' ');
+  const forbidden = new Set([originalPrompt, previousPrompt].map(normalizePromptForComparison));
+  for (let offset = 0; offset < guidance.length; offset++) {
+    const index = (Math.max(1, normalizeRetryCount(retryCount)) - 1 + offset) % guidance.length;
+    const prompt = `${base} ${guidance[index]}`;
+    if (!forbidden.has(normalizePromptForComparison(prompt))) return prompt;
+  }
+  throw new Error('Unable to build a distinct image retry prompt.');
+}
+
 async function getAlteredPromptForRetry(
   prompt,
   retryCount,
@@ -1143,13 +1206,15 @@ async function getAlteredPromptForRetry(
   rewriteMode = 'generation_failure',
   userInferenceModel,
   userInferenceAuthorization,
+  dependencies = {},
 ) {
   const originalPrompt = typeof prompt === 'string' ? prompt.trim() : '';
   const currentPrompt = typeof previousPrompt === 'string' ? previousPrompt.trim() : '';
+  const rewritePrompt = dependencies.getAlternatePromptFromPrompt || getAlternatePromptFromPrompt;
 
   if (isSafetyRejectionMessage(failureMessage)) {
     try {
-      const safetyAlteredPrompt = await getAlternatePromptFromPrompt(
+      const safetyAlteredPrompt = await rewritePrompt(
         originalPrompt,
         retryCount,
         failureMessage,
@@ -1174,17 +1239,20 @@ async function getAlteredPromptForRetry(
       });
     }
 
-    return buildThemePreservingSafetyRetryPrompt(originalPrompt, failureMessage, retryCount);
+    return buildDistinctImageRetryPrompt(originalPrompt, failureMessage, currentPrompt, retryCount);
   }
 
-  const alteredPrompt = await getAlternatePromptFromPrompt(
-    originalPrompt,
-    retryCount,
-    failureMessage,
-    rewriteMode,
-    userInferenceModel,
-    userInferenceAuthorization,
-  );
+  let alteredPrompt;
+  try {
+    alteredPrompt = await rewritePrompt(
+      originalPrompt, retryCount, failureMessage, rewriteMode,
+      userInferenceModel, userInferenceAuthorization,
+    );
+  } catch (error) {
+    console.error('[image_generation] retry prompt rewrite failed; using scene-preserving repair', {
+      retryCount, message: error?.message || String(error),
+    });
+  }
   const normalizedAlteredPrompt = typeof alteredPrompt === 'string' ? alteredPrompt.trim() : '';
   const normalizedAlteredComparison = normalizePromptForComparison(normalizedAlteredPrompt);
 
@@ -1196,11 +1264,7 @@ async function getAlteredPromptForRetry(
     return normalizedAlteredPrompt;
   }
 
-  return [
-    sanitizePromptForThemePreservingRetry(originalPrompt, failureMessage) || 'Image for the same storyboard scene and visual theme.',
-    'Preserve the original subject, setting, mood, composition, lighting, visual medium, genre, and visual style.',
-    'Use fictional non-identifying characters and brand-free details where needed.',
-  ].join(' ');
+  return buildDistinctImageRetryPrompt(originalPrompt, failureMessage, currentPrompt, retryCount);
 }
 
 function hasSessionInferenceModel(session = {}) {
@@ -1528,8 +1592,18 @@ async function markImageGenerationRequestFailed(payload = {}, imageData = null, 
   const videoSessionId = payload?.videoSessionId;
   const layerId = payload?.layerId;
   if (videoSessionId && layerId) {
-    const sessionData = options.sessionData || await VideoSession.findOne({ _id: videoSessionId });
+    let sessionData = await findImageFailureVideoSession(videoSessionId);
     if (sessionData) {
+      const completedLayer = sessionData.layers?.find(layer => String(layer._id) === String(layerId));
+      if (hasCompletedLayerVisual(completedLayer)) {
+        await ImageGeneration.deleteOne({ _id: requestId });
+        if (requestId) removeTaskFromQueueById(requestId);
+        return;
+      }
+      if (isExpressImageFailureSessionStopped(sessionData)) {
+        if (requestId) removeTaskFromQueueById(requestId);
+        return;
+      }
       const shouldPruneExpressLayer =
         options.pruneLayer === true &&
         options.allowExpressImageLayerPrune === true;
@@ -1541,7 +1615,16 @@ async function markImageGenerationRequestFailed(payload = {}, imageData = null, 
           requestId,
           message,
         });
-        if (pruneResult.pruned) {
+        if (pruneResult.pruned || pruneResult.handled) {
+          if (pruneResult.reason === 'completed_layer') {
+            await ImageGeneration.deleteOne({ _id: requestId });
+          }
+          if (requestId) removeTaskFromQueueById(requestId);
+          return;
+        }
+        sessionData = await findImageFailureVideoSession(videoSessionId);
+        if (!sessionData || isExpressImageFailureSessionStopped(sessionData)) {
+          if (requestId) removeTaskFromQueueById(requestId);
           return;
         }
       }
@@ -1550,18 +1633,39 @@ async function markImageGenerationRequestFailed(payload = {}, imageData = null, 
         (layer) => layer._id.toString() === layerId.toString()
       );
       if (layerIndex >= 0) {
+        if (hasCompletedLayerVisual(sessionData.layers[layerIndex])) {
+          await ImageGeneration.deleteOne({ _id: requestId });
+          if (requestId) removeTaskFromQueueById(requestId);
+          return;
+        }
         const expressFailureUpdate = getExpressImageFailureUpdate(sessionData, message);
-        await VideoSession.updateOne(
-          { _id: videoSessionId },
+        const failureUpdate = await VideoSession.updateOne(
+          {
+            _id: videoSessionId,
+            layers: { $elemMatch: { _id: layerId, ...getImageLayerVisualState(sessionData.layers[layerIndex]) } },
+            ...(sessionData.isExpressGeneration ? {
+              expressGenerationPending: true,
+              expressGenerationPaused: { $ne: true },
+              expressGenerationCancelled: { $ne: true },
+              expressGenerationFailed: { $ne: true },
+              videoLink: { $in: [null, ''] },
+              remoteURL: { $in: [null, ''] },
+              'expressGenerationStatus.status': sessionData.expressGenerationStatus?.status ?? null,
+              'expressGenerationStatus.video_generation': sessionData.expressGenerationStatus?.video_generation ?? null,
+              'hostedAgentBilling.controlIntent': sessionData.hostedAgentBilling?.controlIntent ?? null,
+            } : {}),
+          },
           {
             $set: {
-              [`layers.${layerIndex}.imageSession.generationStatus`]: 'FAILED',
-              [`layers.${layerIndex}.imageSession.generationError`]: message,
+              'layers.$.imageSession.generationStatus': 'FAILED',
+              'layers.$.imageSession.generationError': message,
               ...expressFailureUpdate,
             }
           }
         );
-        await markVideoGlobalSessionFailed(videoSessionId, message);
+        if (Number(failureUpdate?.matchedCount ?? failureUpdate?.modifiedCount ?? failureUpdate?.nModified) > 0) {
+          await markVideoGlobalSessionFailed(videoSessionId, message);
+        }
       }
     }
   }
@@ -1652,6 +1756,19 @@ async function rescheduleGenerationAfterRecoveryFailure(payload = {}, recoveryEr
 }
 
 async function recoverUnhandledGenerationTask(activeTask, error) {
+  if (error?.providerPollFailure) {
+    try {
+      if (await deferAcceptedImagePoll(activeTask)) return;
+      throw Object.assign(new Error('Image provider read failed without recoverable accepted-request ownership.'), {
+        code: 'IMAGE_PROVIDER_OUTCOME_UNKNOWN', submissionOutcomeUnknown: true,
+        nonPromptProviderFailure: true,
+      });
+    } catch (pollError) {
+      // Exhausted read retries must terminate here, not enter generic recovery
+      // and accidentally acquire another retry budget for the accepted job.
+      error = pollError;
+    }
+  }
   if (error?.submissionOutcomeUnknown && ['EDIT', 'UPSCALE'].includes(activeTask?.operationType)) {
     await ImageGeneration.updateOne({ _id: activeTask._id }, { $set: {
       submissionOutcomeUnknown: true, errorMessage: error.message,
@@ -1719,14 +1836,15 @@ async function scheduleImageGenerationRetry(payload = {}, latestDoc, imageData, 
   const nextFailureCount = previousFailureCount + 1;
   const failureMessage = getImageGenerationFailureMessage(imageData);
   const retrySource = isSafetyRejectionMessage(failureMessage) ? `${source}_safety` : source;
+  const retryPlan = getImageGenerationRetryPlan(latestDoc, Date.now(), imageData?.retryAfterMs);
 
-  if (nextFailureCount >= MAX_IMAGE_GENERATION_FAILURES) {
+  if (!retryPlan) {
     if (terminalOnMaxFailures) {
       await markImageGenerationRequestFailed(payload, imageData, {
         failureRetryCount: nextFailureCount,
-        message: `${failureMessage} Max image generation failures reached (${MAX_IMAGE_GENERATION_FAILURES}).`,
+        message: `${failureMessage} Image generation retry limit reached (${MAX_IMAGE_GENERATION_RETRIES} additional attempts).`,
         source: 'image_generation_max_failures',
-        ...getBranchedTerminalGenerationPruneOptions(sessionData),
+        ...getTerminalGenerationPruneOptions(sessionData, latestDoc, imageData),
       });
     }
     return false;
@@ -1763,11 +1881,7 @@ async function scheduleImageGenerationRetry(payload = {}, latestDoc, imageData, 
     generationStatus: 'INIT',
     apiGenerationStatus: 'INIT',
     failureRetryCount: nextFailureCount,
-    nextAttemptAfter: getImageGenerationNextAttemptAfter(
-      nextFailureCount,
-      Date.now(),
-      imageData?.retryAfterMs,
-    ),
+    ...retryPlan.setFields,
   };
   const adapterRetryState = getImageGenerationAdapterRetryState(
     latestDoc || payload,
@@ -1784,7 +1898,7 @@ async function scheduleImageGenerationRetry(payload = {}, latestDoc, imageData, 
     failureRetryCount: nextFailureCount,
     source: retrySource,
     setFields,
-    unsetFields: adapterRetryState.unsetFields,
+    unsetFields: { ...adapterRetryState.unsetFields, ...retryPlan.unsetFields },
   });
 
   if (updateLayerPrompt) {
@@ -2528,20 +2642,75 @@ function isPrunableExpressImageLayer(layer = {}) {
   return baseType !== 'none' && aiType !== 'none';
 }
 
+function getImageLayerVisualState(layer = {}) {
+  return {
+    'imageSession.generationStatus': layer?.imageSession?.generationStatus ?? null,
+    'imageSession.activeGeneratedImage': layer?.imageSession?.activeGeneratedImage ?? null,
+    'imageSession.activeSelectedImage': layer?.imageSession?.activeSelectedImage ?? null,
+    'imageSession.activeEditedImage': layer?.imageSession?.activeEditedImage ?? null,
+    'imageSession.activeImageRemoteLink': layer?.imageSession?.activeImageRemoteLink ?? null,
+    'imageSession.activeItemList': layer?.imageSession?.activeItemList ?? null,
+    aiVideoGenerationStatus: layer?.aiVideoGenerationStatus ?? null,
+    aiVideoLayer: layer?.aiVideoLayer ?? null,
+    aiVideoRemoteLink: layer?.aiVideoRemoteLink ?? null,
+    lipSyncVideoGenerationStatus: layer?.lipSyncVideoGenerationStatus ?? null,
+    lipSyncVideoLayer: layer?.lipSyncVideoLayer ?? null,
+    lipSyncRemoteLink: layer?.lipSyncRemoteLink ?? null,
+    soundEffectVideoGenerationStatus: layer?.soundEffectVideoGenerationStatus ?? null,
+    soundEffectVideoLayer: layer?.soundEffectVideoLayer ?? null,
+    soundEffectRemoteLink: layer?.soundEffectRemoteLink ?? null,
+  };
+}
+
+function hasCompletedLayerVisual(layer = {}) {
+  return Object.entries(getImageLayerVisualState(layer)).some(([field, value]) => (
+    field === 'imageSession.activeItemList'
+      ? Array.isArray(value) && value.some(item => (
+        normalizeString(item?.type).toLowerCase() === 'image' && item?.is_base_image === true &&
+        Boolean(normalizeString(item?.src))
+      ))
+      : field.endsWith('Status')
+      ? normalizeString(value).toUpperCase() === 'COMPLETED'
+      : Boolean(normalizeString(value))
+  ));
+}
+
+function isExpressImageFailureSessionStopped(sessionData = {}) {
+  if (!sessionData?.isExpressGeneration) return false;
+  const stoppedStatuses = ['PAUSED', 'CANCELLED', 'COMPLETED'];
+  return sessionData.expressGenerationPending !== true ||
+    sessionData.expressGenerationPaused === true || sessionData.expressGenerationCancelled === true ||
+    sessionData.expressGenerationFailed === true || Boolean(sessionData.videoLink || sessionData.remoteURL) ||
+    stoppedStatuses.includes(normalizeString(sessionData.expressGenerationStatus?.status).toUpperCase()) ||
+    normalizeString(sessionData.expressGenerationStatus?.video_generation).toUpperCase() === 'COMPLETED' ||
+    [...stoppedStatuses, 'FAILED'].includes(normalizeString(sessionData.hostedAgentBilling?.controlIntent).toUpperCase());
+}
+
+async function findImageFailureVideoSession(videoSessionId) {
+  const query = VideoSession.findOne({ _id: videoSessionId });
+  // Raw values keep the CAS predicate faithful to fields that actually exist;
+  // hydrated schema defaults must not become requirements for legacy sessions.
+  return typeof query?.lean === 'function' ? query.lean() : query;
+}
+
 function buildExpressLayerPrunePlan(sessionData = {}, layerId) {
   if (!sessionData?.isExpressGeneration || !layerId) {
     return { pruned: false };
   }
 
-  if (isBranchedVideoSession(sessionData)) {
-    return buildBranchedExpressLayerPrunePlan(sessionData, layerId);
-  }
-
   const normalizedLayerId = layerId.toString();
-  const layers = Array.isArray(sessionData.layers) ? [...sessionData.layers] : [];
+  const layers = Array.isArray(sessionData.layers)
+    ? sessionData.layers.map(cloneDocumentObject)
+    : [];
   const layerIndex = layers.findIndex((layer) => layer?._id?.toString?.() === normalizedLayerId);
   if (layerIndex < 0) {
     return { pruned: true, reason: 'missing_layer' };
+  }
+  if (hasCompletedLayerVisual(layers[layerIndex])) {
+    return { pruned: false, handled: true, reason: 'completed_layer' };
+  }
+  if (isBranchedVideoSession(sessionData)) {
+    return buildBranchedExpressLayerPrunePlan(sessionData, layerId);
   }
 
   const remainingPrunableLayerCount = layers.filter((layer) => (
@@ -2556,7 +2725,7 @@ function buildExpressLayerPrunePlan(sessionData = {}, layerId) {
   const audioLayers = Array.isArray(sessionData.audioLayers)
     ? sessionData.audioLayers.filter((audioLayer) => (
       String(audioLayer?.connectedLayerId || '') !== normalizedLayerId
-    ))
+    )).map(cloneDocumentObject)
     : [];
   const totalDuration = reflowLayersAndConnectedAudio(layers, audioLayers);
   for (let index = layerIndex; index < layers.length; index += 1) {
@@ -2584,10 +2753,27 @@ async function pruneExpressImageLayerAfterFailure({
     return { pruned: false };
   }
 
-  let currentSessionData = sessionData;
   let prunePlan = null;
   let updated = false;
   for (let attempt = 0; attempt < 5; attempt += 1) {
+    const currentSessionData = await findImageFailureVideoSession(videoSessionId);
+    if (!currentSessionData) return { pruned: false, handled: true, reason: 'missing_session' };
+    if (isExpressImageFailureSessionStopped(currentSessionData)) {
+      return { pruned: false, handled: true, reason: 'session_stopped' };
+    }
+    // Capture every surviving scene's visual fields before planning reflow.
+    // Timestamps alone cannot distinguish two completions within the same ms.
+    const visualStateGuards = (currentSessionData.layers || []).map(layer => ({
+      layers: { $elemMatch: { _id: layer._id, ...getImageLayerVisualState(layer) } },
+    }));
+    const audioStateGuards = (currentSessionData.audioLayers || []).map(audio => ({
+      audioLayers: { $elemMatch: {
+        _id: audio._id,
+        generationStatus: audio.generationStatus ?? null,
+        selectedLocalAudioLink: audio.selectedLocalAudioLink ?? null,
+        selectedRemoteAudioLink: audio.selectedRemoteAudioLink ?? null,
+      } },
+    }));
     prunePlan = buildExpressLayerPrunePlan(currentSessionData, layerId);
     if (!prunePlan.pruned) {
       return prunePlan;
@@ -2639,6 +2825,18 @@ async function pruneExpressImageLayerAfterFailure({
       {
         _id: videoSessionId,
         'layers._id': layerId,
+        isExpressGeneration: true,
+        expressGenerationPending: true,
+        expressGenerationPaused: { $ne: true },
+        expressGenerationCancelled: { $ne: true },
+        expressGenerationFailed: { $ne: true },
+        videoLink: { $in: [null, ''] },
+        remoteURL: { $in: [null, ''] },
+        'expressGenerationStatus.status': currentSessionData.expressGenerationStatus?.status ?? null,
+        'expressGenerationStatus.video_generation': currentSessionData.expressGenerationStatus?.video_generation ?? null,
+        'hostedAgentBilling.controlIntent': currentSessionData.hostedAgentBilling?.controlIntent ?? null,
+        updatedAt: currentSessionData.updatedAt ?? { $exists: false },
+        $and: [...visualStateGuards, ...audioStateGuards],
         ...(hasVersion ? { __v: version } : {}),
       },
       {
@@ -2658,10 +2856,6 @@ async function pruneExpressImageLayerAfterFailure({
     if (modifiedCount > 0) {
       updated = true;
       break;
-    }
-    currentSessionData = await VideoSession.findOne({ _id: videoSessionId });
-    if (!currentSessionData) {
-      return { pruned: false, reason: 'missing_session' };
     }
   }
   if (!updated) {
@@ -2769,6 +2963,7 @@ async function processNextTask() {
         removeTaskFromQueueById(_id);
         return;
       }
+      if (!await prepareImageRecoveryDispatch(latestTask, { VideoSession, ImageGeneration })) return;
       await runImageSubmissionAttempt(latestTask, () => processPendingGenerationRequet(latestTask));
     } else if (latestTask.operationType === "EDIT") {
       if (isTerminalImageRequestStatus(latestTask.editStatus)) {
@@ -3117,6 +3312,13 @@ async function processPendingGenerationRequet(pendingRequestData) {
     const imageData = await handleSeedreamRequest(pendingRequestData);
     if (imageData) {
       await updateImageInSessionLayer(imageData, pendingRequestData);
+    }
+  } else if (model === 'KLINGIMAGE4') {
+    const imageData = await handleKlingImageRequest(pendingRequestData);
+    if (imageData?.image) {
+      await updateImageInSessionLayer(imageData, pendingRequestData);
+    } else if (imageData?.error) {
+      await handleNoImageRetryOrFailure(pendingRequestData, imageData);
     }
   } else if (model === 'CUSTOM_TEXT_TO_IMAGE' || model?.startsWith?.('CUSTOM_TEXT_TO_IMAGE:')) {
     const imageData = await handleCustomTextToImageRequest(pendingRequestData);
@@ -3496,7 +3698,9 @@ async function handleNoImageRetryOrFailure(payload, imageData, options = {}) {
   await observeImageSubmissionFailure(payload, imageData, {
     definitive: isSafetyRejectionMessage(getImageGenerationFailureMessage(imageData)),
   });
-  if (await deferAcceptedImagePoll(payload)) return;
+  const definitiveFailure = imageData?.definitiveAdapterFailure === true &&
+    !hasUnsafeImageSubmissionOutcome(imageData, payload);
+  if (!definitiveFailure && await deferAcceptedImagePoll(payload)) return;
 
   const {
     _id: requestId,
@@ -3588,8 +3792,9 @@ async function handleNoImageRetryOrFailure(payload, imageData, options = {}) {
     const currentFilterRetryCount = normalizeRetryCount(latestDoc.filterRetryCount);
     const nextFilterRetryCount = currentFilterRetryCount + 1;
     const failureMessage = getImageGenerationFailureMessage(imageData);
+    const retryPlan = getImageGenerationRetryPlan(latestDoc, Date.now(), imageData?.retryAfterMs);
 
-    if (nextFilterRetryCount >= MAX_IMAGE_GENERATION_FILTER_RETRIES) {
+    if (!retryPlan || nextFilterRetryCount >= MAX_IMAGE_GENERATION_FILTER_RETRIES) {
       const terminalFilterPolicy = getTerminalFilterFailurePolicy(
         sessionData?.videoTone || 'default',
         latestDoc || payload,
@@ -3607,7 +3812,7 @@ async function handleNoImageRetryOrFailure(payload, imageData, options = {}) {
     // Optionally cap filter passes to 3 (or whatever you prefer)
     if (
       nextFailureCount < MAX_IMAGE_GENERATION_FAILURES &&
-      nextFilterRetryCount < MAX_IMAGE_GENERATION_FILTER_RETRIES
+      nextFilterRetryCount < MAX_IMAGE_GENERATION_FILTER_RETRIES && retryPlan
     ) {
       const retryPrompt = latestDoc.originalRetryPrompt || payload.originalRetryPrompt || latestDoc.prompt || payload.prompt;
       if (!retryPrompt) {
@@ -3616,7 +3821,7 @@ async function handleNoImageRetryOrFailure(payload, imageData, options = {}) {
           failureRetryCount: nextFailureCount,
           message: `${failureMessage} Unable to build refilter retry prompt.`,
           source: 'image_generation_refilter_retry_prompt_missing',
-          ...getBranchedTerminalGenerationPruneOptions(sessionData),
+          ...getTerminalGenerationPruneOptions(sessionData, latestDoc, imageData),
         });
         return;
       }
@@ -3658,11 +3863,11 @@ async function handleNoImageRetryOrFailure(payload, imageData, options = {}) {
           refilterImagePassNumber: nextPassNum,
           filterRetryCount: nextFilterRetryCount,
           prompt: newPrompt,
-          nextAttemptAfter: getImageGenerationNextAttemptAfter(nextFailureCount),
+          ...retryPlan.setFields,
           ...adapterRetryState.setFields,
           ...(!latestDoc.originalRetryPrompt ? { originalRetryPrompt: retryPrompt } : {}),
         },
-        unsetFields: adapterRetryState.unsetFields,
+        unsetFields: { ...adapterRetryState.unsetFields, ...retryPlan.unsetFields },
       });
 
       await updateLayerPromptForRetry(payload, newPrompt, failureMessage);
@@ -3716,7 +3921,7 @@ async function handleNoImageRetryOrFailure(payload, imageData, options = {}) {
           sessionData,
           failureRetryCount: normalizeRetryCount(failureRetryCount) + 1,
           message: `${getImageGenerationFailureMessage(imageData)} Max image generation failures reached (${MAX_IMAGE_GENERATION_FAILURES}).`,
-          ...getBranchedTerminalGenerationPruneOptions(sessionData),
+          ...getTerminalGenerationPruneOptions(sessionData, latestDoc, imageData),
         });
 
 
@@ -3753,7 +3958,7 @@ async function handleNoImageRetryOrFailure(payload, imageData, options = {}) {
       sessionData,
       failureRetryCount: normalizeRetryCount(latestDoc.failureRetryCount) + 1,
       message: `${getImageGenerationFailureMessage(imageData)} Max image generation failures reached (${MAX_IMAGE_GENERATION_FAILURES}).`,
-      ...getBranchedTerminalGenerationPruneOptions(sessionData),
+      ...getTerminalGenerationPruneOptions(sessionData, latestDoc, imageData),
     });
 
   }
@@ -3828,8 +4033,9 @@ async function processRefilterFailure(imageData, payload, imageScore, imageDescr
   );
 
   const nextFilterRetryCount = latestFilterRetryCount + 1;
+  const retryPlan = getImageGenerationRetryPlan(latestGenerationData);
 
-  if (nextFilterRetryCount < MAX_IMAGE_GENERATION_FILTER_RETRIES) {
+  if (retryPlan && nextFilterRetryCount < MAX_IMAGE_GENERATION_FILTER_RETRIES) {
 
     const failureMessage = options.failureMessage || `Generated image score ${imageScore} was below the acceptance threshold.`;
     const retryPrompt = latestGenerationData.originalRetryPrompt || payload.originalRetryPrompt || latestGenerationData.prompt || payload.prompt;
@@ -3865,10 +4071,11 @@ async function processRefilterFailure(imageData, payload, imageScore, imageDescr
         apiGenerationStatus: "INIT",
         prompt: newPrompt,
         filterRetryCount: nextFilterRetryCount,
+        ...retryPlan.setFields,
         ...adapterRetryState.setFields,
         ...(!latestGenerationData.originalRetryPrompt ? { originalRetryPrompt: retryPrompt } : {}),
       },
-      unsetFields: adapterRetryState.unsetFields,
+      unsetFields: { ...adapterRetryState.unsetFields, ...retryPlan.unsetFields },
     });
 
     await updateLayerPromptForRetry(payload, newPrompt, failureMessage);
@@ -5213,6 +5420,12 @@ export const __testOnly__ = {
   isSafetyRejectionMessage,
   getImageGenerationRetryDelayMs,
   getImageGenerationNextAttemptAfter,
+  getImageGenerationRetryCount,
+  getImageGenerationRetryPlan,
+  getAlteredPromptForRetry,
+  handleNoImageRetryOrFailure,
+  scheduleImageGenerationRetry,
+  recoverUnhandledGenerationTask,
   hasUnsafeImageSubmissionOutcome,
   buildPendingImageGenerationEligibilityFilter,
   claimPendingImageGenerationRequest,
@@ -5231,6 +5444,12 @@ export const __testOnly__ = {
   getImageFilterScoreCutoff,
   getScoreThresholdCutoff,
   getTerminalFilterFailurePolicy,
+  getTerminalGenerationPruneOptions,
+  getImageLayerVisualState,
+  hasCompletedLayerVisual,
+  isExpressImageFailureSessionStopped,
+  markImageGenerationRequestFailed,
+  pruneExpressImageLayerAfterFailure,
   hasReachedScoreOnlyFilterRelaxation,
   buildExpressLayerPrunePlan,
   clampAudioLayersToTimeline,

@@ -1,4 +1,5 @@
 import { videoQueueBillingFields } from './VideoRequestBilling.js';
+import { isSeedanceFlashModel, normalizeSeedanceFlashVideoOptions } from '../../utils/SeedanceFlash.js';
 
 
 
@@ -111,6 +112,7 @@ export async function requestRenderGenericVideo(payload) {
     isAudioVideoGeneration: audioContext.generateAudio,
     generationType: audioContext.generationType,
     layerAiVideoType: audioContext.layerAiVideoType,
+    ...(isSeedanceFlashModel(model) ? normalizeSeedanceFlashVideoOptions(payload) : {}),
   }
   const initialVideoAdapter = getInitialGenericVideoAdapter(model);
   if (initialVideoAdapter) {

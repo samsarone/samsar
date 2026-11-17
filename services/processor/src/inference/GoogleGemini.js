@@ -2,6 +2,7 @@ import { collectGeminiStream } from './ProviderStreaming.js';
 import fetch from 'node-fetch';
 
 import { getGoogleAccessToken, getGoogleCloudConfig } from './GoogleADC.js';
+import { buildGoogleGeminiDeveloperUrl, resolveGoogleGeminiTransport } from './GoogleGeminiTransport.js';
 import {
   getProviderModelForInferenceModel,
   isGeminiCarbonProviderModel,
@@ -491,11 +492,12 @@ export function normalizeGeminiUsage(usageMetadata) {
 
 export async function createGoogleGeminiChatCompletion(chatRequest = {}, dependencyOverrides = {}) {
   const model = resolveGeminiModel(chatRequest.model);
-  const location = resolveGeminiLocation(chatRequest);
-  const config = getGoogleCloudConfig({ ...chatRequest, location });
-  const projectId = normalizeString(config.projectId);
+  const transport = resolveGoogleGeminiTransport(model);
+  const location = transport.kind === 'developer' ? 'global' : resolveGeminiLocation(chatRequest);
+  const config = transport.kind === 'developer' ? null : getGoogleCloudConfig({ ...chatRequest, location });
+  const projectId = normalizeString(config?.projectId);
 
-  if (!projectId) {
+  if (transport.kind === 'vertex' && !projectId) {
     throw new Error('Google Gemini inference requires GOOGLE_CLOUD_PROJECT or GOOGLE_PROJECT_ID.');
   }
 
@@ -524,9 +526,19 @@ export async function createGoogleGeminiChatCompletion(chatRequest = {}, depende
     ...(generationConfig ? { generationConfig } : {}),
   };
 
-  const token = typeof dependencyOverrides.getAccessToken === 'function'
-    ? await dependencyOverrides.getAccessToken(config)
-    : await getGoogleAccessToken(config);
+  const headers = transport.kind === 'developer'
+    ? { 'x-goog-api-key': transport.apiKey, 'Content-Type': 'application/json' }
+    : {
+      Authorization: `Bearer ${typeof dependencyOverrides.getAccessToken === 'function'
+        ? await dependencyOverrides.getAccessToken(config)
+        : await getGoogleAccessToken(config)}`,
+      'Content-Type': 'application/json',
+    };
+  const url = transport.kind === 'developer'
+    ? buildGoogleGeminiDeveloperUrl({ model: transport.model, stream: Boolean(chatRequest.onText) })
+    : buildVertexGenerateContentUrl({ projectId, location, model }).replace(
+      ':generateContent', chatRequest.onText ? ':streamGenerateContent?alt=sse' : ':generateContent',
+    );
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), getGeminiTimeoutMs(chatRequest));
   let response, streamedPayload;
@@ -534,12 +546,9 @@ export async function createGoogleGeminiChatCompletion(chatRequest = {}, depende
     const fetchImpl = typeof dependencyOverrides.fetch === 'function'
       ? dependencyOverrides.fetch
       : fetch;
-    response = await fetchImpl(buildVertexGenerateContentUrl({ projectId, location, model }).replace(':generateContent', chatRequest.onText ? ':streamGenerateContent?alt=sse' : ':generateContent'), {
+    response = await fetchImpl(url, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(requestBody),
       signal: controller.signal,
     });
@@ -568,7 +577,7 @@ export async function createGoogleGeminiChatCompletion(chatRequest = {}, depende
     object: 'chat.completion',
     created: Math.floor(Date.now() / 1000),
     model,
-    samsarBilling: { adapter: 'google', region: location },
+    samsarBilling: { adapter: 'google', region: location, ...(transport.kind === 'developer' ? { api: 'developer' } : {}) },
     usage: normalizeGeminiUsage(responsePayload?.usageMetadata),
     google_response: {
       modelVersion: responsePayload?.modelVersion || null,

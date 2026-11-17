@@ -3,7 +3,45 @@ import assert from 'node:assert/strict';
 import { calculateImageCallCredits } from './ImagePricing.js';
 import { resolveImageAdapterReceipt } from './ImageAdapterReceipt.js';
 import { sealFalImageSubmission } from './FalImageSubmission.js';
-import { calculateFalImageTariffCost, createFalImageTariffSnapshot, FAL_IMAGE_TARIFFS_V1 } from './FalImageTariffs.js';
+import { calculateFalImageTariffCost, createFalImageTariffSnapshot, FAL_IMAGE_TARIFFS_V1, FAL_IMAGE_TARIFFS_V2, FAL_IMAGE_TARIFFS_V3 } from './FalImageTariffs.js';
+
+test('Kling Image 4 seals its one-image tariff and applies the Studio 20% markup once', async () => {
+  for (const resolution of ['1k', '2K', '4K', '8K']) {
+    const payload = { _id: 'kling-image', model: 'KLINGIMAGE4', resolution,
+      aspectRatio: '16:9', submittedAdapter: 'fal', imageBillingPolicy: 'adapter' };
+    let writes = 0;
+    const dependencies = { env: { SAMSAR_DEPLOYMENT_EDITION: 'production' }, imageGenerationModel: {
+      async updateOne() { writes++; return { matchedCount: 1 }; },
+    } };
+    const snapshot = await sealFalImageSubmission(payload, dependencies);
+    assert.equal(snapshot.version, 4);
+    assert.equal(snapshot.endpoint, 'kling/v4/text-to-image');
+    assert.equal(snapshot.config.resolution, resolution === '1k' ? '2K' : resolution);
+    assert.equal(snapshot.billableUnits, 1);
+    assert.equal(calculateFalImageTariffCost(snapshot), .063);
+    const receipt = await resolveImageAdapterReceipt({ adapter: 'fal', model: 'KLINGIMAGE4', costUsd: 999 },
+      { falImageBillingSnapshot: snapshot });
+    assert.equal(calculateImageCallCredits(receipt).credits, 7.56);
+    assert.equal(await sealFalImageSubmission(payload, dependencies), snapshot);
+    assert.equal(writes, 1);
+  }
+  assert.equal(FAL_IMAGE_TARIFFS_V3.KLINGIMAGE4, undefined);
+  assert.throws(() => createFalImageTariffSnapshot({ model: 'KLINGIMAGE4', numImages: 2 }), /one image per request/);
+});
+
+test('Kling 720p output seals the true provider 2K tariff and records its app output size', () => {
+  for (const [aspectRatio, dimensions] of [['16:9', { width: 1280, height: 720 }], ['9:16', { width: 720, height: 1280 }]]) {
+    const snapshot = createFalImageTariffSnapshot({ model: 'KLINGIMAGE4', resolution: '720p', aspectRatio });
+    assert.equal(snapshot.config.resolution, '2K');
+    assert.equal(snapshot.config.outputResolution, '720p');
+    assert.deepEqual(snapshot.config.outputDimensions, dimensions);
+    assert.equal(calculateFalImageTariffCost(snapshot), .063);
+    assert.equal(calculateImageCallCredits({ adapter: 'fal', model: 'KLINGIMAGE4', costUsd: calculateFalImageTariffCost(snapshot) }).credits, 7.56);
+  }
+  const native = createFalImageTariffSnapshot({ model: 'KLINGIMAGE4', resolution: '4K', aspectRatio: '3:2' });
+  assert.equal(native.config.resolution, '4K');
+  assert.equal(native.config.outputResolution, undefined);
+});
 
 test('SEEDREAM seals its exact current low-area endpoint once and applies 20% markup', async () => {
   const writes = [];
@@ -14,16 +52,33 @@ test('SEEDREAM seals its exact current low-area endpoint once and applies 20% ma
     imageBillingPolicy: 'adapter', aspectRatio: '9:16' };
   const dependencies = { env: { SAMSAR_DEPLOYMENT_EDITION: 'production' }, imageGenerationModel };
   const snapshot = await sealFalImageSubmission(payload, dependencies);
-  assert.equal(snapshot.version, 2);
-  assert.equal(snapshot.endpoint, 'bytedance/seedream/v5/pro/text-to-image');
+  assert.equal(snapshot.version, 3);
+  assert.equal(snapshot.endpoint, 'bytedance/seedream/v5.5/text-to-image');
   const receipt = await resolveImageAdapterReceipt({ adapter: 'fal', model: 'SEEDREAM', costUsd: 999 },
     { falImageBillingSnapshot: snapshot });
-  assert.equal(receipt.costUsd, .0675);
+  assert.equal(receipt.costUsd, .03);
   assert.equal(receipt.costSource, 'static_tariff');
-  assert.equal(calculateImageCallCredits(receipt).credits, 8.1);
+  assert.equal(calculateImageCallCredits(receipt).credits, 3.6);
   assert.equal(await sealFalImageSubmission(payload, dependencies), snapshot);
   assert.equal(writes.length, 1);
   assert.equal(FAL_IMAGE_TARIFFS_V1.SEEDREAM, undefined);
+});
+
+test('accepted Seedream 5.0 jobs retain their immutable endpoint and rate after the 5.5 upgrade', async () => {
+  const legacy = { version: 2, model: 'SEEDREAM', endpoint: 'bytedance/seedream/v5/pro/text-to-image',
+    baseUsdPerUnit: .0675, unit: 'images', billableUnits: 1 };
+  const payload = { model: 'SEEDREAM', submittedAdapter: 'fal', imageBillingPolicy: 'adapter', falImageBillingSnapshot: legacy };
+  assert.equal(await sealFalImageSubmission(payload, {
+    env: { SAMSAR_DEPLOYMENT_EDITION: 'production' },
+    imageGenerationModel: { updateOne() { throw new Error('must not reseal'); } },
+  }), legacy);
+  assert.equal(calculateFalImageTariffCost(legacy), .0675);
+  assert.equal(FAL_IMAGE_TARIFFS_V2.SEEDREAM[0], legacy.endpoint);
+  assert.equal(FAL_IMAGE_TARIFFS_V2.SEEDREAM[1], .0675);
+  const recovered = createFalImageTariffSnapshot({ model: 'SEEDREAM', apiGenerationStatus: 'PENDING', apiRequestId: 'accepted-before-upgrade' });
+  assert.equal(recovered.version, 2);
+  assert.equal(recovered.endpoint, legacy.endpoint);
+  assert.equal(calculateFalImageTariffCost(recovered), .0675);
 });
 
 test('old sealed Fal rates survive retry and a new catalog version', async () => {

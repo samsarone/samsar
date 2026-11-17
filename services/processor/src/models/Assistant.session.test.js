@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { DEFAULT_USER_INFERENCE_MODEL, normalizeSupportedInferenceModel } from '../consts/InferenceModels.js';
 
 const source = fs.readFileSync(new URL('./Assistant.js', import.meta.url), 'utf8')
   .replace(/^import\s[\s\S]*?;[^\n]*$/gm, '').replace(/export /g, '');
@@ -60,7 +61,7 @@ function harness() {
       state.cleanedReceipts++;
     } },
     User: { findOne: async () => ({ generationCredits: 10 }) },
-    normalizeInferenceModel: () => 'gpt-6-astra', shouldBypassGenerationCredits: () => false,
+    DEFAULT_USER_INFERENCE_MODEL, normalizeSupportedInferenceModel, shouldBypassGenerationCredits: () => false,
     isSceneActionsCommand: () => false, hat: () => 'new-query', console,
   });
   context.AssistantWorkspace = context.VideoSession;
@@ -71,6 +72,35 @@ function harness() {
   vm.runInContext(source, context);
   return { session, state, context, clear: userId => context.resetAssistantSessionMessages(userId || 'owner', { id }),
     submit: () => context.createAssistantQueryRequest('owner', { id, query: 'Hello' }) };
+}
+
+for (const workspace of [undefined, 'audio']) {
+  test(`${workspace || 'video'} assistant defaults missing preferences to Opus independently of inference`, async () => {
+    for (const selectedAssistantModel of [undefined, null, '', '   ']) {
+      const h = harness();
+      h.context.User.findOne = async () => ({
+        generationCredits: 10,
+        selectedInferenceModel: 'gpt-6.2-astra',
+        selectedAssistantModel,
+      });
+      const request = await h.context.createAssistantQueryRequest('owner', {
+        id, query: 'Hello', ...(workspace ? { workspace } : {}),
+      });
+      assert.equal(request.inferenceModel, 'claude-opus-5.5');
+      assert.equal(h.session.sessionMessages.at(-1).assistantRequest.inferenceModel, 'claude-opus-5.5');
+    }
+  });
+
+  test(`${workspace || 'video'} assistant preserves explicit model choices`, async () => {
+    for (const selectedAssistantModel of ['gpt-6.2-astra', 'gemini-4-carbon', 'claude-fable-5.2-xhigh']) {
+      const h = harness();
+      h.context.User.findOne = async () => ({ generationCredits: 10, selectedAssistantModel });
+      const request = await h.context.createAssistantQueryRequest('owner', {
+        id, query: 'Hello', ...(workspace ? { workspace } : {}),
+      });
+      assert.equal(request.inferenceModel, selectedAssistantModel);
+    }
+  });
 }
 
 test('clear deletes history and old jobs, preserves project data and concurrent new jobs', async () => {

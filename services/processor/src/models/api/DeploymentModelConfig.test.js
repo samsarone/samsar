@@ -70,13 +70,13 @@ test('a raw Alibaba key enables native Qwen and Alibaba media models', () => {
 
   const result = mergeRuntimeInferenceDeploymentAvailability({
     providers: ['openai'],
-    models: ['gpt-6-astra'],
+    models: ['gpt-6.2-astra'],
     actions: ['chat'],
   });
 
   assert.deepEqual(result.providers, ['openai', 'alibabaCloud']);
   assert.deepEqual(result.models, [
-    'gpt-6-astra',
+    'gpt-6.2-astra',
     'QWEN3.8',
     'HAPPYHORSEI2V',
     'WAN2.7PRO',
@@ -171,25 +171,25 @@ test('hosted runtime omits Qwen even when saved configuration selected Alibaba',
 
   const result = mergeRuntimeInferenceDeploymentAvailability({
     providers: ['alibabaCloud'],
-    models: ['gpt-6-astra', 'QWEN3.8'],
+    models: ['gpt-6.2-astra', 'QWEN3.8'],
     actions: ['chat', 'assistant'],
     modelProviders: {
-      'gpt-6-astra': 'openai',
+      'gpt-6.2-astra': 'openai',
       'QWEN3.8': 'alibabaCloud',
     },
     modelProviderPriority: {
-      'gpt-6-astra': ['openai', 'samsar'],
+      'gpt-6.2-astra': ['openai', 'samsar'],
       'QWEN3.8': ['alibabaCloud'],
     },
   });
 
-  assert.deepEqual(result.models, ['gpt-6-astra']);
+  assert.deepEqual(result.models, ['gpt-6.2-astra']);
   assert.deepEqual(result.modelProviders, {
-    'gpt-6-astra': 'openai',
+    'gpt-6.2-astra': 'openai',
     'QWEN3.8': 'alibabaCloud',
   });
   assert.deepEqual(result.modelProviderPriority, {
-    'gpt-6-astra': ['openai', 'samsar'],
+    'gpt-6.2-astra': ['openai', 'samsar'],
     'QWEN3.8': ['alibabaCloud'],
   });
 });
@@ -201,15 +201,15 @@ test('production Docker keeps production model-filtering policy', () => {
 
   const result = mergeRuntimeInferenceDeploymentAvailability({
     providers: ['alibabaCloud'],
-    models: ['gpt-6-astra', 'QWEN3.8'],
+    models: ['gpt-6.2-astra', 'QWEN3.8'],
     actions: ['chat', 'assistant'],
     modelProviders: {
-      'gpt-6-astra': 'openai',
+      'gpt-6.2-astra': 'openai',
       'QWEN3.8': 'alibabaCloud',
     },
   });
 
-  assert.deepEqual(result.models, ['gpt-6-astra']);
+  assert.deepEqual(result.models, ['gpt-6.2-astra']);
 });
 
 test('Docker retains Qwen only for an explicit validated Alibaba model selection', () => {
@@ -289,12 +289,12 @@ test('standalone Samsar advertises inference and Seedance video models', () => {
 
   const result = mergeRuntimeInferenceDeploymentAvailability({
     providers: ['samsar'],
-    models: ['gpt-6-astra'],
+    models: ['gpt-6.2-astra'],
   });
 
   assert.deepEqual(result.providers, ['samsar']);
   assert.deepEqual(result.models, [
-    'gpt-6-astra',
+    'gpt-6.2-astra',
     'gpt-6.1-sol',
     'claude-opus-5.5',
     'claude-fable-5.2',
@@ -303,10 +303,13 @@ test('standalone Samsar advertises inference and Seedance video models', () => {
     'KIMIK3',
     'HAPPYHORSEI2V',
     'WAN2.7PRO',
+    'KLINGIMAGE4',
     'GPTIMAGE2.5',
     'VEO3.1I2V',
     'SEEDANCE2.0I2V',
     'SEEDANCE2.5I2V',
+    'SEEDREAM',
+    'SEEDANCE2.5FLASHI2V',
     'KLINGIMGTOVID4',
     'KLINGTXTTOVID4',
   ]);
@@ -335,10 +338,10 @@ test('OpenRouter runtime credentials advertise all inference models without medi
 
   const result = mergeRuntimeInferenceDeploymentAvailability({});
   assert.deepEqual(result.providers, ['openrouter']);
-  assert.deepEqual(result.models, ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2', 'gemini-4-carbon', 'QWEN3.8']);
+  assert.deepEqual(result.models, ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2', 'gemini-4-carbon', 'QWEN3.8']);
   assert.deepEqual(result.actions, ['chat', 'assistant']);
   assert.deepEqual(result.modelProviders, {
-    'gpt-6-astra': 'openrouter',
+    'gpt-6.2-astra': 'openrouter',
     'gpt-6.1-sol': 'openrouter',
     'claude-opus-5.5': 'openrouter',
     'claude-fable-5.2': 'openrouter',
@@ -356,7 +359,7 @@ test('standalone raw provider credentials expose declared branched media capabil
   };
 
   const openai = mergeForStandalone({ OPENAI_API_KEY: 'test-openai-key' });
-  assert.deepEqual(openai.models, ['gpt-6-astra', 'gpt-6.1-sol', 'GPTIMAGE2.5']);
+  assert.deepEqual(openai.models, ['gpt-6.2-astra', 'gpt-6.1-sol', 'GPTIMAGE2.5']);
   assert.deepEqual(openai.actions, ['chat', 'assistant', 'image']);
 
   const google = mergeForStandalone({
@@ -463,7 +466,7 @@ test('stale GenBlaze Gemini routes do not advertise Carbon', () => {
   }
 });
 
-test('GenBlaze advertises GPT 6 Astra only with exact text and vision routes', () => {
+test('GenBlaze advertises GPT 6.2 Astra only with exact text and vision routes', () => {
   clearEnv();
   process.env.CURRENT_ENV = 'docker';
   process.env.SAMSAR_GENBLAZE_ENABLED = 'true';
@@ -477,29 +480,48 @@ test('GenBlaze advertises GPT 6 Astra only with exact text and vision routes', (
     fs.writeFileSync(process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH, JSON.stringify({
       provider: 'gmicloud',
       models: {
-        'gpt-6-astra': {
-          text: { modelId: 'gpt-6-astra', operation: 'chat.completions' },
+        'gpt-6.2-astra': {
+          text: { modelId: 'gpt-6.2-astra', operation: 'chat.completions' },
         },
       },
     }));
     const textOnly = mergeRuntimeInferenceDeploymentAvailability({});
-    assert.equal(textOnly.models.includes('gpt-6-astra'), false);
+    assert.equal(textOnly.models.includes('gpt-6.2-astra'), false);
     assert.equal(textOnly.providers.includes('gmicloud'), false);
+
+    const saved = {
+      providers: ['gmicloud'], models: ['gpt-6.2-astra'],
+      modelProviders: { 'gpt-6.2-astra': 'gmicloud' },
+      modelProviderPriority: { 'gpt-6.2-astra': ['gmicloud'] },
+    };
+    assert.equal(mergeRuntimeInferenceDeploymentAvailability(saved).models.includes('gpt-6.2-astra'), false);
+
+    for (const invalidRoutes of [
+      { text: { modelId: 'gpt-6.2-astra' }, vision: { modelId: 'gpt-6.2-astra' } },
+      { text: { modelId: 'gpt-6.2-astra', operation: 'video.generate' }, vision: { modelId: 'gpt-6.2-astra', operation: 'chat.completions' } },
+      { text: { modelId: 'gpt-6.2-astra', operation: 'chat.completions' }, vision: { modelId: 'gpt-6.2-astra', operation: 'video.generate' } },
+      { text: { modelId: 'openai/gpt-6-astra', operation: 'chat.completions' }, vision: { modelId: 'openai/gpt-6-astra', operation: 'chat.completions' } },
+    ]) {
+      fs.writeFileSync(process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH, JSON.stringify({
+        provider: 'gmicloud', models: { 'gpt-6.2-astra': invalidRoutes },
+      }));
+      assert.equal(mergeRuntimeInferenceDeploymentAvailability(saved).models.includes('gpt-6.2-astra'), false);
+    }
 
     fs.writeFileSync(process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH, JSON.stringify({
       provider: 'gmicloud',
       models: {
-        'gpt-6-astra': {
-          text: { modelId: 'gpt-6-astra', operation: 'chat.completions' },
-          vision: { modelId: 'gpt-6-astra', operation: 'chat.completions' },
+        'gpt-6.2-astra': {
+          text: { modelId: 'gpt-6.2-astra', operation: 'chat.completions' },
+          vision: { modelId: 'gpt-6.2-astra', operation: 'chat.completions' },
         },
       },
     }));
     const exact = mergeRuntimeInferenceDeploymentAvailability({});
     assert.deepEqual(exact.providers, ['gmicloud']);
-    assert.deepEqual(exact.models, ['gpt-6-astra']);
-    assert.equal(exact.modelProviders['gpt-6-astra'], 'gmicloud');
-    assert.deepEqual(exact.modelProviderPriority['gpt-6-astra'], [
+    assert.deepEqual(exact.models, ['gpt-6.2-astra']);
+    assert.equal(exact.modelProviders['gpt-6.2-astra'], 'gmicloud');
+    assert.deepEqual(exact.modelProviderPriority['gpt-6.2-astra'], [
       'openai',
       'gmicloud',
       'samsar',
@@ -646,12 +668,14 @@ test('GMICloud and FAL availability is a union with shared-model adapter prefere
       'HAPPYHORSEI2V',
       'SEEDANCE2.0I2V',
       'SEEDANCE2.5I2V',
+      'SEEDANCE2.5FLASHI2V',
+      'KLINGIMAGE4',
       'NANOBANANAPRO',
       'KLINGIMGTOVID4',
       'KLINGTXTTOVID4',
     ]);
     assert.equal(result.modelProviders["GPTIMAGE2.5"], 'fal');
-    assert.equal(result.modelProviders.SEEDREAM, 'gmicloud');
+    assert.equal(result.modelProviders.SEEDREAM, 'fal');
     assert.equal(result.modelProviders.SEEDANCEI2V, 'gmicloud');
     assert.equal(result.modelProviders['WAN2.7PRO'], 'fal');
     assert.equal(result.modelProviders.COSMOS3SUPERI2V, 'fal');
@@ -849,7 +873,7 @@ test('FAL runtime enrichment exposes Wan2.7 Pro, Happy Horse, and Seedance media
   const result = mergeRuntimeInferenceDeploymentAvailability({});
 
   assert.deepEqual(result.providers, ['fal']);
-  assert.deepEqual(result.models, ['WAN2.7PRO', 'HAPPYHORSEI2V', 'SEEDANCE2.0I2V', 'SEEDANCE2.5I2V', 'KLINGIMGTOVID4', 'KLINGTXTTOVID4']);
+  assert.deepEqual(result.models, ['WAN2.7PRO', 'HAPPYHORSEI2V', 'SEEDANCE2.0I2V', 'SEEDANCE2.5I2V', 'SEEDANCE2.5FLASHI2V', 'SEEDREAM', 'KLINGIMAGE4', 'KLINGIMGTOVID4', 'KLINGTXTTOVID4']);
   assert.deepEqual(result.actions, ['image', 'video']);
 });
 
@@ -865,7 +889,7 @@ test('runtime Alibaba availability supplements a stale saved model filter', () =
     ],
     {
       providers: ['openai'],
-      models: ['gpt-6-astra'],
+      models: ['gpt-6.2-astra'],
       actions: ['chat'],
     },
   );
@@ -905,12 +929,12 @@ test('branched GPT reasoning variants share the physical deployment availability
   process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
   const models = [
     {
-      value: 'gpt-6-astra',
-      availabilityModel: 'gpt-6-astra',
+      value: 'gpt-6.2-astra',
+      availabilityModel: 'gpt-6.2-astra',
     },
     {
-      value: 'gpt-6-astra-xhigh',
-      availabilityModel: 'gpt-6-astra',
+      value: 'gpt-6.2-astra-xhigh',
+      availabilityModel: 'gpt-6.2-astra',
     },
     {
       value: 'gemini-4-carbon',
@@ -919,7 +943,7 @@ test('branched GPT reasoning variants share the physical deployment availability
   ];
 
   assert.deepEqual(filterModelsForDeploymentAvailability(models, {
-    models: ['gpt-6-astra'],
+    models: ['gpt-6.2-astra'],
   }), models.slice(0, 2));
 });
 

@@ -2,6 +2,7 @@ import { translateText as uiText } from '../utils/localization.js';
 import { ELEVENLABS_TTS } from './ElevenLabs.jsx';
 import { PLAY_SPEAKER_TYPES } from './PlayAI.jsx';
 import { QWEN_IMAGE_3_PRO_MODEL_KEY } from '../utils/imageModelAvailability.mjs';
+import { KLING_IMAGE_V4_MODEL_KEY, KLING_IMAGE_V4_ASPECT_RATIOS, KLING_IMAGE_V4_RESOLUTION } from '../utils/KlingImageModel.mjs';
 
 export const CURRENT_TOOLBAR_VIEW = {
   SHOW_DEFAULT_DISPLAY: 'SHOW_DEFAULT_DISPLAY',
@@ -111,7 +112,7 @@ export const IMAGE_GENERAITON_MODEL_TYPES = [
     isBranchedImageModel: true,
   },
   {
-    name: 'Seedream',
+    name: 'Seedream 5.5',
     key: 'SEEDREAM',
     isExpressModel: true,
     isBranchedImageModel: false,
@@ -140,6 +141,15 @@ export const IMAGE_GENERAITON_MODEL_TYPES = [
     isExpressModel: true,
     isBranchedImageModel: false,
     supportedAspectRatios: ['1:1', '16:9', '9:16'],
+  },
+  {
+    name: 'Kling Image 4',
+    key: KLING_IMAGE_V4_MODEL_KEY,
+    isExpressModel: true,
+    isBranchedImageModel: true,
+    supportedAspectRatios: KLING_IMAGE_V4_ASPECT_RATIOS,
+    resolution: KLING_IMAGE_V4_RESOLUTION,
+    resolutions: [KLING_IMAGE_V4_RESOLUTION],
   },
 ];
 
@@ -287,6 +297,15 @@ export const VIDEO_GENERATION_MODEL_TYPES = [
     ]
   },
   {
+    name: 'Seedance 2.5 Flash I2V',
+    key: 'SEEDANCE2.5FLASHI2V',
+    isImageToVideoModel: true,
+    isTextToVideoModel: false,
+    isExpressModel: true,
+    isBranchedVideoModel: false,
+    supportedAspectRatios: ['16:9', '9:16'],
+  },
+  {
     name: 'VEO3.1 Text2Vid',
     key: 'VEO3.1',
     isImageToVideoModel: false,
@@ -387,8 +406,8 @@ export const ASSISTANT_MODEL_TYPES = [
   { get label() { return uiText("Claude Fable 5.2 High"); }, value: 'claude-fable-5.2' },
   { get label() { return uiText("GPT 6.1 Sol High"); }, value: 'gpt-6.1-sol' },
   {
-    get label() { return uiText("GPT 6 Astra High"); },
-    value: 'gpt-6-astra',
+    get label() { return uiText("GPT 6.2 Astra High"); },
+    value: 'gpt-6.2-astra',
   },
   {
     get label() { return uiText("Gemini 4 Carbon High"); },
@@ -407,7 +426,7 @@ export const ASSISTANT_MODEL_TYPES = [
   { get label() { return uiText("Claude Fable 5.2 XHigh"); }, value: 'claude-fable-5.2-xhigh' },
   { get label() { return uiText("Claude Opus 5.5 XHigh"); }, value: 'claude-opus-5.5-xhigh' },
   { get label() { return uiText("GPT 6.1 Sol XHigh"); }, value: 'gpt-6.1-sol-xhigh' },
-  { get label() { return uiText("GPT 6 Astra XHigh"); }, value: 'gpt-6-astra-xhigh' },
+  { get label() { return uiText("GPT 6.2 Astra XHigh"); }, value: 'gpt-6.2-astra-xhigh' },
 ];
 
 
@@ -418,8 +437,8 @@ export const INFERENCE_MODEL_TYPES = [
 
 
   {
-    get label() { return uiText("GPT 6 Astra"); },
-    value: 'gpt-6-astra',
+    get label() { return uiText("GPT 6.2 Astra"); },
+    value: 'gpt-6.2-astra',
     isBranchedInferenceModel: true,
   },
   {

@@ -14,6 +14,7 @@ import {
   getGoogleAuth,
   getGoogleCloudConfig,
 } from '../../inference/GoogleADC.js';
+import { buildGoogleGeminiDeveloperUrl, resolveGoogleGeminiTransport } from '../../inference/GoogleGeminiTransport.js';
 
 const DEFAULT_GEMINI_MODERATION_MODEL = DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL;
 const DEFAULT_GEMINI_MODERATION_LOCATION = 'global';
@@ -484,11 +485,13 @@ export function buildGoogleModerationInferenceReceipt(
   };
 }
 
-export async function createGoogleModerationForNarrative(requestData, options = {}) {
+export async function createGoogleModerationForNarrative(requestData, options = {}, dependencyOverrides = {}) {
   const credentialOptions = getGoogleModerationCredentialOptions(options);
-  const location = getGoogleModerationLocation(credentialOptions);
   const model = getGoogleModerationModel(credentialOptions);
-  const config = getGoogleCloudConfig({ ...credentialOptions, location });
+  // Credentials for the production classifier come only from the server runtime.
+  const transport = resolveGoogleGeminiTransport(model);
+  const location = transport.kind === 'developer' ? 'global' : getGoogleModerationLocation(credentialOptions);
+  const config = transport.kind === 'developer' ? null : getGoogleCloudConfig({ ...credentialOptions, location });
   const controller = new AbortController();
   const onOuterAbort = () => controller.abort(options.signal?.reason);
   if (options.signal?.aborted) {
@@ -503,25 +506,30 @@ export async function createGoogleModerationForNarrative(requestData, options = 
 
   try {
     controller.signal.throwIfAborted();
-    const projectId = await resolveGoogleProjectId(config);
+    const projectId = transport.kind === 'developer' ? '' : await resolveGoogleProjectId(config);
     controller.signal.throwIfAborted();
 
-    if (!projectId) {
+    if (transport.kind === 'vertex' && !projectId) {
       throw new Error('Google Gemini moderation requires GOOGLE_CLOUD_PROJECT, GOOGLE_PROJECT_ID, or an ADC default project.');
     }
 
-    const token = await getGoogleModerationAccessToken({
-      ...config,
-      projectId,
-    });
+    const headers = transport.kind === 'developer'
+      ? { 'x-goog-api-key': transport.apiKey, 'Content-Type': 'application/json' }
+      : {
+        Authorization: `Bearer ${typeof dependencyOverrides.getAccessToken === 'function'
+          ? await dependencyOverrides.getAccessToken({ ...config, projectId })
+          : await getGoogleModerationAccessToken({ ...config, projectId })}`,
+        'Content-Type': 'application/json',
+      };
     controller.signal.throwIfAborted();
 
-    const response = await fetch(buildVertexGenerateContentUrl({ projectId, location, model }), {
+    const url = transport.kind === 'developer'
+      ? buildGoogleGeminiDeveloperUrl({ model: transport.model })
+      : buildVertexGenerateContentUrl({ projectId, location, model });
+    const fetchImpl = typeof dependencyOverrides.fetch === 'function' ? dependencyOverrides.fetch : fetch;
+    const response = await fetchImpl(url, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(buildModerationRequestBody(requestData, credentialOptions)),
       signal: controller.signal,
     });

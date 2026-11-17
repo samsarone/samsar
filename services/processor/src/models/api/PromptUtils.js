@@ -13,6 +13,7 @@ import {
 } from '../../consts/DockerProviderPriority.js';
 import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
 import { getRetiredGPTImageModelError, normalizeGPTImageRequestModelKey } from '../../consts/GPTImageModelKeys.js';
+import { assertKlingImageAppPayload } from '../../consts/KlingImageModel.js';
 
 export const MAX_MOVIE_PROMPT_LENGTH = 4000;
 export const CUSTOM_TEXT_TO_IMAGE_MODEL_PREFIX = 'CUSTOM_TEXT_TO_IMAGE:';
@@ -148,6 +149,12 @@ export function validateExpressVideoModelKey(videoModel, options = {}) {
 
 export function validateMovieInput(payload) {
 
+  try {
+    assertKlingImageAppPayload(payload);
+  } catch (error) {
+    return { status: false, message: error.message };
+  }
+
   let {
     prompt,
     image_model,
@@ -231,6 +238,12 @@ export function validateMovieInput(payload) {
 }
 
 export function validateNarrativeInput(payload) {
+
+  try {
+    assertKlingImageAppPayload(payload);
+  } catch (error) {
+    return { status: false, message: error.message };
+  }
 
 
   const {

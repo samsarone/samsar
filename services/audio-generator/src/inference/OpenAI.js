@@ -176,7 +176,7 @@ async function createInferenceChatCompletionForProvider(
   const gptAlias = typeof requestedModel === 'string'
     ? requestedModel.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
     : '';
-  const model = /^GPT(?:61SOL|6ASTRA|56SOL|56|6)(?:HIGH|XHIGH|EXTRAHIGH)?$/.test(gptAlias)
+  const model = /^GPT(?:61SOL|62ASTRA|6ASTRA|56SOL|56|6)(?:HIGH|XHIGH|EXTRAHIGH)?$/.test(gptAlias)
     ? normalizeInferenceModel(requestedModel)
     : requestedModel;
   const createSamsarCompletion =
@@ -340,7 +340,7 @@ export async function getAlternatePromptFromPrompt(
 
 export async function sendAssistantMessageRequest(
   messageList,
-  model = "gpt-6-astra",
+  model = "gpt-6.2-astra",
   inferenceAuthorization,
   reasoningEffort,
 ) {

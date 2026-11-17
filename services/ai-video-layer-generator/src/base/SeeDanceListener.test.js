@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { fal } from '@fal-ai/client';
 
 import {
   buildSeedanceInputPayload,
   getSeedanceImageToVideoLink,
+  generateSeeDanceImgToVideoLayer,
+  listenToPendingSeeDanceImgToVidRequests,
 } from './SeeDanceListener.js';
 
 test('FAL Seedance adapter selects the exact endpoint for each supported I2V model', () => {
@@ -18,6 +21,10 @@ test('FAL Seedance adapter selects the exact endpoint for each supported I2V mod
   assert.equal(
     getSeedanceImageToVideoLink('SEEDANCE2.5I2V'),
     'bytedance/seedance-2.5/image-to-video',
+  );
+  assert.equal(
+    getSeedanceImageToVideoLink('SEEDANCE2.5FLASHI2V'),
+    'bytedance/seedance-2.5/flash/image-to-video',
   );
 });
 
@@ -122,4 +129,49 @@ test('FAL Seedance 2.5 supports up to 20 seconds without extending Seedance 2.0'
     duration: 20,
   };
   assert.equal(buildSeedanceInputPayload(payload).duration, 15);
+});
+
+test('FAL Seedance Flash uses its own duration, framing, quality, and audio contract', () => {
+  const input = buildSeedanceInputPayload({
+    model: 'SEEDANCE2.5FLASHI2V',
+    startImage: 'https://media.example/start.png',
+    endImage: 'https://media.example/end.png',
+    prompt: 'Animate the frame.', duration: 30, aspectRatio: '9:16',
+    resolution: '480p', bitrate_mode: 'high', codec: 'H265',
+    generate_audio: true, userId: 'owner',
+  });
+  assert.deepEqual(input, {
+    prompt: 'Animate the frame.', image_url: 'https://media.example/start.png',
+    end_image_url: 'https://media.example/end.png', generate_audio: true,
+    end_user_id: 'owner', duration: '30', aspect_ratio: 'auto', resolution: '480p',
+    bitrate_mode: 'high', codec: 'H265',
+  });
+  for (const [duration, expected] of [[4, '4'], [7, '7'], [20, '20'], [30, '30'], ['auto', 'auto']]) {
+    assert.equal(buildSeedanceInputPayload({ model: 'SEEDANCE2.5FLASHI2V', duration }).duration, expected);
+  }
+  assert.equal(buildSeedanceInputPayload({ model: 'SEEDANCE2.5FLASHI2V' }).generate_audio, false);
+  assert.equal(buildSeedanceInputPayload({ model: 'SEEDANCE2.5FLASHI2V', generationType: 'sound_effect' }).generate_audio, true);
+  assert.throws(() => buildSeedanceInputPayload({ model: 'SEEDANCE2.5FLASHI2V', resolution: '1080p' }),
+    error => error.code === 'FAL_MODEL_INPUT_INVALID');
+});
+
+test('Flash submit and poll use the new endpoint while historical 2.5 stays on standard', async (t) => {
+  const submitted = [];
+  const polled = [];
+  t.mock.method(fal.queue, 'submit', async (endpoint, body) => {
+    submitted.push([endpoint, body.input]);
+    return { request_id: `request-${submitted.length}` };
+  });
+  t.mock.method(fal.queue, 'status', async (endpoint) => { polled.push(endpoint); return { status: 'COMPLETED' }; });
+  t.mock.method(fal.queue, 'result', async (endpoint) => { polled.push(endpoint); return { data: { video: { url: 'https://media.example/clip.mp4' } } }; });
+  for (const model of ['SEEDANCE2.5I2V', 'SEEDANCE2.5FLASHI2V']) {
+    const generationId = await generateSeeDanceImgToVideoLayer({ model, startImage: 'https://media.example/start.png', duration: 7 });
+    const result = await listenToPendingSeeDanceImgToVidRequests({ model, generationId });
+    assert.equal(result.responseStatus, 'COMPLETED');
+  }
+  assert.equal(submitted[0][0], 'bytedance/seedance-2.5/image-to-video');
+  assert.equal(submitted[0][1].duration, 5);
+  assert.equal(submitted[1][0], 'bytedance/seedance-2.5/flash/image-to-video');
+  assert.equal(submitted[1][1].duration, '7');
+  assert.deepEqual(polled, [submitted[0][0], submitted[0][0], submitted[1][0], submitted[1][0]]);
 });

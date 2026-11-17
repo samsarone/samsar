@@ -57,3 +57,21 @@ test('generic audio handling for other models remains payload-driven', () => {
     },
   );
 });
+
+test('Flash preserves explicit Studio and direct API audio while inferring scene sound effects', () => {
+  for (const flag of ['generateAudio', 'generate_audio', 'isAudioVideoGeneration']) {
+    const context = resolveGenericVideoAudioContext({
+      model: 'SEEDANCE2.5FLASHI2V',
+      [flag]: true,
+      generationType: 'generate',
+    }, { layerAiVideoType: 'ai_video' });
+    assert.equal(context.generateAudio, true, flag);
+    assert.equal(context.layerAiVideoType, 'ai_video');
+  }
+  assert.equal(resolveGenericVideoAudioContext({ model: 'SEEDANCE2.5FLASHI2V' }, {
+    layerAiVideoType: 'sound_effect',
+  }).generateAudio, true);
+  assert.equal(resolveGenericVideoAudioContext({ model: 'SEEDANCE2.5FLASHI2V' }, {
+    layerAiVideoType: 'narration',
+  }).generateAudio, false);
+});

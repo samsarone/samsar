@@ -73,13 +73,13 @@ test('supported models exposes additive branched metadata without narrowing prod
     production.body.INFERENCE_MODELS
       .filter((model) => model.isBranchedInferenceModel)
       .map((model) => model.value),
-    ['gpt-6-astra', 'claude-opus-5.5', 'gpt-6.1-sol', 'claude-fable-5.2'],
+    ['gpt-6.2-astra', 'claude-opus-5.5', 'gpt-6.1-sol', 'claude-fable-5.2'],
   );
   assert.deepEqual(
     production.body.IMAGE_MODELS
       .filter((model) => model.isBranchedImageModel)
       .map((model) => model.value),
-    ['GPTIMAGE2.5', 'NANOBANANAPRO'],
+    ['GPTIMAGE2.5', 'NANOBANANAPRO', 'KLINGIMAGE4'],
   );
   assert.deepEqual(
     new Set(production.body.VIDEO_MODELS
@@ -186,13 +186,13 @@ test('standalone supported models derives branched options from raw provider cre
     standalone.body.INFERENCE_MODELS
       .filter((model) => model.isBranchedInferenceModel)
       .map((model) => model.value),
-    ['gpt-6-astra', 'gpt-6.1-sol'],
+    ['gpt-6.2-astra', 'gpt-6.1-sol'],
   );
   assert.deepEqual(
     standalone.body.IMAGE_MODELS
       .filter((model) => model.isBranchedImageModel)
       .map((model) => model.value),
-    ['GPTIMAGE2.5', 'NANOBANANAPRO'],
+    ['GPTIMAGE2.5', 'NANOBANANAPRO', 'KLINGIMAGE4'],
   );
   assert.deepEqual(
     standalone.body.VIDEO_MODELS

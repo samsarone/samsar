@@ -4,7 +4,7 @@ import { buildAssistantMessages } from './AssistantMessageBuilder.js';
 import { getSystemPrompt } from './SystemPrompt.js';
 import { normalizeAssistantContext, summarizeAssistantSession } from './AssistantContext.js';
 
-const base = { request: { query: 'Improve my idea', queryId: 'q' }, user: {}, inferenceModel: 'gpt-6-astra',
+const base = { request: { query: 'Improve my idea', queryId: 'q' }, user: {}, inferenceModel: 'gpt-6.2-astra',
   session: { sessionMessages: [{ role: 'user', content: 'Improve my idea', id: 'q' }] } };
 const withContext = (context, extra = {}) => ({ ...base, ...extra, request: { ...base.request, assistantContext: { version: 1, page: 'vidgenie', view: 'initial', mode: 'T2V', ...context } } });
 

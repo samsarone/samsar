@@ -9,7 +9,7 @@ import { parseEnvironment } from './infrastructure-credentials.mjs';
 import { resolveProviderEnvironmentReferences } from '../apps/setup-wizard/src/constants/providerEnvironment.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const gptModels = ['gpt-6-astra', 'gpt-6.1-sol'];
+const gptModels = ['gpt-6.2-astra', 'gpt-6.1-sol'];
 const claudeModels = ['claude-opus-5.5', 'claude-fable-5.2'];
 let fixtureRoot;
 

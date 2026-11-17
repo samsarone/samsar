@@ -37,7 +37,7 @@ function buildSource(overrides = {}) {
     billingStatus: 'CHARGED',
     prompt: 'Create a quiet river journey.',
     duration: 20,
-    inferenceModel: 'gpt-6-astra',
+    inferenceModel: 'gpt-6.2-astra',
     videoGenerationModel: 'RUNWAYML',
     videoTone: 'grounded',
     speakerOptions: { openAISpeakers: ['nova'] },

@@ -204,6 +204,7 @@ const SOUND_EFFECT_MODELS = [
   'SEEDANCEI2V',
   'SEEDANCE2.0I2V',
   'SEEDANCE2.5I2V',
+  'SEEDANCE2.5FLASHI2V',
 ];
 
 const MAX_BASE_GENERATION_ATTEMPTS = 3;
@@ -394,6 +395,9 @@ export function isSubmittedVideoAdapterCompatible(model, submittedAdapter) {
   const normalizedModel = normalizeString(model);
   const normalizedAdapter = normalizeVideoAdapter(submittedAdapter);
   if (!normalizedAdapter) return false;
+  if (normalizedModel === 'SEEDANCE2.5FLASHI2V') {
+    return [DOCKER_VIDEO_PROVIDER.FAL, DOCKER_VIDEO_PROVIDER.SAMSAR].includes(normalizedAdapter);
+  }
   if (
     normalizedAdapter === DOCKER_VIDEO_PROVIDER.SAMSAR ||
     normalizedAdapter === DOCKER_VIDEO_PROVIDER.GMICLOUD ||
@@ -1219,7 +1223,7 @@ function getLegacyInferenceEffort(model) {
   const normalized = typeof model === 'string'
     ? model.trim().toLowerCase().replace(/[_\s]+/g, '-')
     : '';
-  if (!supportsInferenceEffort(model) && !normalized.startsWith(GPT_56_SOL_INFERENCE_MODEL) && !normalized.startsWith('gpt-5.6-sol') && !normalized.startsWith('gpt-6-astra')) {
+  if (!supportsInferenceEffort(model) && !normalized.startsWith(GPT_56_SOL_INFERENCE_MODEL) && !normalized.startsWith('gpt-5.6-sol') && !normalized.startsWith('gpt-6.2-astra')) {
     return '';
   }
   if (normalized.includes('xhigh') || normalized.includes('extra-high')) {
@@ -2443,7 +2447,7 @@ async function generateAIVideoLayer(payload) {
     generationId = await generateHummingBirdLipSyncLayer(payload);
   } else if (model === 'VIDUI2V') {
     generationId = await generateViduI2VVideoLayer(payload);
-  } else if (model === 'SEEDANCEI2V' || model === 'SEEDANCE2.0I2V' || model === 'SEEDANCE2.5I2V') {
+  } else if (model === 'SEEDANCEI2V' || model === 'SEEDANCE2.0I2V' || model === 'SEEDANCE2.5I2V' || model === 'SEEDANCE2.5FLASHI2V') {
     generationId = await generateSeeDanceImgToVideoLayer(payload);
   } else if (model === 'HAPPYHORSEI2V') {
     generationId = shouldUseAlibabaNativeHappyHorse(payload)
@@ -2625,7 +2629,7 @@ export async function pollForAIVideoCompletion(reqPayload) {
     responseData = await listenToPendingHummingBirdLipSyncRequests(payload);
   } else if (model === 'VIDUI2V') {
     responseData = await listenToPendingViduI2VVideoRequests(payload);
-  } else if (model === 'SEEDANCEI2V' || model === 'SEEDANCE2.0I2V' || model === 'SEEDANCE2.5I2V') {
+  } else if (model === 'SEEDANCEI2V' || model === 'SEEDANCE2.0I2V' || model === 'SEEDANCE2.5I2V' || model === 'SEEDANCE2.5FLASHI2V') {
     responseData = await listenToPendingSeeDanceImgToVidRequests(payload);
   } else if (model === 'HAPPYHORSEI2V') {
     responseData = submittedAdapter === DOCKER_VIDEO_PROVIDER.ALIBABA_CLOUD

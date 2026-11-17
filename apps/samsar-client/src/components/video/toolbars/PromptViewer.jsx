@@ -1,4 +1,5 @@
 import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { getKlingImageAppRequestOptions } from '../../../utils/KlingImageModel.mjs';
 import { translateText as uiText } from '../../../utils/localization.js';
 import { useEffect, useMemo, useState } from 'react';
 import SecondaryButton from '../../common/SecondaryButton.tsx';
@@ -137,6 +138,7 @@ export default function PromptViewer(props) {
     const payload = {
       prompt: promptText,
       model: selectedModel,
+      ...getKlingImageAppRequestOptions(selectedModel),
       // If you also want to send retryOnFailure:
       retryOnFailure,
     };

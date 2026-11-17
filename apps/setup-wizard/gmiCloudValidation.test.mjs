@@ -47,7 +47,7 @@ test('validates a GMICloud credential and preserves actual active catalog ids', 
     fetchImpl: buildFetch({
       calls,
       catalog: [
-        { id: 'OPENAI/GPT-6-ASTRA', status: 'active' },
+        { id: 'OPENAI/GPT-6.2-ASTRA', status: 'active' },
         { id: 'tenant/google/gemini-4-carbon', active: true },
         { id: 'Qwen/Qwen3.8-Max', state: 'available' },
       ],
@@ -61,7 +61,7 @@ test('validates a GMICloud credential and preserves actual active catalog ids', 
   assert.equal(calls[1].options.method, 'GET');
   assert.equal(calls[1].options.body, undefined);
   assert.equal(validation.ok, true);
-  assert.equal(validation.modelMappings['gpt-6-astra'].text.modelId, 'OPENAI/GPT-6-ASTRA');
+  assert.equal(validation.modelMappings['gpt-6.2-astra'].text.modelId, 'OPENAI/GPT-6.2-ASTRA');
   assert.equal(validation.modelMappings['gemini-4-carbon'].vision.modelId, 'tenant/google/gemini-4-carbon');
   assert.equal(validation.modelMappings['QWEN3.8'].text.modelId, 'Qwen/Qwen3.8-Max');
   assert.equal(validation.modelMappings['QWEN3.8'].vision.modelId, 'Qwen/Qwen3.8-Max');
@@ -92,7 +92,7 @@ test('requires active status when status metadata is present', async () => {
   const result = await validateGmiCloudProviderCredential({ gmiCloudApiKey: 'gmi-test-key' }, {
     fetchImpl: buildFetch({
       catalog: [
-        { id: 'openai/gpt-6-astra', status: 'inactive' },
+        { id: 'openai/gpt-6.2-astra', status: 'inactive' },
         { id: 'google/gemini-4-carbon', enabled: false },
         { id: 'Qwen/Qwen3.8-Max', active: true },
       ],
@@ -103,7 +103,7 @@ test('requires active status when status metadata is present', async () => {
 });
 
 test('chat matching ignores owner prefixes and case but remains version exact', () => {
-  assert.equal(chatCatalogModelMatches('tenant/OPENAI/GPT-6-ASTRA', 'openai/gpt-6-astra'), true);
+  assert.equal(chatCatalogModelMatches('tenant/OPENAI/GPT-6.2-ASTRA', 'openai/gpt-6.2-astra'), true);
   assert.equal(chatCatalogModelMatches('google/gemini-4-carbon-v2', 'google/gemini-4-carbon'), false);
   assert.equal(chatCatalogModelMatches('Qwen/Qwen3.8-Max-2026-08-01', 'Qwen/Qwen3.8-Max'), false);
 });
@@ -129,7 +129,7 @@ test('intersects exact active media catalog models without submitting generation
 
   const mappings = result.providers.gmicloud.modelMappings;
   assert.equal(mappings.GPTIMAGE2.image.modelId, 'GPT-IMAGE-2-GENERATE');
-  assert.equal(mappings.SEEDREAM.image.modelId, 'seedream-5.0-pro');
+  assert.equal(mappings.SEEDREAM, undefined);
   assert.equal(mappings['VEO3.1I2V'], undefined);
   assert.equal(mappings.GPTIMAGE2EDIT.image.modelId, 'gpt-image-2-edit');
   assert.equal(mappings.GPTIMAGE2EDIT.image.operation, 'image.edit');
@@ -143,6 +143,18 @@ test('intersects exact active media catalog models without submitting generation
   assert.equal(calls.every((call) => call.options.method === 'GET'), true);
   assert.equal(calls.every((call) => call.options.body === undefined), true);
   assert.equal(GMI_CLOUD_MEDIA_MODEL_SPECS.some((spec) => spec.samsarModel === 'WAN2.7PRO'), false);
+  assert.equal(GMI_CLOUD_MEDIA_MODEL_SPECS.some((spec) => spec.samsarModel === 'SEEDREAM'), false);
+});
+
+test('preserves legacy Seedream runtime affinity without inventing a Seedream 5.5 or Flash GMI route', () => {
+  const legacy = { SEEDREAM: { image: { modelId: 'seedream-5.0-pro', operation: 'image.generate' } } };
+  assert.deepEqual(normalizeGmiCloudModelMappings(legacy), legacy);
+  const runtime = buildGmiCloudRuntimeCatalog({ apiKey: 'legacy-key', enabled: true, modelMappings: legacy });
+  assert.deepEqual(runtime.models.SEEDREAM, legacy.SEEDREAM);
+  assert.deepEqual(normalizeGmiCloudModelMappings({
+    SEEDREAM: { image: { modelId: 'seedream-5.5' } },
+    'SEEDANCE2.5FLASHI2V': { video: { modelId: 'seedance-2-5-260628' } },
+  }), {});
 });
 
 test('maps every exact compatible GMICloud video version and excludes incompatible Kling text video', async () => {
@@ -244,14 +256,14 @@ test('accepts the authenticated GMICloud model_ids catalog response shape', asyn
 test('keeps authenticated chat routes when the secondary media catalog is unavailable', async () => {
   const result = await validateGmiCloudProviderCredential({ gmiCloudApiKey: 'gmi-test-key' }, {
     fetchImpl: buildFetch({
-      catalog: [{ id: 'openai/gpt-6-astra', status: 'active' }],
+      catalog: [{ id: 'openai/gpt-6.2-astra', status: 'active' }],
       mediaStatus: 503,
     }),
   });
 
   const validation = result.providers.gmicloud;
   assert.equal(validation.ok, true);
-  assert.equal(validation.modelMappings['gpt-6-astra'].text.modelId, 'openai/gpt-6-astra');
+  assert.equal(validation.modelMappings['gpt-6.2-astra'].text.modelId, 'openai/gpt-6.2-astra');
   assert.equal(validation.mediaCatalogVerified, false);
   assert.match(validation.mediaCatalogWarning, /unavailable.*only verified inference models/i);
 });
@@ -273,8 +285,8 @@ test('keeps authenticated chat routes when the secondary media catalog is unread
 
 test('normalizes mappings against the curated exact route set', () => {
   assert.deepEqual(normalizeGmiCloudModelMappings({
-    'gpt-6-astra': {
-      text: { modelId: 'tenant/openai/gpt-6-astra', operation: 'attacker.operation' },
+    'gpt-6.2-astra': {
+      text: { modelId: 'tenant/openai/gpt-6.2-astra', operation: 'attacker.operation' },
     },
     'QWEN3.8': {
       text: { modelId: 'tenant/Qwen3.8-Max' },
@@ -290,8 +302,8 @@ test('normalizes mappings against the curated exact route set', () => {
     'SEEDANCE2.0I2V': { video: { modelId: 'seedance-2-0-260128' } },
     'SEEDANCE2.0T2V': { video: { modelId: 'seedance-2-0-260128' } },
   }), {
-    'gpt-6-astra': {
-      text: { modelId: 'tenant/openai/gpt-6-astra', operation: 'chat.completions' },
+    'gpt-6.2-astra': {
+      text: { modelId: 'tenant/openai/gpt-6.2-astra', operation: 'chat.completions' },
     },
     'QWEN3.8': {
       text: { modelId: 'tenant/Qwen3.8-Max', operation: 'chat.completions' },
@@ -405,4 +417,14 @@ test('expires GMICloud validation tokens', () => {
 
 test('uses the authenticated read-only media model catalog endpoint', () => {
   assert.match(GMI_CLOUD_MEDIA_MODELS_URL, /console\.gmicloud\.ai\/api\/v1\/ie\/requestqueue\/apikey\/models$/);
+});
+
+
+test('legacy Astra catalog entries do not authorize the upgraded Astra 6.2 route', async () => {
+  const result = await validateGmiCloudProviderCredential({ gmiCloudApiKey: 'gmi-test-key' }, {
+    fetchImpl: buildFetch({ catalog: [{ id: 'openai/gpt-6-astra', status: 'active' }] }),
+  });
+  assert.equal(result.providers.gmicloud.ok, true);
+  assert.deepEqual(result.providers.gmicloud.modelMappings, {});
+  assert.equal(chatCatalogModelMatches('openai/gpt-6-astra', 'openai/gpt-6.2-astra'), false);
 });

@@ -31,10 +31,10 @@ function servicePath(name, file) {
 for (const [name, modelsFile, adapterFile] of services) {
   test(`${name}: defaults stay on Astra while Sol and Claude choices remain distinct`, async () => {
     const models = await import(pathToFileURL(servicePath(name, modelsFile)));
-    for (const alias of [undefined, 'gpt-6-astra', 'GPT 6 Astra High', 'gpt-5.6-sol']) {
-      assert.equal(models.normalizeInferenceModel(alias), 'gpt-6-astra', String(alias));
+    for (const alias of [undefined, 'gpt-6.2-astra', 'GPT 6.2 Astra High', 'gpt-6-astra', 'GPT 6 Astra High', 'gpt-5.6-sol']) {
+      assert.equal(models.normalizeInferenceModel(alias), 'gpt-6.2-astra', String(alias));
     }
-    for (const alias of ['gpt-6.1-sol-xhigh', 'GPT 6.1 Sol Extra High', 'gpt-6-astra-xhigh']) {
+    for (const alias of ['gpt-6.1-sol-xhigh', 'GPT 6.1 Sol Extra High', 'gpt-6.2-astra-xhigh']) {
       const effort = models.getReasoningEffortForInferenceModel || models.getGPT56SolReasoningEffort;
       assert.equal(effort(alias), 'xhigh', alias);
       assert.equal(effort(alias, 'high'), 'high', alias);
@@ -50,9 +50,9 @@ for (const [name, modelsFile, adapterFile] of services) {
       t.after(() => rmSync(directory, { recursive: true, force: true }));
       const catalogPath = path.join(directory, 'catalog.json');
       writeFileSync(catalogPath, JSON.stringify({ version: 1, provider: 'gmicloud', models: {
-        'gpt-6-astra': {
-          text: { modelId: 'openai/gpt-6-astra', operation: 'chat.completions' },
-          vision: { modelId: 'openai/gpt-6-astra', operation: 'chat.completions' },
+        'gpt-6.2-astra': {
+          text: { modelId: 'openai/gpt-6.2-astra', operation: 'chat.completions' },
+          vision: { modelId: 'openai/gpt-6.2-astra', operation: 'chat.completions' },
         },
       } }));
       const overrides = { CURRENT_ENV: 'docker', MONGO_URL: 'mongodb://127.0.0.1/astra-test', SAMSAR_GENBLAZE_ENABLED: 'true', SAMSAR_GENBLAZE_MODEL_CATALOG_PATH: catalogPath };
@@ -70,14 +70,14 @@ for (const [name, modelsFile, adapterFile] of services) {
       let captured;
       t.mock.method(OpenAI.prototype, 'post', async (_url, options) => {
         captured = options.body;
-        return { model: 'gpt-6-astra', choices: [{ message: { content: 'seen' } }] };
+        return { model: 'gpt-6.2-astra', choices: [{ message: { content: 'seen' } }] };
       });
       const adapter = await import(pathToFileURL(adapterPath));
       const messages = [{ role: 'user', content: vision
         ? [{ type: 'image_url', image_url: { url: 'data:image/png;base64,QUJD' } }]
         : 'Plan this.' }];
-      await adapter.createGenblazeChatCompletion({ model: 'gpt-6-astra-xhigh', messages, temperature: 0.5, max_tokens: 100, maxRetries: 0 });
-      assert.equal(captured.model, 'gpt-6-astra');
+      await adapter.createGenblazeChatCompletion({ model: 'gpt-6.2-astra-xhigh', messages, temperature: 0.5, max_tokens: 100, maxRetries: 0 });
+      assert.equal(captured.model, 'gpt-6.2-astra');
       assert.equal(captured.reasoning_effort, 'xhigh');
       assert.equal(captured.temperature, undefined);
       assert.equal(captured.max_completion_tokens, name === 'generator' && vision ? undefined : 100);
@@ -145,9 +145,9 @@ for (const [name, modelsFile, adapterFile] of services) {
         return { model: 'openai/gpt-6.1-sol', choices: [{ message: { content: 'seen' } }] };
       });
       const adapter = await import(pathToFileURL(adapterPath));
-      assert.equal(adapter.getOpenRouterModelForInferenceRequest({ model: 'gpt-6-astra' }, {
+      assert.equal(adapter.getOpenRouterModelForInferenceRequest({ model: 'gpt-6.2-astra' }, {
         OPENROUTER_GPT_56_SOL_MODEL: 'openai/gpt-6.1-sol',
-      }), 'openai/gpt-6-astra');
+      }), 'openai/gpt-6.2-astra');
       const content = vision
         ? [{ type: 'text', text: 'Describe this.' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,QUJD' } }]
         : 'Plan this.';
@@ -168,15 +168,20 @@ for (const [name, file] of [
   ['processor', 'src/models/api/AssistantBilling.js'],
   ['assistant-query-processor', 'src/AssistantBilling.js'],
 ]) {
-  test(`${name}: Astra uses its own cached-token tariff and the existing billing policy`, async () => {
+  test(`${name}: current and historical Astra retain distinct cached-token tariffs`, async () => {
     const { calculateAssistantCreditsFromUsage } = await import(pathToFileURL(servicePath(name, file)));
-    for (const model of ['gpt-6-astra', 'openai/gpt-6-astra']) {
+    for (const [model, pricingModel, costUsd, credits] of [
+      ['gpt-6.2-astra', 'gpt-6.2-astra', 1.048, 125.76],
+      ['openai/gpt-6.2-astra', 'gpt-6.2-astra', 1.048, 125.76],
+      ['gpt-6-astra', 'gpt-6-astra', 1.32, 158.4],
+      ['openai/gpt-6-astra', 'gpt-6-astra', 1.32, 158.4],
+    ]) {
       const result = calculateAssistantCreditsFromUsage({
         model, usage: { input_tokens: 100_000, input_tokens_details: { cached_tokens: 20_000 }, output_tokens: 10_000 },
       });
-      assert.equal(result.pricingModel, 'gpt-6-astra');
-      assert.equal(result.costUsd, 1.32);
-      assert.equal(result.credits, 158.4);
+      assert.equal(result.pricingModel, pricingModel);
+      assert.equal(result.costUsd, costUsd);
+      assert.equal(result.credits, credits);
       assert.equal(result.pricingMultiplier, 1.2);
     }
   });

@@ -25,6 +25,17 @@ const TOKEN_PRICING_USD_PER_MILLION = Object.freeze({
     longContextOutput: 15,
     longContextInputThreshold: 272_000,
   },
+  'gpt-6.2-astra': {
+    input: 8,
+    cachedInput: 0.4,
+    output: 40,
+    cacheWrite: 10,
+    cacheWriteHour: 20,
+    longContextInput: 16,
+    longContextCachedInput: 0.8,
+    longContextOutput: 60,
+    longContextInputThreshold: 272_000,
+  },
   'gpt-6-astra': {
     input: 10,
     cachedInput: 1,
@@ -138,7 +149,7 @@ export function calculateAssistantCreditsFromUsage({
     (uncachedInputTokens / TOKENS_PER_MILLION) * effectivePricing.input +
     (cachedInputTokens / TOKENS_PER_MILLION) * cachedInputRate +
     ((cacheWriteTokens - cacheWriteHourTokens) / TOKENS_PER_MILLION) * (pricing.cacheWrite !== undefined ? pricing.cacheWrite * (effectivePricing.longContext ? 2 : 1) : effectivePricing.input * (pricingModel.startsWith("gpt-") ? 1.25 : 1)) +
-    (cacheWriteHourTokens / TOKENS_PER_MILLION) * (pricing.cacheWriteHour ?? effectivePricing.input * 2) +
+    (cacheWriteHourTokens / TOKENS_PER_MILLION) * (pricing.cacheWriteHour !== undefined ? pricing.cacheWriteHour * (effectivePricing.longContext ? 2 : 1) : effectivePricing.input * 2) +
     (normalizedUsage.outputTokens / TOKENS_PER_MILLION) * effectivePricing.output
   );
   if (region && region !== 'global' && ['gemini-4-carbon', 'gemini-4-argon'].includes(pricingModel)) costUsd *= 1.1;
@@ -274,7 +285,12 @@ function billingError(message, code) {
 
 function resolvePricingModel(model) {
   // Settle historical receipts against their actual model, before saved-choice aliases.
-  const receiptToken = String(model || '').replace(/^(?:anthropic)\//i, '').replace(/[^a-z0-9]/gi, '').toUpperCase().replace(/(?:EXTRAHIGH|XHIGH|HIGH)$/, '');
+  const receiptModel = String(model || '').trim().toLowerCase().split('/').pop();
+  if (/^gpt-6-astra(?:-|$)/.test(receiptModel)) return 'gpt-6-astra';
+  if (/^gpt-5\.6-sol(?:-|$)/.test(receiptModel)) return 'gpt-5.6-sol';
+  const receiptToken = receiptModel.replace(/[^a-z0-9]/gi, '').toUpperCase().replace(/(?:EXTRAHIGH|XHIGH|HIGH)$/, '');
+  if (receiptToken === 'GPT6ASTRA') return 'gpt-6-astra';
+  if (receiptToken === 'GPT56SOL') return 'gpt-5.6-sol';
   if (receiptToken === 'CLAUDEFABLE51') return 'claude-fable-5.1';
   const reasoningModel = getReasoningModelBase(model);
   if (TOKEN_PRICING_USD_PER_MILLION[reasoningModel]) return reasoningModel;
@@ -297,6 +313,8 @@ function resolvePricingModel(model) {
   if (['claude-opus-5.5', 'claude-opus-5-5'].includes(providerModel)) {
     return 'claude-opus-5.5';
   }
+
+  if (providerModel.startsWith('gpt-6.2-astra')) return 'gpt-6.2-astra';
 
   if (providerModel.startsWith('gpt-6.1-sol')) {
     return 'gpt-6.1-sol';

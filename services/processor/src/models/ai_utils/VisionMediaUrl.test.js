@@ -536,7 +536,7 @@ test('VisionUtils resolves and rebuilds its image payload on every provider retr
   const resolverInputs = [];
   const payloads = [];
 
-  const result = await getDescriptionForImageToCreateImageList(sourceReference, undefined, {
+  const result = await getDescriptionForImageToCreateImageList(sourceReference, 'gpt-6.2-astra', {
     resolveImageUrl: async (value) => {
       resolverInputs.push(value);
       return resolvedUrls[resolverInputs.length - 1];
@@ -620,7 +620,7 @@ test('AdUtils refreshes every image and rebuilds the list payload on provider re
   const resolverInputs = [];
   const payloads = [];
 
-  const result = await processThemesFromStartImages(sourceReferences, undefined, {
+  const result = await processThemesFromStartImages(sourceReferences, 'gpt-6.2-astra', {
     resolveImageUrl: async (value) => {
       resolverInputs.push(value);
       const attempt = resolverInputs.length <= sourceReferences.length ? 'one' : 'two';

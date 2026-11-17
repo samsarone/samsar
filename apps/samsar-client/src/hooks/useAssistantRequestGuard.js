@@ -198,7 +198,7 @@ export function useAssistantRequestGuard(sessionId) {
         const controller = new AbortController();
         let stopped = false, timer, deadlineTimer, stream, inFlight = false;
         let lastContact = Date.now(), lastProgress = Date.now(), previousProgress = '';
-        let hasStreamSnapshot = false, lastStreamActivity = 0, lastStatusAttempt = Date.now();
+        let lastStreamProgress = null, previousStreamText = '', lastStatusAttempt = Date.now();
         const active = () => !stopped && guard.current.isCurrent(token);
         const stop = () => {
           stopped = true;
@@ -229,11 +229,11 @@ export function useAssistantRequestGuard(sessionId) {
         const poll = async (force = false) => {
           if (!active() || inFlight) return;
           clearTimeout(timer);
-          // SSE already delivers the same snapshots. Avoid a second database
-          // read every second while snapshots/10-second heartbeats are arriving.
-          // Reconcile every 30 seconds even if a heartbeat keeps a stalled
-          // snapshot reader alive. Missing stream activity falls back sooner.
-          if (!force && hasStreamSnapshot && Date.now() - lastStreamActivity < 15000 &&
+          // Reduce duplicate reads only while SSE is delivering answer text.
+          // Queued snapshots and heartbeats prove contact, not that answer
+          // updates are reaching us. Keep REST available when text stalls.
+          // Reconcile every 30 seconds even during healthy SSE progress.
+          if (!force && lastStreamProgress !== null && Date.now() - lastStreamProgress < 15000 &&
               Date.now() - lastStatusAttempt < 30000) {
             timer = setTimeout(poll, 1000);
             return;
@@ -260,15 +260,19 @@ export function useAssistantRequestGuard(sessionId) {
         };
         const connect = () => { stream = guard.current.subscribe({ url, headers,
           onSnapshot: snapshot => {
-            hasStreamSnapshot = true;
-            lastStreamActivity = Date.now();
+            if (!active()) return;
+            const answer = snapshot.assistantStream;
+            if (typeof answer?.text === 'string' && answer.text.trim()) {
+              const progress = JSON.stringify([snapshot.assistantSessionVersion || 0, answer.queryId, answer.text]);
+              if (progress !== previousStreamText) {
+                previousStreamText = progress;
+                lastStreamProgress = Date.now();
+              }
+            }
             apply(snapshot);
           },
           onActivity: () => {
-            if (active()) {
-              lastContact = Date.now();
-              if (hasStreamSnapshot) lastStreamActivity = lastContact;
-            }
+            if (active()) lastContact = Date.now();
           },
           onError: failure => fail(failure, false) }); };
         const wake = () => { if (active() && !document.hidden) { connect(); void poll(true); } };

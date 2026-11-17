@@ -94,24 +94,47 @@ export async function observeImageSubmissionFailure(payload, error, {
 // Retry read-only polling against its accepted request. Never let a generic
 // generation retry reset this receipt to INIT or select another adapter.
 export async function deferAcceptedImagePoll(payload, {
-  Model = ImageGeneration, now = Date.now(), maxFailures = 3,
+  Model = ImageGeneration, now = Date.now(), maxRetries = 3, token = randomUUID(),
 } = {}) {
-  const marker = payload.imageSubmissionAttempt;
-  if (marker?.state !== 'ACCEPTED' || providerStatus(payload) !== 'PENDING' || !payload.apiRequestId) return false;
-  const failures = (Number(marker.pollFailures) || 0) + 1;
-  if (failures >= maxFailures) {
+  let marker = payload.imageSubmissionAttempt;
+  if (providerStatus(payload) !== 'PENDING' || !payload.apiRequestId ||
+      payload.submissionOutcomeUnknown || (marker && marker.state !== 'ACCEPTED')) return false;
+  const failures = Math.max(0, Math.floor(Number(marker?.pollFailures) || 0)) + 1;
+  const retryLimit = Number.isInteger(maxRetries) && maxRetries >= 0 ? maxRetries : 3;
+  if (failures > retryLimit) {
     throw Object.assign(unknownSubmissionError(), {
       message: 'Image provider polling failed repeatedly; refusing to resubmit the accepted request.',
       code: 'IMAGE_PROVIDER_POLL_RETRIES_EXHAUSTED',
     });
   }
   const field = payload.operationType === 'GENERATE' ? 'apiGenerationStatus' : 'apiEditStatus';
+  const ownership = marker ? {
+    'imageSubmissionAttempt.token': marker.token,
+    'imageSubmissionAttempt.state': { $in: ['ACCEPTED'] },
+    'imageSubmissionAttempt.pollFailures': marker.pollFailures === undefined
+      ? { $exists: false } : marker.pollFailures,
+  } : { imageSubmissionAttempt: null };
+  const setFields = {
+    rowLocked: false,
+    nextAttemptAfter: new Date(Number(now) + Math.min(60000, 15000 * (2 ** (failures - 1)))),
+  };
+  if (marker) {
+    setFields['imageSubmissionAttempt.pollFailures'] = failures;
+  } else {
+    // A legacy row's persisted provider ID and PENDING status establish accepted
+    // work. Upgrade only its recovery metadata; never return it to INIT.
+    marker = { version: 1, state: 'ACCEPTED', token,
+      startedAt: payload.apiSubmittedAt || new Date(now), operation: payload.operationType,
+      attempt: imageAttempt(payload), filterAttempt: imageFilterAttempt(payload),
+      pollFailures: failures };
+    setFields.imageSubmissionAttempt = marker;
+  }
   const result = await Model.updateOne({ _id: payload._id, apiRequestId: payload.apiRequestId,
-    [field]: 'PENDING', 'imageSubmissionAttempt.token': marker.token,
-  }, { $set: { rowLocked: false, nextAttemptAfter: new Date(now + 15000),
-    'imageSubmissionAttempt.pollFailures': failures } });
+    [field]: 'PENDING', submissionOutcomeUnknown: { $ne: true }, ...ownership,
+  }, { $set: setFields });
   if (result?.matchedCount !== 1) throw unknownSubmissionError();
   marker.pollFailures = failures;
+  payload.imageSubmissionAttempt = marker;
   return true;
 }
 

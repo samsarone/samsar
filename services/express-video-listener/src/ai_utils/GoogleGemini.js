@@ -4,9 +4,10 @@ import fs from 'node:fs';
 import { readFile } from 'node:fs/promises';
 
 import { resolveLocalAssetPath } from '../utils/LocalAssetPath.js';
+import { buildGoogleGeminiDeveloperUrl, resolveGoogleGeminiTransport } from './GoogleGeminiTransport.js';
 
-export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-6-astra';
-export const GPT_56_SOL_XHIGH_INFERENCE_MODEL = 'gpt-6-astra-xhigh';
+export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-6.2-astra';
+export const GPT_56_SOL_XHIGH_INFERENCE_MODEL = 'gpt-6.2-astra-xhigh';
 export const GPT_56_SOL_REASONING_EFFORT = 'high';
 export const GPT_56_SOL_XHIGH_REASONING_EFFORT = 'xhigh';
 export const QWEN_38_INFERENCE_MODEL = 'QWEN3.8';
@@ -142,7 +143,7 @@ export function normalizeInferenceModel(value) {
   if (reasoningModel) return reasoningModel;
   const gptToken = typeof value === 'string' ? value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
   // Legacy GPT selections retain Astra compatibility.
-  if (/^GPT(?:6ASTRA|56SOL|56|6)(?:HIGH|XHIGH|EXTRAHIGH)?$/.test(gptToken)) {
+  if (/^GPT(?:62ASTRA|6ASTRA|56SOL|56|6)(?:HIGH|XHIGH|EXTRAHIGH)?$/.test(gptToken)) {
     return /(?:XHIGH|EXTRAHIGH)$/.test(gptToken)
       ? GPT_56_SOL_XHIGH_INFERENCE_MODEL
       : DEFAULT_INFERENCE_MODEL;
@@ -446,14 +447,17 @@ export async function createGoogleGeminiChatCompletion(chatRequest = {}) {
   const request = legacyMessageListInput
     ? { model: GEMINI_4_CARBON_INFERENCE_MODEL, messages: chatRequest }
     : { ...(chatRequest || {}) };
-  const credentials = getConfiguredCredentials();
-  const projectId = getConfiguredProjectId() || normalizeString(credentials?.project_id);
-  if (!projectId) {
+  const location = resolveGeminiLocation();
+  const transport = resolveGoogleGeminiTransport(resolveGeminiModel(request.model));
+  const { model } = transport;
+  const credentials = transport.kind === 'developer' ? null : getConfiguredCredentials();
+  const projectId = transport.kind === 'developer'
+    ? ''
+    : getConfiguredProjectId() || normalizeString(credentials?.project_id);
+  if (transport.kind === 'vertex' && !projectId) {
     throw new Error('Google Gemini inference requires GOOGLE_CLOUD_PROJECT, GOOGLE_PROJECT_ID, or service account credentials containing project_id.');
   }
 
-  const location = resolveGeminiLocation();
-  const model = resolveGeminiModel(request.model);
   const { systemInstruction, contents } = await buildGeminiContents(request.messages);
   if (isGeminiCarbonProviderModel(model)) {
     while (contents.at(-1)?.role === 'model') contents.pop();
@@ -461,10 +465,17 @@ export async function createGoogleGeminiChatCompletion(chatRequest = {}) {
   if (!contents.length) throw new Error('Google Gemini inference requires at least one user message.');
 
   const generationConfig = buildGenerationConfig(request, model);
-  const token = await getAccessToken();
-  const response = await fetch(buildVertexGenerateContentUrl({ projectId, location, model }), {
+  const token = transport.kind === 'developer' ? null : await getAccessToken();
+  const response = await fetch(transport.kind === 'developer'
+    ? buildGoogleGeminiDeveloperUrl({ model })
+    : buildVertexGenerateContentUrl({ projectId, location, model }), {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    headers: {
+      ...(transport.kind === 'developer'
+        ? { 'x-goog-api-key': transport.apiKey }
+        : { Authorization: `Bearer ${token}` }),
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
       ...(systemInstruction ? { systemInstruction } : {}),
       contents,
@@ -498,6 +509,7 @@ export async function createGoogleGeminiChatCompletion(chatRequest = {}) {
     object: 'chat.completion',
     created: Math.floor(Date.now() / 1000),
     model,
+    ...(transport.kind === 'developer' ? { samsarBilling: { adapter: 'google', region: 'global', api: 'developer' } } : {}),
     usage: normalizeGeminiUsage(payload?.usageMetadata),
     google_response: {
       modelVersion: payload?.modelVersion || null,

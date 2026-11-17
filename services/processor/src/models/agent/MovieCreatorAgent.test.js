@@ -11,7 +11,7 @@ import {
 import { extractThemeForImageListAndPrompt } from '../movie_session/ad_creator/AdAgentPrompts.js';
 import { extractNarrativeFromInputPayload } from '../movie_session/image_list_to_video/system/NarrativeBuilder.js';
 
-for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
+for (const model of ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
   for (const effort of ['high', 'xhigh']) {
     test(`translated speech repair uses ${model}/${effort} and retains source meaning instructions across retries`, async () => {
       const requests = [];
@@ -65,7 +65,7 @@ test('translated speech repair rejects empty, multiline and Markdown responses w
   let attempts = 0;
   await assert.rejects(rewriteNarrativeSpeechItemToFitScene({
     scene, speechItem, movieResourceList: { scenes: [scene], sounds: [speechItem] },
-    maxCharacters: 57, inferenceModel: 'gpt-6-astra',
+    maxCharacters: 57, inferenceModel: 'gpt-6.2-astra',
     options: {
       sceneIndex: 0, soundIndex: 0, maxAttempts: 99,
       translationContext: { targetLanguage: 'French', originalText: 'Hello' },
@@ -124,7 +124,7 @@ test('character visual speaker message includes canonical gender when available'
   );
 });
 
-test('theme and narrative callers preserve GPT 6 Astra xhigh while canonical Sol defaults high', async (t) => {
+test('theme and narrative callers preserve GPT 6.2 Astra xhigh while canonical Sol defaults high', async (t) => {
   forceNativeOpenAIForTest(t);
   const requestBodies = [];
   const responseJson = JSON.stringify({
@@ -140,42 +140,42 @@ test('theme and narrative callers preserve GPT 6 Astra xhigh while canonical Sol
     requestBodies.push(options.body);
     return {
       id: `response-${requestBodies.length}`,
-      model: 'gpt-6-astra',
+      model: 'gpt-6.2-astra',
       output_text: responseJson,
     };
   });
 
   await extractGroundedThemeFromUserPrompt(
     'A grounded technical documentary.',
-    'gpt-6-astra-xhigh',
+    'gpt-6.2-astra-xhigh',
   );
   await extractThemeFromUserPromptAndImageTheme(
     'Continue the reference image.',
     'cinematic reference',
-    'gpt-6-astra-xhigh',
+    'gpt-6.2-astra-xhigh',
   );
   await extractThemeForImageListAndPrompt(
     'product photography',
     'Build an ad.',
-    'gpt-6-astra-xhigh',
+    'gpt-6.2-astra-xhigh',
   );
   await extractNarrativeFromInputPayload(
     {},
     { prompt: 'Connect the frames.', metadata: {}, imageDescriptionList: [] },
     30,
     'RUNWAYML',
-    'gpt-6-astra-xhigh',
+    'gpt-6.2-astra-xhigh',
     1,
     'English',
   );
   await extractGroundedThemeFromUserPrompt(
     'A standard documentary.',
-    'gpt-6-astra',
+    'gpt-6.2-astra',
   );
 
   assert.equal(requestBodies.length, 5);
   requestBodies.slice(0, 4).forEach((body) => {
-    assert.equal(body.model, 'gpt-6-astra');
+    assert.equal(body.model, 'gpt-6.2-astra');
     assert.deepEqual(body.reasoning, { effort: 'xhigh' });
   });
   assert.deepEqual(requestBodies[4].reasoning, { effort: 'high' });

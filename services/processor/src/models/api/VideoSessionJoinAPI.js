@@ -19,7 +19,7 @@ const DEFAULT_FRAMES_PER_SECOND = 24;
 const VALID_FRAMES_PER_SECOND = new Set([16, 24, 30]);
 const SCENE_BLEND_BOUNDARY_SECONDS = 0.5;
 const OUTRO_BLEND_FADE_SECONDS = 1;
-const JOIN_VIDEO_TITLE_MODEL = process.env.JOIN_VIDEO_TITLE_MODEL || 'gpt-6-astra';
+const JOIN_VIDEO_TITLE_MODEL = process.env.JOIN_VIDEO_TITLE_MODEL || 'gpt-6.2-astra';
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 
 function resolveFramesPerSecond(value) {

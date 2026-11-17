@@ -12,7 +12,7 @@ import { createGenblazeChatCompletion, createOpenRouterChatCompletion, createSam
 
 const messages = [{ role: 'user', content: 'Hello' }];
 const usage = { prompt_tokens: 10, completion_tokens: 4 };
-const reasoningModels = ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']
+const reasoningModels = ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']
   .flatMap(model => [model, `${model}-xhigh`]);
 const allModels = [...reasoningModels, 'QWEN3.8', 'gemini-4-carbon', 'kimi-k3'];
 
@@ -151,11 +151,11 @@ for (const model of allModels) {
   });
 }
 
-for (const model of ['gpt-6-astra', 'QWEN3.8', 'gemini-4-carbon']) {
+for (const model of ['gpt-6.2-astra', 'QWEN3.8', 'gemini-4-carbon']) {
   test(`GMICloud through Genblaze ${model} delivers text before completion`, async t => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'assistant-stream-catalog-'));
     const catalog = path.join(directory, 'models.json');
-    fs.writeFileSync(catalog, JSON.stringify({ models: { [model]: { text: { modelId: model } } } }));
+    fs.writeFileSync(catalog, JSON.stringify({ models: { [model]: { text: { modelId: model, operation: 'chat.completions' } } } }));
     const previous = process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH;
     process.env.SAMSAR_GENBLAZE_MODEL_CATALOG_PATH = catalog;
     t.after(() => {

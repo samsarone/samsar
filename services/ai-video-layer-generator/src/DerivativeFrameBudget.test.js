@@ -6,7 +6,7 @@ import { getLayerFrameRange } from './utils/FrameClock.js';
 import { completeVideoOutput } from './billing/VideoCompletion.js';
 import { captureMovieResourceTimeline, synchronizeMovieResourceTimeline } from './utils/MovieResourceTimeline.js';
 import { buildBaseAiVideoCompletionUpdate, resolveCompletedLayerDuration, resolveConnectedAudioLayerDuration,
-  buildAiVideoTimelineWriteGuard } from './VideoGenerationListener.js';
+  buildAiVideoTimelineWriteGuard, shouldFailStaleLipSyncProviderPoll } from './VideoGenerationListener.js';
 const source=fs.readFileSync(new URL('./VideoGenerationListener.js',import.meta.url),'utf8');
 function fn(name){const i=source.indexOf(`function ${name}(`);return source.slice(source.slice(i-6,i)==='async '?i-6:i,source.indexOf('\n}\n',i)+2);}
 for(const model of ['SYNCLIPSYNC','MMAUDIOV2']) test(`${model} incomplete paid output falls back once without shifting scenes or resubmitting`,async()=>{
@@ -23,7 +23,7 @@ for(const model of ['SYNCLIPSYNC','MMAUDIOV2']) test(`${model} incomplete paid o
  const context={console:{error(){}},getLayerFrameRange,getCanvasDimensionsForAspectRatio:()=>({width:32,height:32}),
    getDBConnectionString:async()=>{},VideoSession:{findById:async()=>session},getSessionFramesPerSecond:async()=>30,
    LIPSYNC_MODELS:['SYNCLIPSYNC'],SOUND_EFFECT_MODELS:['MMAUDIOV2'],isSoundEffectGenerationForLayer:()=>model==='MMAUDIOV2',
-   MAX_LIPSYNC_PROVIDER_PENDING_MS:60000,
+   MAX_LIPSYNC_PROVIDER_PENDING_MS:60000,shouldFailStaleLipSyncProviderPoll,
    AIVideoLayerGeneration:{findByIdAndDelete:async()=>{deletes++;}},
    prepareTimelineDerivative:async()=>{throw Object.assign(new Error('Incomplete derivative: expected 30 frames, received 20.'),{code:'VIDEO_FRAME_BUDGET_MISMATCH'});}};
  const deliver=vm.runInNewContext(['getProviderFailureMessage','processLipSyncGenerationFailed','processVideoGenerationCompletion']

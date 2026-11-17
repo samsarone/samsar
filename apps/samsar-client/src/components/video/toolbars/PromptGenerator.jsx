@@ -1,4 +1,5 @@
 import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { getKlingImageAppRequestOptions } from '../../../utils/KlingImageModel.mjs';
 import { translateText as uiText } from '../../../utils/localization.js';
 import { useMemo, useState, useEffect } from "react";
 import CommonButton from "../../common/CommonButton.tsx";
@@ -207,6 +208,7 @@ export default function PromptGenerator(props) {
     const payload = {
       prompt: promptText,
       model: selectedGenerationModel,
+      ...getKlingImageAppRequestOptions(selectedGenerationModel),
       retryOnFailure,
       isCharacterImage,
       aspectRatio,

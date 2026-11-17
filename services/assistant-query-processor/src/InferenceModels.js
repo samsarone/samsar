@@ -1,5 +1,5 @@
 import { normalizeReasoningModel, getReasoningModelBase, isGPTModel, isClaudeModel, resolveInferenceEffort } from './ReasoningModels.js';
-export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-6-astra';
+export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-6.2-astra';
 export const DEFAULT_INFERENCE_MODEL = GPT_56_SOL_INFERENCE_MODEL;
 export const GPT_56_SOL_REASONING_EFFORT = 'high';
 export const GPT_56_SOL_XHIGH_REASONING_EFFORT = 'xhigh';

@@ -25,12 +25,13 @@ import { getReasoningModelBase, isGPTModel } from '../../inference/ReasoningMode
 import { isClaudeModel } from '../../inference/AnthropicChatAdapter.js';
 import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
 import { getRetiredGPTImageModelError, normalizeGPTImageRequestModelKey } from '../../consts/GPTImageModelKeys.js';
+import { KLING_IMAGE_V4_MODEL_KEY, normalizeKlingImageRequestOptions } from '../../consts/KlingImageModel.js';
 import {
   QWEN_IMAGE_3_PRO_MODEL_KEY,
   isAlibabaQwenImage3ProAvailable,
 } from '../../consts/DockerProviderPriority.js';
 
-const OPENAI_MODEL = process.env.IMAGE_SET_PROMPT_MODEL || 'gpt-6-astra';
+const OPENAI_MODEL = process.env.IMAGE_SET_PROMPT_MODEL || 'gpt-6.2-astra';
 const openaiClient = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 const ROLLUP_MAX_IMAGES = 28;
 const ROLLUP_COLUMNS = 4;
@@ -161,6 +162,7 @@ const WAN_27_PRO_TEXT_TO_IMAGE_MODEL = 'WAN2.7PRO';
 const WAN_27_PRO_TEXT_TO_IMAGE_RESOLUTION = '1K';
 const WAN_27_PRO_TEXT_TO_IMAGE_ASPECT_RATIOS = Object.freeze(['1:1', '16:9', '9:16']);
 const SUPPORTED_TEXT_TO_IMAGE_MODELS = Object.freeze([
+  KLING_IMAGE_V4_MODEL_KEY,
   'GPTIMAGE2.5',
   'NANOBANANA2',
   'NANOBANANAPRO',
@@ -252,6 +254,12 @@ export function normalizeTextToImageRequestOptions(payload = {}) {
   }
 
   const requestedAspectRatio = payload.aspect_ratio || payload.aspectRatio;
+  if (model === KLING_IMAGE_V4_MODEL_KEY) {
+    return { model, ...normalizeKlingImageRequestOptions({
+      aspectRatio: requestedAspectRatio,
+      resolution: payload.resolution,
+    }) };
+  }
   const hasRequestedAspectRatio = requestedAspectRatio !== undefined &&
     requestedAspectRatio !== null &&
     !(typeof requestedAspectRatio === 'string' && requestedAspectRatio.trim() === '');
@@ -478,6 +486,14 @@ export async function generateTextToImage(payload = {}) {
     aspectRatio,
     resolution,
   });
+  if (normalizedModel === KLING_IMAGE_V4_MODEL_KEY) {
+    if (requestedImages !== 1) {
+      throw createBadRequestError('Kling Image 4 currently supports one image per request.');
+    }
+    if (prompt.length > 50000) {
+      throw createBadRequestError('Kling Image 4 prompt must contain at most 50000 characters.');
+    }
+  }
   const normalizedRequestMetadata = normalizedResolution
     ? { ...normalizedMetadata, resolution: normalizedResolution }
     : normalizedMetadata;

@@ -23,6 +23,22 @@ function createModelRecorder() {
   };
 }
 
+test('blocks outdated GMICloud Seedream submissions while keeping accepted 5.0 jobs recoverable', async () => {
+  assert.equal(isGenBlazeImageRequestApplicable({ model: 'SEEDREAM' }), false);
+  assert.throws(() => buildGenBlazeImageRequest({ model: 'SEEDREAM', prompt: 'A tree' }),
+    { code: 'GENBLAZE_MODEL_UNSUPPORTED' });
+  assert.equal(isGenBlazeImageRequestApplicable({ model: 'SEEDREAM', apiRequestId: 'genblaze-image:old' }), true);
+  const paths = [];
+  const result = await handleGenBlazeImageRequest({ _id: 'legacy', model: 'SEEDREAM',
+    apiGenerationStatus: 'PENDING', apiRequestId: 'genblaze-image:old' }, {
+    connect: async () => {}, imageGenerationModel: createModelRecorder().model,
+    async request(path) { paths.push(path); return { status: 'succeeded', assets: [{ url: 'https://media.example/old.png' }] }; },
+    saveFile: async () => 'old.png',
+  });
+  assert.deepEqual(paths, ['/media/requests/old']);
+  assert.equal(result.image, 'old.png');
+});
+
 test('builds exact Samsar-model gateway requests without exposing a GMI credential', () => {
   assert.deepEqual(
     buildGenBlazeImageRequest({

@@ -56,7 +56,7 @@ function normalizeStringListMap(value) {
     Object.entries(value)
       .filter(([key]) => typeof key === 'string' && key.trim())
       .map(([key, item]) => [key.trim(), normalizeStringList(item).filter((provider) => (
-        !['GPTIMAGE2.5', 'GPTIMAGE2.5EDIT'].includes(normalizeDeploymentModel(key)) ||
+        !['GPTIMAGE2.5', 'GPTIMAGE2.5EDIT', 'SEEDREAM', 'SEEDANCE2.5FLASHI2V'].includes(normalizeDeploymentModel(key)) ||
         normalizeDeploymentProvider(provider) !== 'gmicloud'
       ))]),
   );
@@ -93,10 +93,14 @@ function readRuntimeGenBlazeModelMappings(env = process.env) {
 
 function hasRuntimeGenBlazeRoute(modelMappings, model, modality, operation = 'chat.completions') {
   const normalizedModel = normalizeDeploymentModel(model);
-  // Saved model selections may use an old Gemini alias, but a GenBlaze catalog
+  // Saved model selections may use old aliases, but a GenBlaze catalog
   // must use the exact current route accepted by the gateway.
-  const modelKey = normalizedModel === 'GEMINI-4-CARBON'
-    ? 'gemini-4-carbon'
+  const requiredModelKey = {
+    'GEMINI-4-CARBON': 'gemini-4-carbon',
+    'GPT-6.2-ASTRA': 'gpt-6.2-astra',
+  }[normalizedModel];
+  const modelKey = requiredModelKey
+    ? requiredModelKey
     : Object.keys(modelMappings || {}).find(
       (candidate) => normalizeDeploymentModel(candidate) === normalizedModel,
     );
@@ -105,9 +109,11 @@ function hasRuntimeGenBlazeRoute(modelMappings, model, modality, operation = 'ch
     route &&
     typeof route.modelId === 'string' &&
     route.modelId.trim() &&
-    (normalizedModel !== 'GEMINI-4-CARBON' ||
-      route.modelId.trim().split('/').filter(Boolean).at(-1).toLowerCase() === 'gemini-4-carbon') &&
-    (!route.operation || route.operation === operation),
+    (!requiredModelKey ||
+      route.modelId.trim().split('/').filter(Boolean).at(-1).toLowerCase() === requiredModelKey) &&
+    (requiredModelKey === 'gpt-6.2-astra'
+      ? route.operation === operation
+      : !route.operation || route.operation === operation),
   );
 }
 
@@ -133,10 +139,10 @@ function hasRuntimeGenBlazeSeedanceVideoModel(modelMappings, model) {
 
 function hasRuntimeGenBlazeModel(modelMappings, model, env = process.env) {
   const normalizedModel = normalizeDeploymentModel(model);
-  // The image worker supports Sunburst through OpenAI, Samsar, and (generation
-  // only) Fal. A legacy GMI catalog must not advertise a new Sunburst request.
-  if (['GPTIMAGE2.5', 'GPTIMAGE2.5EDIT'].includes(normalizedModel)) return false;
-  if (['GPT-6-ASTRA', 'GEMINI-4-CARBON', 'QWEN3.8'].includes(normalizedModel)) {
+  // Legacy GMI image/video mappings cannot authorize a new Sunburst, Seedream
+  // 5.5 or Seedance Flash request through an older upstream contract.
+  if (['GPTIMAGE2.5', 'GPTIMAGE2.5EDIT', 'SEEDREAM', 'SEEDANCE2.5FLASHI2V'].includes(normalizedModel)) return false;
+  if (['GPT-6.2-ASTRA', 'GEMINI-4-CARBON', 'QWEN3.8'].includes(normalizedModel)) {
     return hasRuntimeGenBlazeInferenceModel(modelMappings, normalizedModel);
   }
 
@@ -312,7 +318,7 @@ function mergeRuntimeInferenceProviderSelections(availability) {
   const hasSamsar = hasEnvCredential('SAMSAR_API_KEY');
   const gmiCloudModelMappings = readRuntimeGenBlazeModelMappings();
   const priorities = {
-    'gpt-6-astra': ['openai', 'gmicloud', 'samsar', 'openrouter'],
+    'gpt-6.2-astra': ['openai', 'gmicloud', 'samsar', 'openrouter'],
     'claude-opus-5.5': ['anthropic', 'openrouter', 'samsar'],
     'claude-fable-5.2': ['anthropic', 'openrouter', 'samsar'],
     'gpt-6.1-sol': ['openai', 'openrouter', 'samsar'],
@@ -620,7 +626,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
 
   if (hasEnvCredential('OPENAI_API_KEY')) {
     appendUnique(merged.providers, ['openai']);
-    appendUnique(merged.models, ['gpt-6-astra', 'gpt-6.1-sol']);
+    appendUnique(merged.models, ['gpt-6.2-astra', 'gpt-6.1-sol']);
     appendUnique(merged.actions, ['chat', 'assistant']);
     if (exposeStandaloneProviderCapabilities) {
       appendUnique(merged.models, ['GPTIMAGE2.5']);
@@ -646,7 +652,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
 
   if (hasEnvCredential('FAL_API_KEY')) {
     appendUnique(merged.providers, ['fal']);
-    appendUnique(merged.models, ['WAN2.7PRO', 'HAPPYHORSEI2V', 'SEEDANCE2.0I2V', 'SEEDANCE2.5I2V']);
+    appendUnique(merged.models, ['WAN2.7PRO', 'HAPPYHORSEI2V', 'SEEDANCE2.0I2V', 'SEEDANCE2.5I2V', 'SEEDANCE2.5FLASHI2V', 'SEEDREAM', 'KLINGIMAGE4']);
     appendUnique(merged.actions, ['image', 'video']);
     if (exposeStandaloneProviderCapabilities) {
       appendUnique(merged.models, ['NANOBANANAPRO']);
@@ -655,7 +661,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
 
   if (hasEnvCredential('SAMSAR_API_KEY')) {
     appendUnique(merged.providers, ['samsar']);
-    appendUnique(merged.models, ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2', 'gemini-4-carbon', 'QWEN3.8', 'KIMIK3', 'HAPPYHORSEI2V', 'WAN2.7PRO']);
+    appendUnique(merged.models, ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2', 'gemini-4-carbon', 'QWEN3.8', 'KIMIK3', 'HAPPYHORSEI2V', 'WAN2.7PRO', 'KLINGIMAGE4']);
     appendUnique(merged.actions, ['chat', 'assistant', 'image', 'video']);
     if (exposeStandaloneProviderCapabilities) {
       appendUnique(merged.models, ['GPTIMAGE2.5', 'VEO3.1I2V']);
@@ -663,7 +669,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
   }
 
   const runtimeGenBlazeInferenceModels = [
-    'gpt-6-astra',
+    'gpt-6.2-astra',
     'gemini-4-carbon',
     'QWEN3.8',
   ].filter((model) => hasRuntimeGenBlazeInferenceModel(gmiCloudModelMappings, model));
@@ -675,12 +681,40 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
 
   if (hasEnvCredential('OPENROUTER_API_KEY')) {
     appendUnique(merged.providers, ['openrouter']);
-    appendUnique(merged.models, ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2', 'gemini-4-carbon', 'QWEN3.8']);
+    appendUnique(merged.models, ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2', 'gemini-4-carbon', 'QWEN3.8']);
     appendUnique(merged.actions, ['chat', 'assistant']);
   }
 
   for (const model of ['SEEDANCE2.0I2V', 'SEEDANCE2.5I2V']) {
     mergeRuntimeSeedanceProviderSelection(merged, gmiCloudModelMappings, model);
+  }
+
+  // Latest Seedream and Seedance Flash have different upstream contracts from
+  // the saved GMI 5.0 / standard-2.5 mappings. Keep those historical mappings
+  // out of new request availability without changing accepted worker jobs.
+  for (const [model, action] of [['SEEDREAM', 'image'], ['SEEDANCE2.5FLASHI2V', 'video'], ['KLINGIMAGE4', 'image']]) {
+    const canonicalPriority = isStandaloneEdition() ? ['samsar', 'fal'] : ['fal', 'samsar'];
+    const savedProvider = normalizeDeploymentProvider(findModelProvider(merged.modelProviders, model));
+    const savedPriority = Object.entries(merged.modelProviderPriority).find(
+      ([candidate]) => normalizeDeploymentModel(candidate) === model,
+    )?.[1] || [];
+    const availablePriority = canonicalPriority.filter((provider) => (
+      (provider === 'fal' ? hasEnvCredential('FAL_API_KEY') : hasEnvCredential('SAMSAR_API_KEY')) ||
+      (configuredProviderSet.has(provider) && (savedProvider === provider || savedPriority.includes(provider)))
+    ));
+    if (availablePriority.length > 0) {
+      appendUnique(merged.providers, availablePriority);
+      appendUnique(merged.models, [model]);
+      appendUnique(merged.actions, [action]);
+      merged.modelProviders[model] = availablePriority[0];
+      merged.modelProviderPriority[model] = [...availablePriority];
+      merged.defaultModelProviderPriority[model] = [...availablePriority];
+    } else {
+      merged.models = merged.models.filter((candidate) => normalizeDeploymentModel(candidate) !== model);
+      for (const modelMap of [merged.modelProviders, merged.modelProviderPriority, merged.defaultModelProviderPriority]) {
+        for (const key of Object.keys(modelMap)) if (normalizeDeploymentModel(key) === model) delete modelMap[key];
+      }
+    }
   }
 
   for (const [model, provider] of Object.entries(merged.modelProviders)) {
@@ -697,7 +731,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
     }
   }
   const inferenceModels = new Set([
-    normalizeDeploymentModel('gpt-6-astra'),
+    normalizeDeploymentModel('gpt-6.2-astra'),
     normalizeDeploymentModel('claude-opus-5.5'),
     normalizeDeploymentModel('claude-fable-5.2'),
     normalizeDeploymentModel('gpt-6.1-sol'),

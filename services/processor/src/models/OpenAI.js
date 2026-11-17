@@ -14,7 +14,7 @@ const API_KEY = process.env.OPENAI_API_KEY;
 const openai = new OpenAI({ apiKey: API_KEY || '' });
 
 
-export async function generateThemeKeywords(textListString, aspectRatio = '1:1', userInferenceModel = 'gpt-6-astra') {
+export async function generateThemeKeywords(textListString, aspectRatio = '1:1', userInferenceModel = 'gpt-6.2-astra') {
   const themeAspectRatioPrompt = getThemeAspectRatioPrompt(aspectRatio);
 
   let systemPrompt = `
@@ -55,7 +55,7 @@ export async function generateThemeKeywords(textListString, aspectRatio = '1:1',
 }
 
 
-export async function updateThemeWithText(themeJson, textListString, aspectRatio = '1:1', userInferenceModel = 'gpt-6-astra') {
+export async function updateThemeWithText(themeJson, textListString, aspectRatio = '1:1', userInferenceModel = 'gpt-6.2-astra') {
 
   const themeAspectRatioPrompt = getThemeAspectRatioPrompt(aspectRatio);
 
@@ -112,7 +112,7 @@ export async function updateThemeWithText(themeJson, textListString, aspectRatio
 
 
 export async function generatePromptsForText(textList, themeJson, aspectRatio = '1:1',
-  userInferenceModel = 'gpt-6-astra', shortForm = false) {
+  userInferenceModel = 'gpt-6.2-astra', shortForm = false) {
 
 
   const baseAspectRatioUnitPrompt = getBaseAspectRatioUnitPrompt(aspectRatio);
@@ -190,7 +190,7 @@ Ensure that each result line is extremely concise, in a single paragraph and 300
 
 
 export async function updatePromptWithTheme(prompt, themeJson, aspectRatio = '1:1',
-  userInferenceModel = 'gpt-6-astra', shortForm = false, videoTone = 'cinematic') {
+  userInferenceModel = 'gpt-6.2-astra', shortForm = false, videoTone = 'cinematic') {
   const baseAspectRatioPrompt = getBaseAspectRatioPrompt(aspectRatio);
 
 
@@ -252,7 +252,7 @@ export async function updatePromptWithTheme(prompt, themeJson, aspectRatio = '1:
 
 
 export async function updateCharacterPromptWithTheme(prompt, themeJson, aspectRatio = '1:1',
-  userInferenceModel = 'gpt-6-astra', shortForm = false, videoTone = 'cinematic') {
+  userInferenceModel = 'gpt-6.2-astra', shortForm = false, videoTone = 'cinematic') {
   const baseAspectRatioPrompt = getBaseAspectRatioPrompt(aspectRatio);
 
 
@@ -315,7 +315,7 @@ export async function updateCharacterPromptWithTheme(prompt, themeJson, aspectRa
 
 
 export async function updatePromptWithCharacterPOV(prompt, themeKeywords, aspectRatio = '1:1',
-  userInferenceModel = 'gpt-6-astra', shortForm = false) {
+  userInferenceModel = 'gpt-6.2-astra', shortForm = false) {
   const baseAspectRatioPrompt = getBaseAspectRatioPrompt(aspectRatio);
 
 
@@ -758,7 +758,7 @@ export async function getBannerTextForSession(textList) {
 
 }
 
-export async function sendAssistantMessageRequest(messageList, userInferenceModel = 'gpt-6-astra', options = {}) {
+export async function sendAssistantMessageRequest(messageList, userInferenceModel = 'gpt-6.2-astra', options = {}) {
 
 
 
@@ -785,7 +785,7 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
 }
 
 
-export async function sendSessionThemeMessageRequest(messageList, userInferenceModel = 'gpt-6-astra') {
+export async function sendSessionThemeMessageRequest(messageList, userInferenceModel = 'gpt-6.2-astra') {
 
 
   const modelName = getModelForUserInferenceModel(userInferenceModel);
@@ -833,7 +833,7 @@ export async function sendSessionThemeMessageRequest(messageList, userInferenceM
   }
 }
 
-export async function sendSessionPromptMessageRequest(messageList, themeObject, userInferenceModel = 'gpt-6-astra') {
+export async function sendSessionPromptMessageRequest(messageList, themeObject, userInferenceModel = 'gpt-6.2-astra') {
 
 
   const modelName = getModelForUserInferenceModel(userInferenceModel);

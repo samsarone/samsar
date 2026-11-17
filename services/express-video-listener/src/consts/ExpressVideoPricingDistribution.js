@@ -34,6 +34,7 @@ export const EXPRESS_VIDEO_CREDITS_PER_SECOND_BY_MODEL = Object.freeze({
   SEEDANCEI2V: 30,
   'SEEDANCE2.0I2V': 40,
   'SEEDANCE2.5I2V': 50,
+  'SEEDANCE2.5FLASHI2V': 50,
   KLINGIMGTOVID4: 36,
   // Historical session aliases retain their fixed workflow rate.
   KLINGIMGTOVID3PRO: 36,
@@ -51,6 +52,7 @@ export const EXPRESS_VIDEO_PRICING_RATE_CLASSES = Object.freeze({
 // Match the processor's quoted Agent rate while retaining the Studio rate.
 export const AGENT_VIDEO_CREDITS_PER_SECOND_BY_MODEL = Object.freeze({
   'SEEDANCE2.5I2V': 60,
+  'SEEDANCE2.5FLASHI2V': 60,
 });
 
 export const EXPRESS_VIDEO_PRICING_DISTRIBUTION_PER_SECOND_BY_MODEL = Object.freeze(

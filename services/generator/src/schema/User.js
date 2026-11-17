@@ -34,7 +34,7 @@ const userSchema = new Schema({
   state: String,
   username: String,
   verifications: Array,
-  selectedInferenceModel: { type: String, default: 'gpt-6-astra' },
+  selectedInferenceModel: { type: String, default: 'gpt-6.2-astra' },
   selectedInferenceEffort: { type: String, enum: ['high', 'xhigh'], default: 'high' },
   selectedInferenceModelAuthorization: { type: String, enum: ['native', 'deployed'], default: 'native' },
   selectedAssistantModelAuthorization: { type: String, enum: ['native', 'deployed'], default: 'native' },

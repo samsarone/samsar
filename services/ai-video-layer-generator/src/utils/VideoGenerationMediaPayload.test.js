@@ -3,6 +3,17 @@ import test from 'node:test';
 
 import { normalizeSelectedVideoGenerationMediaPayload } from './VideoGenerationMediaPayload.js';
 
+test('Flash audio generation refreshes its actual first and last frame inputs', async () => {
+  const calls = [];
+  const payload = await normalizeSelectedVideoGenerationMediaPayload({
+    model: 'SEEDANCE2.5FLASHI2V', generationType: 'sound_effect',
+    startImage: '/assets/start.png', endImage: '/assets/end.png',
+    videoLink: '/assets/unused.mp4',
+  }, async (value, { mediaKind }) => { calls.push([value, mediaKind]); return `https://fresh.example${value}`; });
+  assert.deepEqual(calls, [['/assets/start.png', 'image'], ['/assets/end.png', 'image']]);
+  assert.equal(payload.endImage, 'https://fresh.example/assets/end.png');
+});
+
 test('normalizes only the selected image-to-video inputs', async () => {
   const calls = [];
   const payload = await normalizeSelectedVideoGenerationMediaPayload({
