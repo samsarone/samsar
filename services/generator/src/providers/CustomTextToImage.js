@@ -417,6 +417,8 @@ export function getImageUrl(resultData) {
   }
 
   for (const collection of [
+    resultData?.data,
+    resultData?.result?.data,
     resultData?.output,
     resultData?.data?.output,
     resultData?.output?.images,
