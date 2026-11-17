@@ -21,7 +21,7 @@ test('missing text preferences receive the new defaults without replacing explic
   assert.equal(missing.selectedAssistantModel, 'claude-opus-5.5');
 
   const existing = User.hydrate({
-    selectedInferenceModel: 'gpt-6-astra',
+    selectedInferenceModel: 'gpt-6.2-astra',
     selectedAssistantModel: 'gemini-4-carbon',
     selectedInferenceEffort: 'xhigh',
     agentImageModel: 'NANOBANANA2',
@@ -29,7 +29,7 @@ test('missing text preferences receive the new defaults without replacing explic
   });
   existing.save = async () => {};
   await ensureDefaultTextModelsForUser(existing);
-  assert.equal(existing.selectedInferenceModel, 'gpt-6-astra');
+  assert.equal(existing.selectedInferenceModel, 'gpt-6.2-astra');
   assert.equal(existing.selectedAssistantModel, 'gemini-4-carbon');
   assert.equal(existing.selectedInferenceEffort, 'xhigh');
   assert.equal(existing.agentImageModel, 'NANOBANANA2');
@@ -43,8 +43,8 @@ test('system inference defaults to Claude and honors an explicit environment sel
     delete process.env.USER_INFERENCE_MODEL;
     delete process.env.DEFAULT_USER_INFERENCE_MODEL;
     assert.equal(getDefaultUserInferenceModel(), 'claude-opus-5.5');
-    process.env.DEFAULT_USER_INFERENCE_MODEL = 'gpt-6-astra';
-    assert.equal(getDefaultUserInferenceModel(), 'gpt-6-astra');
+    process.env.DEFAULT_USER_INFERENCE_MODEL = 'gpt-6.2-astra';
+    assert.equal(getDefaultUserInferenceModel(), 'gpt-6.2-astra');
     process.env.USER_INFERENCE_MODEL = 'gemini-4-carbon';
     assert.equal(getDefaultUserInferenceModel(), 'gemini-4-carbon');
   } finally {

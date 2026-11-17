@@ -83,7 +83,21 @@ test('avatar image model defaults to GPT Image 2', () => {
   assert.equal(__testOnly__.resolveAvatarImageModel({ imageModel: '  ' }), 'GPTIMAGE2.5');
 });
 
-test('avatar image model accepts every configured Express image model', () => {
+test('avatar image model accepts every configured Express image model', (context) => {
+  const availability = {
+    SAMSAR_DOCKER_ADAPTER_ROUTING_ENABLED: 'true',
+    ALIBABA_API_KEY: 'test-avatar-payg-key',
+    ALIBABA_API_KEY_TYPE: 'pay_as_you_go',
+    ALIBABA_API_ENDPOINT_TYPE: 'pay_as_you_go',
+  };
+  const previous = Object.fromEntries(Object.keys(availability).map((key) => [key, process.env[key]]));
+  Object.assign(process.env, availability);
+  context.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
   for (const imageModel of EXPRESS_VIDEO_IMAGE_MODEL_KEYS) {
     assert.equal(__testOnly__.resolveAvatarImageModel({ imageModel }), imageModel);
   }

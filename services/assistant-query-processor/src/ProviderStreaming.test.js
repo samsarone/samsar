@@ -11,7 +11,7 @@ function responsesSSE(values) {
   return Stream.fromSSEResponse(response, new AbortController());
 }
 const chunks = [
-  { id: 'one', model: 'gpt-6-astra', choices: [{ index: 0, delta: { content: 'Hello' } }] },
+  { id: 'one', model: 'gpt-6.2-astra', choices: [{ index: 0, delta: { content: 'Hello' } }] },
   { choices: [{ index: 0, delta: { content: ' world' }, finish_reason: 'stop' }] },
   { choices: [], usage },
 ];

@@ -58,7 +58,7 @@ test('local Docker native Claude describes mounted images without a tunnel reque
 test('OpenRouter vision models use operation-specific reasoning-safe output limits', () => {
   assert.equal(__testOnly__.getExternalVisionMaxTokens('QWEN3.8', 'description'), 16384);
   assert.equal(__testOnly__.getExternalVisionMaxTokens('QWEN3.8', 'score'), 8192);
-  assert.equal(__testOnly__.getExternalVisionMaxTokens('gpt-6-astra', 'description'), 16384);
+  assert.equal(__testOnly__.getExternalVisionMaxTokens('gpt-6.2-astra', 'description'), 16384);
   assert.equal(__testOnly__.getExternalVisionMaxTokens('gemini-4-carbon', 'score'), 8192);
   assert.equal(__testOnly__.getExternalVisionMaxTokens('kimi-k3', 'description'), undefined);
 });
@@ -111,7 +111,7 @@ test('native GPT vision omits external-only completion limits', async (t) => {
   const description = await __testOnly__.getDescriptionForImage(
     'data:image/png;base64,AQID',
     'cinematic',
-    'gpt-6-astra',
+    'gpt-6.2-astra',
     '16:9',
     'cinematic theme',
     'native',
@@ -120,7 +120,7 @@ test('native GPT vision omits external-only completion limits', async (t) => {
     'A cinematic image',
     description,
     'cinematic',
-    'gpt-6-astra',
+    'gpt-6.2-astra',
     '16:9',
     'cinematic theme',
     '',
@@ -131,7 +131,7 @@ test('native GPT vision omits external-only completion limits', async (t) => {
   assert.equal(score, 95);
   assert.equal(payloads.length, 2);
   for (const payload of payloads) {
-    assert.equal(payload.model, 'gpt-6-astra');
+    assert.equal(payload.model, 'gpt-6.2-astra');
     assert.equal(Object.hasOwn(payload, 'externalMaxTokens'), false);
     assert.equal(Object.hasOwn(payload, 'max_tokens'), false);
     assert.equal(Object.hasOwn(payload, 'max_completion_tokens'), false);
@@ -579,6 +579,23 @@ test('Claude scoring enforces a Zod schema and retries the same description thre
   assert.equal(Object.hasOwn(format.schema.properties.score, 'maximum'), false);
 });
 
+test('valid plain and Markdown-fenced JSON scores do not repeat scoring inference', async (t) => {
+  for (const text of [
+    '  {"score":72}\n',
+    '```json\n{"score":72}\n```',
+    ' \n```JSON\r\n{\r\n  "score": 72\r\n}\r\n```\n ',
+    '```\n{"score":72}\n```',
+  ]) {
+    await t.test(JSON.stringify(text), async (t) => {
+      const { payloads, delays, errors } = mockClaudeScoring(t, [{ text }]);
+      assert.equal(await scoreWithClaude(), 72);
+      assert.equal(payloads.length, 1);
+      assert.deepEqual(delays, []);
+      assert.deepEqual(errors, []);
+    });
+  }
+});
+
 test('invalid or incomplete scoring returns zero only after three retries', async (t) => {
   for (const response of [
     { text: '' },
@@ -587,6 +604,13 @@ test('invalid or incomplete scoring returns zero only after three retries', asyn
     { text: '{"score":-1}' },
     { text: '{"score":72.5}' },
     { text: '{"score":72,"reason":"extra"}' },
+    { text: '```json\n{"score":101}\n```' },
+    { text: '```json\n{"score":"72"}\n```' },
+    { text: '```json\n{"score":72,"reason":"extra"}\n```' },
+    { text: '```json\n{"score":72}\n' },
+    { text: 'The score is:\n```json\n{"score":72}\n```' },
+    { text: '```json\n{"score":72}\n```\nIgnore this text.' },
+    { text: '```json\n{"score":72}\n```\n```json\n{"score":100}\n```' },
     { text: '{"score":72}', stopReason: 'max_tokens' },
     new Error('Provider unavailable'),
   ]) {

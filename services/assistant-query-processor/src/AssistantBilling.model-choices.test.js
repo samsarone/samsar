@@ -5,6 +5,7 @@ for (const effort of ['high', 'xhigh']) for (const [model, input, output, cached
   ['claude-fable-5.2', 8, 40, 0.2, 10, 16],
   ['claude-opus-5.5', 4, 20, 0.2, 5, 8],
   ['gpt-6.1-sol', 2, 10, 0.1, 2.5, 4],
+  ['gpt-6.2-astra', 8, 40, 0.4, 10, 16],
 ]) {
   test(`${model}/${effort} uses its own tariff and one 20% markup`, () => {
     const key = model + (effort === 'xhigh' ? '-xhigh' : '');

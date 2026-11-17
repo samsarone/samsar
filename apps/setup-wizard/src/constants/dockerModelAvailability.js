@@ -153,7 +153,7 @@ const ALIBABA_QWEN_IMAGE_ENDPOINT_TYPES = new Set([
 ]);
 
 export const DOCKER_MODEL_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
-  'gpt-6-astra': OPENAI_INFERENCE_GMI_OR_SAMSAR,
+  'gpt-6.2-astra': OPENAI_INFERENCE_GMI_OR_SAMSAR,
   'gpt-6.1-sol': OPENAI_INFERENCE_PROVIDERS,
   'claude-opus-5.5': CLAUDE_INFERENCE_PROVIDERS,
   'claude-fable-5.2': CLAUDE_INFERENCE_PROVIDERS,
@@ -165,6 +165,7 @@ export const DOCKER_MODEL_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
   'GPTIMAGE2.5': OPENAI_SAMSAR_OR_FAL,
   'GPTIMAGE2.5EDIT': OPENAI_OR_SAMSAR,
   SEEDREAM: FAL_OR_SAMSAR,
+  KLINGIMAGE4: FAL_OR_SAMSAR,
   NANOBANANA2: GOOGLE_GMI_SAMSAR_OR_FAL,
   NANOBANANA2EDIT: GOOGLE_GMI_SAMSAR_OR_FAL,
   NANOBANANAPRO: GOOGLE_GMI_SAMSAR_OR_FAL,
@@ -206,7 +207,7 @@ export const DOCKER_MODEL_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
 });
 
 const LEGACY_MODEL_PROVIDER_PRIORITY_WITHOUT_GMI = Object.freeze({
-  'gpt-6-astra': Object.freeze([
+  'gpt-6.2-astra': Object.freeze([
     DOCKER_PROVIDER.OPENAI,
     DOCKER_PROVIDER.OPENROUTER,
     DOCKER_PROVIDER.SAMSAR,
@@ -219,7 +220,7 @@ const LEGACY_MODEL_PROVIDER_PRIORITY_WITHOUT_GMI = Object.freeze({
 });
 
 export const DOCKER_MODEL_ACTIONS_BY_MODEL = Object.freeze({
-  'gpt-6-astra': ['chat', 'assistant', 'moderation', 'recommendations', 'search'],
+  'gpt-6.2-astra': ['chat', 'assistant', 'moderation', 'recommendations', 'search'],
   'claude-opus-5.5': ['chat', 'assistant'],
   'claude-fable-5.2': ['chat', 'assistant'],
   'gpt-6.1-sol': ['chat', 'assistant'],
@@ -230,6 +231,7 @@ export const DOCKER_MODEL_ACTIONS_BY_MODEL = Object.freeze({
   'GPTIMAGE2.5': ['image'],
   'GPTIMAGE2.5EDIT': ['image_edit'],
   SEEDREAM: ['image'],
+  KLINGIMAGE4: ['image'],
   NANOBANANA2: ['image'],
   NANOBANANA2EDIT: ['image_edit'],
   NANOBANANAPRO: ['image'],
@@ -271,7 +273,7 @@ export const DOCKER_MODEL_ACTIONS_BY_MODEL = Object.freeze({
 });
 
 export const DOCKER_MODEL_DISPLAY_NAME_BY_MODEL = Object.freeze({
-  'gpt-6-astra': 'GPT 6 Astra High',
+  'gpt-6.2-astra': 'GPT 6.2 Astra High',
   'gpt-6.1-sol': 'GPT 6.1 Sol',
   'claude-fable-5.2': 'Claude Fable 5.2',
   'claude-opus-5.5': 'Claude Opus 5.5',
@@ -282,6 +284,7 @@ export const DOCKER_MODEL_DISPLAY_NAME_BY_MODEL = Object.freeze({
   'GPTIMAGE2.5': 'GPTImage 2.6',
   'GPTIMAGE2.5EDIT': 'GPTImage 2.6 Edit',
   SEEDREAM: 'Seedream 5.5',
+  KLINGIMAGE4: 'Kling Image 4',
   NANOBANANA2: 'Nano Banana 2',
   NANOBANANA2EDIT: 'Nano Banana 2 Edit',
   NANOBANANAPRO: 'Nano Banana Pro',
@@ -339,7 +342,7 @@ export const EXPRESS_PIPELINE_REQUIREMENTS = Object.freeze([
   Object.freeze({
     key: 'inference',
     label: 'Inference',
-    modelKeys: Object.freeze(['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2', 'gemini-4-carbon', 'KIMIK3', 'QWEN3.8']),
+    modelKeys: Object.freeze(['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2', 'gemini-4-carbon', 'KIMIK3', 'QWEN3.8']),
   }),
   Object.freeze({
     key: 'imageGeneration',
@@ -472,7 +475,7 @@ export function getCanonicalDockerModelKey(modelKey) {
   if (reasoningToken === 'GPT61SOL') return 'gpt-6.1-sol';
   if (['CLAUDEFABLE52', 'CLAUDEFABLE51'].includes(reasoningToken)) return 'claude-fable-5.2';
   if (['CLAUDEOPUS55', 'CLAUDE55OPUS'].includes(reasoningToken)) return 'claude-opus-5.5';
-  if (['GPT6ASTRA', 'GPT56SOL'].includes(reasoningToken)) return 'gpt-6-astra';
+  if (['GPT62ASTRA', 'GPT6ASTRA', 'GPT56SOL'].includes(reasoningToken)) return 'gpt-6.2-astra';
   if (NORMALIZED_KIMI_K3_MODEL_ALIASES.has(compactModelKey)) {
     return 'KIMIK3';
   }
@@ -534,7 +537,12 @@ function hasGmiCloudModelRoute(modelMappings, modelKey) {
     typeof routes[modality].modelId === 'string' &&
     routes[modality].modelId.trim(),
   );
-  if (['gpt-6-astra', 'gemini-4-carbon', 'QWEN3.8'].includes(modelKey)) {
+  if (modelKey === 'gpt-6.2-astra') {
+    return ['text', 'vision'].every(modality => routeAvailable(modality) &&
+      routes[modality].modelId.trim().split('/').filter(Boolean).at(-1).toLowerCase() === modelKey &&
+      routes[modality].operation === 'chat.completions');
+  }
+  if (['gemini-4-carbon', 'QWEN3.8'].includes(modelKey)) {
     return routeAvailable('text') && routeAvailable('vision');
   }
   return Object.values(routes).some((route) => (

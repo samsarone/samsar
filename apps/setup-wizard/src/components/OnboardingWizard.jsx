@@ -225,7 +225,7 @@ const CAPABILITY_FAMILIES = {
     key: 'gpt56',
     label: 'GPT Astra / Sol',
     providerKeys: ['openai', 'gmicloud', 'samsar', 'openrouter'],
-    modelKeys: ['gpt-6-astra', 'gpt-6.1-sol'],
+    modelKeys: ['gpt-6.2-astra', 'gpt-6.1-sol'],
   },
   claude: {
     key: 'claude',
@@ -255,7 +255,7 @@ const CAPABILITY_FAMILIES = {
     key: 'gptAssistant',
     label: 'GPT Assistant',
     providerKeys: ['openai', 'gmicloud', 'samsar', 'openrouter'],
-    modelKeys: ['gpt-6-astra', 'gpt-6.1-sol'],
+    modelKeys: ['gpt-6.2-astra', 'gpt-6.1-sol'],
   },
   claudeAssistant: {
     key: 'claudeAssistant',
@@ -292,6 +292,12 @@ const CAPABILITY_FAMILIES = {
     label: 'Seedream 5.5',
     providerKeys: ['fal', 'samsar'],
     modelKeys: ['SEEDREAM'],
+  },
+  klingImage4: {
+    key: 'klingImage4',
+    label: 'Kling Image 4',
+    providerKeys: ['fal', 'samsar'],
+    modelKeys: ['KLINGIMAGE4'],
   },
   nanoBanana2: {
     key: 'nanoBanana2',
@@ -495,6 +501,7 @@ const SETUP_SERVICE_CATALOG = [
     modelFamilies: [
       CAPABILITY_FAMILIES.openaiImage,
       CAPABILITY_FAMILIES.seedream,
+      CAPABILITY_FAMILIES.klingImage4,
       CAPABILITY_FAMILIES.nanoBanana2,
       CAPABILITY_FAMILIES.nanoBananaPro,
       CAPABILITY_FAMILIES.briaEdit,

@@ -1,7 +1,8 @@
 import { normalizeReasoningModel, resolveInferenceEffort } from './ReasoningModels.js';
 import { GoogleAuth } from 'google-auth-library';
+import { buildGoogleGeminiDeveloperUrl, resolveGoogleGeminiTransport } from './GoogleGeminiTransport.js';
 
-export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-6-astra';
+export const GPT_56_SOL_INFERENCE_MODEL = 'gpt-6.2-astra';
 export const GPT_56_SOL_REASONING_EFFORT = 'high';
 export const GPT_56_SOL_XHIGH_REASONING_EFFORT = 'xhigh';
 const DEFAULT_INFERENCE_MODEL = GPT_56_SOL_INFERENCE_MODEL;
@@ -156,9 +157,9 @@ export function normalizeInferenceModel(value) {
   if (reasoningModel) return reasoningModel;
   const gptToken = typeof value === 'string' ? value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() : '';
   // Legacy GPT selections retain Astra compatibility.
-  if (/^GPT(?:6ASTRA|56SOL|56|6)(?:HIGH|XHIGH|EXTRAHIGH)?$/.test(gptToken)) {
+  if (/^GPT(?:62ASTRA|6ASTRA|56SOL|56|6)(?:HIGH|XHIGH|EXTRAHIGH)?$/.test(gptToken)) {
     return /(?:XHIGH|EXTRAHIGH)$/.test(gptToken)
-      ? DEFAULT_INFERENCE_MODEL
+      ? `${DEFAULT_INFERENCE_MODEL}-xhigh`
       : DEFAULT_INFERENCE_MODEL;
   }
 
@@ -284,14 +285,17 @@ function buildGenerationConfig(model = '') {
 }
 
 export async function createGoogleGeminiChatCompletion(messageList) {
-  const credentials = getConfiguredCredentials();
-  const projectId = getConfiguredProjectId() || normalizeString(credentials?.project_id);
-  if (!projectId) {
+  const location = resolveGeminiLocation();
+  const transport = resolveGoogleGeminiTransport(resolveGeminiModel());
+  const { model } = transport;
+  const credentials = transport.kind === 'developer' ? null : getConfiguredCredentials();
+  const projectId = transport.kind === 'developer'
+    ? ''
+    : getConfiguredProjectId() || normalizeString(credentials?.project_id);
+  if (transport.kind === 'vertex' && !projectId) {
     throw new Error('Google Gemini inference requires GOOGLE_CLOUD_PROJECT, GOOGLE_PROJECT_ID, or service account credentials containing project_id.');
   }
 
-  const location = resolveGeminiLocation();
-  const model = resolveGeminiModel();
   const { systemInstruction, contents } = buildGeminiContents(messageList);
   if (isGeminiCarbonProviderModel(model)) {
     while (contents.at(-1)?.role === 'model') contents.pop();
@@ -300,12 +304,16 @@ export async function createGoogleGeminiChatCompletion(messageList) {
     throw new Error('Google Gemini inference requires at least one user message.');
   }
 
-  const token = await getAccessToken();
+  const token = transport.kind === 'developer' ? null : await getAccessToken();
   const generationConfig = buildGenerationConfig(model);
-  const response = await fetch(buildVertexGenerateContentUrl({ projectId, location, model }), {
+  const response = await fetch(transport.kind === 'developer'
+    ? buildGoogleGeminiDeveloperUrl({ model })
+    : buildVertexGenerateContentUrl({ projectId, location, model }), {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${token}`,
+      ...(transport.kind === 'developer'
+        ? { 'x-goog-api-key': transport.apiKey }
+        : { Authorization: `Bearer ${token}` }),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -337,6 +345,7 @@ export async function createGoogleGeminiChatCompletion(messageList) {
   return {
     role: 'assistant',
     content: extractGeminiOutputText(payload),
+    ...(transport.kind === 'developer' ? { samsarBilling: { adapter: 'google', region: 'global', api: 'developer' } } : {}),
     usage: payload?.usageMetadata || null,
   };
 }

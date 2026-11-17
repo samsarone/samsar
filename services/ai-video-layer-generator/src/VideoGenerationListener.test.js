@@ -433,30 +433,30 @@ test('express session authorization wins over generic session authorization', as
   });
 });
 
-test('GPT 6 Astra effort follows explicit request, legacy alias, and session precedence', async () => {
+test('GPT 6.2 Astra effort follows explicit request, legacy alias, and session precedence', async () => {
   assert.deepEqual(await getInferenceSettingsForSession({
-    inferenceModel: 'gpt-6-astra',
+    inferenceModel: 'gpt-6.2-astra',
     inferenceEffort: 'xhigh',
   }), {
-    model: 'gpt-6-astra',
+    model: 'gpt-6.2-astra',
     effort: 'xhigh',
     authorization: '',
   });
   assert.deepEqual(await getInferenceSettingsForSession({}, {
-    inferenceModel: 'gpt-6-astra-xhigh',
+    inferenceModel: 'gpt-6.2-astra-xhigh',
   }), {
-    model: 'gpt-6-astra',
+    model: 'gpt-6.2-astra',
     effort: 'xhigh',
     authorization: '',
   });
   assert.deepEqual(await getInferenceSettingsForSession({
-    inferenceModel: 'gpt-6-astra-xhigh',
+    inferenceModel: 'gpt-6.2-astra-xhigh',
     inferenceEffort: 'xhigh',
   }, {
-    inferenceModel: 'gpt-6-astra-xhigh',
+    inferenceModel: 'gpt-6.2-astra-xhigh',
     effort: 'high',
   }), {
-    model: 'gpt-6-astra',
+    model: 'gpt-6.2-astra',
     effort: 'high',
     authorization: '',
   });
@@ -1084,7 +1084,7 @@ test('non-Mongo application errors are not treated as transient DB errors', () =
   assert.equal(isTransientMongoError(error), false);
 });
 
-for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
+for (const model of ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
   test(`${model} keeps explicit and persisted effort for video vision retries`, async () => {
     assert.deepEqual(await getInferenceSettingsForSession({
       inferenceModel: model, inferenceEffort: 'xhigh',

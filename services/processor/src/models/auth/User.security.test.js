@@ -13,7 +13,7 @@ const source = fs.readFileSync(new URL('./User.js', import.meta.url), 'utf8')
   .replace(/export /g, '');
 
 function loadAuth({ user = null, registrationEnabled = true } = {}) {
-  const state = { user, mails: [], writes: [], hashes: [] };
+  const state = { user, mails: [], writes: [], hashes: [], normalizedUsers: [] };
   function matches(filter) {
     return state.user && state.user.email === filter.email &&
       state.user.verificationCode === filter.verificationCode &&
@@ -43,6 +43,7 @@ function loadAuth({ user = null, registrationEnabled = true } = {}) {
     sendWelcomeEmail: async () => {},
     sendForgotPasswordEmailMailer: async (...args) => state.mails.push(args),
     generateAuthToken: () => 'verified-auth-token',
+    ensureDefaultTextModelsForUser: async (profile) => { state.normalizedUsers.push(profile); },
     formatUserClientProfile: (profile) => ({ email: profile.email }),
     isSupportedLanguage: () => true,
     normalizeNewsletterPreference: () => false,
@@ -107,7 +108,21 @@ test('registration preserves password whitespace and the password works for logi
   await auth.registerUserByEmail(payload);
   assert.equal(auth.state.hashes[0], payload.password);
   await auth.loginUserByEmail(payload);
+  assert.deepEqual(auth.state.normalizedUsers, [auth.state.user]);
   await assert.rejects(auth.loginUserByEmail({ ...payload, password: payload.password.trim() }), /Invalid email or password/);
+  assert.equal(auth.state.normalizedUsers.length, 1);
+});
+
+test('failed email login does not update user preferences', async () => {
+  const unknown = loadAuth();
+  await assert.rejects(unknown.loginUserByEmail({ email: 'unknown@example.com', password: 'password' }), /Invalid email or password/);
+  assert.equal(unknown.state.normalizedUsers.length, 0);
+
+  const auth = loadAuth({ user: {
+    email: 'person@example.com', password: await bcrypt.hash('correct password', 10),
+  } });
+  await assert.rejects(auth.loginUserByEmail({ email: 'person@example.com', password: 'wrong password' }), /Invalid email or password/);
+  assert.equal(auth.state.normalizedUsers.length, 0);
 });
 
 test('standalone registration stays disabled', async () => {

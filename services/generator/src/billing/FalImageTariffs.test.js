@@ -3,7 +3,45 @@ import assert from 'node:assert/strict';
 import { calculateImageCallCredits } from './ImagePricing.js';
 import { resolveImageAdapterReceipt } from './ImageAdapterReceipt.js';
 import { sealFalImageSubmission } from './FalImageSubmission.js';
-import { calculateFalImageTariffCost, createFalImageTariffSnapshot, FAL_IMAGE_TARIFFS_V1, FAL_IMAGE_TARIFFS_V2 } from './FalImageTariffs.js';
+import { calculateFalImageTariffCost, createFalImageTariffSnapshot, FAL_IMAGE_TARIFFS_V1, FAL_IMAGE_TARIFFS_V2, FAL_IMAGE_TARIFFS_V3 } from './FalImageTariffs.js';
+
+test('Kling Image 4 seals its one-image tariff and applies the Studio 20% markup once', async () => {
+  for (const resolution of ['1k', '2K', '4K', '8K']) {
+    const payload = { _id: 'kling-image', model: 'KLINGIMAGE4', resolution,
+      aspectRatio: '16:9', submittedAdapter: 'fal', imageBillingPolicy: 'adapter' };
+    let writes = 0;
+    const dependencies = { env: { SAMSAR_DEPLOYMENT_EDITION: 'production' }, imageGenerationModel: {
+      async updateOne() { writes++; return { matchedCount: 1 }; },
+    } };
+    const snapshot = await sealFalImageSubmission(payload, dependencies);
+    assert.equal(snapshot.version, 4);
+    assert.equal(snapshot.endpoint, 'kling/v4/text-to-image');
+    assert.equal(snapshot.config.resolution, resolution === '1k' ? '2K' : resolution);
+    assert.equal(snapshot.billableUnits, 1);
+    assert.equal(calculateFalImageTariffCost(snapshot), .063);
+    const receipt = await resolveImageAdapterReceipt({ adapter: 'fal', model: 'KLINGIMAGE4', costUsd: 999 },
+      { falImageBillingSnapshot: snapshot });
+    assert.equal(calculateImageCallCredits(receipt).credits, 7.56);
+    assert.equal(await sealFalImageSubmission(payload, dependencies), snapshot);
+    assert.equal(writes, 1);
+  }
+  assert.equal(FAL_IMAGE_TARIFFS_V3.KLINGIMAGE4, undefined);
+  assert.throws(() => createFalImageTariffSnapshot({ model: 'KLINGIMAGE4', numImages: 2 }), /one image per request/);
+});
+
+test('Kling 720p output seals the true provider 2K tariff and records its app output size', () => {
+  for (const [aspectRatio, dimensions] of [['16:9', { width: 1280, height: 720 }], ['9:16', { width: 720, height: 1280 }]]) {
+    const snapshot = createFalImageTariffSnapshot({ model: 'KLINGIMAGE4', resolution: '720p', aspectRatio });
+    assert.equal(snapshot.config.resolution, '2K');
+    assert.equal(snapshot.config.outputResolution, '720p');
+    assert.deepEqual(snapshot.config.outputDimensions, dimensions);
+    assert.equal(calculateFalImageTariffCost(snapshot), .063);
+    assert.equal(calculateImageCallCredits({ adapter: 'fal', model: 'KLINGIMAGE4', costUsd: calculateFalImageTariffCost(snapshot) }).credits, 7.56);
+  }
+  const native = createFalImageTariffSnapshot({ model: 'KLINGIMAGE4', resolution: '4K', aspectRatio: '3:2' });
+  assert.equal(native.config.resolution, '4K');
+  assert.equal(native.config.outputResolution, undefined);
+});
 
 test('SEEDREAM seals its exact current low-area endpoint once and applies 20% markup', async () => {
   const writes = [];

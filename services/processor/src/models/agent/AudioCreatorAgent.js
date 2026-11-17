@@ -389,7 +389,7 @@ export async function createAudioEffectInstructionsForMovieTranscript(
   inputPrompt,
   movieTranscript,
   videoTone,
-  userInferenceModel = 'gpt-6-astra',
+  userInferenceModel = 'gpt-6.2-astra',
   options = {},
 ) {
   // Check if the input is a valid string

@@ -1,5 +1,9 @@
 const REASONING_MODELS = Object.freeze({
-  gpt6astra: 'gpt-6-astra',
+  gpt62astra: 'gpt-6.2-astra',
+  gpt6astra: 'gpt-6.2-astra',
+  gpt56sol: 'gpt-6.2-astra',
+  gpt56: 'gpt-6.2-astra',
+  gpt6: 'gpt-6.2-astra',
   gpt61sol: 'gpt-6.1-sol',
   claudeopus55: 'claude-opus-5.5',
   claude55opus: 'claude-opus-5.5',

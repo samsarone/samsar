@@ -29,7 +29,7 @@ test('generic polling is scoped to the user and both supported request types', a
         status: 'COMPLETED',
         prompt: 'Make a film',
         duration: 30,
-        inferenceModel: 'gpt-6-astra',
+        inferenceModel: 'gpt-6.2-astra',
         themeJson: {},
         narrativeJson: {},
         movieResourceList: { structureType: 'branched', nodes: [] },

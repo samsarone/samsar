@@ -12,6 +12,7 @@ import {
 } from '../consts/DockerProviderPriority.js';
 
 import { getRetiredGPTImageModelError, normalizeGPTImageRequestModelKey } from '../consts/GPTImageModelKeys.js';
+import { KLING_IMAGE_V4_MODEL_KEY, normalizeKlingImageAppRequestOptions } from '../consts/KlingImageModel.js';
 
 
 import { uploadFrameLayerImageToCDN, primeCDNCache } from './AWS.js';
@@ -54,8 +55,8 @@ export function assertImageGenerationModelAvailable(modelKey, env = process.env)
     error.statusCode = 400;
     throw error;
   }
-  return normalizedModelKey === QWEN_IMAGE_3_PRO_MODEL_KEY
-    ? QWEN_IMAGE_3_PRO_MODEL_KEY
+  return [QWEN_IMAGE_3_PRO_MODEL_KEY, KLING_IMAGE_V4_MODEL_KEY].includes(normalizedModelKey)
+    ? normalizedModelKey
     : modelKey;
 }
 
@@ -252,6 +253,9 @@ export async function addImageGeneratorRequest(userId, payload, updateCredits = 
   const resolvedModel = assertImageGenerationModelAvailable(
     resolveNanoBananaModelAlias(model),
   );
+  const modelOptions = resolvedModel === KLING_IMAGE_V4_MODEL_KEY
+    ? normalizeKlingImageAppRequestOptions({ aspectRatio })
+    : {};
 
 
   const imageBilling = await prepareImageRequestBilling(userId, { includedInPipeline: !billOnCompletion, skipAdmission: billingAdmitted, apiKeyId });
@@ -260,6 +264,7 @@ export async function addImageGeneratorRequest(userId, payload, updateCredits = 
     await getDBConnectionString();
     const generationPayload = new ImageGeneration({
       ...payload,
+      ...modelOptions,
       ...imageBilling,
       ...getInferenceModelPayloadAliases(payload),
       model: resolvedModel,

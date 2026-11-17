@@ -14,7 +14,7 @@ import { publishClonedAiVideoMedia } from './ClonedAiVideoMedia.js';
 
 function mockSession(t, preferences = {}) {
   const source = {
-    _id: 'source-session', userId: 'owner', inferenceModel: 'gpt-6-astra',
+    _id: 'source-session', userId: 'owner', inferenceModel: 'gpt-6.2-astra',
     hostedAgentBilling: { version: 2, state: 'COMPLETED', netFunded: 3600 },
     postProcessingBilling: { version: 1, creditsCharged: 75 },
     sessionReceipt: { refunded: 3600 }, expressGenerationCreditCharges: { totalCharged: 3600 },
@@ -51,8 +51,8 @@ test('translation uses current user model and effort rather than the source sess
 });
 
 test('translation request selection overrides saved settings for every supported model family', async (t) => {
-  mockSession(t, { selectedInferenceModel: 'gpt-6-astra', selectedInferenceEffort: 'high' });
-  for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
+  mockSession(t, { selectedInferenceModel: 'gpt-6.2-astra', selectedInferenceEffort: 'high' });
+  for (const model of ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
     for (const effort of ['high', 'xhigh']) {
       const preview = await getTranslateVideoBillingPreview('owner', {
         session_id: 'source-session', language: 'FR', inference_model: model, effort,
@@ -222,7 +222,7 @@ test('exhausted speech repair queues no TTS jobs, even when an earlier item pass
   let attempts = 0;
   await assert.rejects(__testOnly__.processTranslateVideoSessionJob({
     oldSessionId: 'source-session', userId: 'owner', newSessionId: 'translated',
-    normalizedLanguageCode: 'FR', inferenceModel: 'gpt-6-astra', inferenceEffort: 'high',
+    normalizedLanguageCode: 'FR', inferenceModel: 'gpt-6.2-astra', inferenceEffort: 'high',
   }, {
     copyTranslateSessionAssets: async () => assert.fail('Do not copy assets after failed validation'),
     translateTextContent: async (texts) => texts.map((text) => text === 'Goodbye.' ? 'x'.repeat(29) : 'Bonjour.'),

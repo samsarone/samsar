@@ -1,6 +1,6 @@
 # Google ADC Setup for `samsar_processor`
 
-`samsar_processor` uses Google Application Default Credentials (ADC) for Google Cloud API access. ADC lets the same code run locally and in production without storing service account keys or Google API secrets in `.env`.
+`samsar_processor` uses Google Application Default Credentials (ADC) for Google Cloud API access. Regular Gemini 4 Carbon requests in explicitly configured production deployments can instead use the native Gemini Developer API with a server API key, as described below.
 
 This is separate from `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, which are only for Samsar user login with Google OAuth.
 
@@ -16,27 +16,33 @@ GOOGLE_CLOUD_SCOPES=https://www.googleapis.com/auth/cloud-platform
 
 `GOOGLE_CLOUD_SCOPES` is optional. If omitted, the processor uses the cloud-platform scope.
 
-## Google Moderation
+## Production Gemini 4 Carbon
 
-OpenAI remains the default moderation provider. Google inference can route moderation through the Gemini classifier on Vertex AI; standalone deployments select from their configured moderation credentials. The Google classifier uses Gemini 4 Argon by default and normalizes its response to the shared moderation result shape.
+Set `SAMSAR_DEPLOYMENT_EDITION=production` and provide the existing Gemini API key through the server's secret configuration as `GOOGLE_GEMINI_API_KEY`. `GEMINI_API_KEY` is also supported; the dedicated `GOOGLE_GEMINI_API_KEY` takes precedence when both are present. Do not put keys in source, request payloads, URLs, or logs.
 
-Optional overrides:
+This selects `generativelanguage.googleapis.com/v1beta` for regular Carbon inference and assistant streaming. Requests authenticate with the `x-goog-api-key` header and do not require an ADC credential or Google Cloud project. Generation payloads, JSON schemas, media inputs, reasoning settings, streaming, and token accounting use the same native Google adapter. Completion billing metadata identifies this route as Google, region `global`, API `developer`.
+
+The key transport applies only to regular Carbon models in the production edition. Carbon Cyber, other models, standalone Docker deployments, and deployments without either key alias retain their existing Vertex AI route. A failed Developer API request returns its error without falling back to Vertex. Production deployment preflight must require a key in every inference service to avoid restoring the legacy Vertex eligibility issue. ADC health checks continue to describe ADC and do not validate Developer API key access.
+
+## Render moderation
+
+Production always uses native OpenAI moderation at `https://api.openai.com/v1/moderations`, including production running in Docker and renders using Gemini or other inference models. Configure the server's `OPENAI_API_KEY`; Google, OpenRouter, Alibaba, and Samsar credentials are not moderation fallbacks. Moderation does not inherit an `OPENAI_BASE_URL` override configured for inference.
+
+Sandbox/standalone installations run OpenAI moderation only when a nonblank `OPENAI_API_KEY` is configured. Otherwise they skip moderation immediately without provider requests or retries. Sandbox detection follows the existing deployment edition: `SAMSAR_DEPLOYMENT_EDITION=standalone`, `SAMSAR_EDITION=standalone`, or legacy `CURRENT_ENV=docker`. An explicit production edition takes precedence over the Docker runtime.
+
+Legacy `SAMSAR_MODERATION_PROVIDER`, `MODERATION_PROVIDER`, and `CONTENT_MODERATION_PROVIDER` settings do not override this policy, including old `google`, `samsar`, or `disabled` selections. Google API-key and ADC configuration above applies to inference and assistant requests; it does not select the render moderation provider.
+
+OpenAI moderation defaults and optional decision thresholds:
 
 ```sh
-SAMSAR_MODERATION_PROVIDER=google
-GOOGLE_MODERATION_MODEL=gemini-4-argon
-GOOGLE_MODERATION_LOCATION=global
-GOOGLE_MODERATION_TIMEOUT_MS=30000
+OPENAI_MODERATION_MODEL=omni-moderation-latest
 OPENAI_MODERATION_REJECT_SCORE_THRESHOLD=0.95
-GOOGLE_MODERATION_REJECT_SCORE_THRESHOLD=0.95
 NARRATIVE_VIOLENCE_REJECT_SCORE_THRESHOLD=0.99
 ```
 
-Use `SAMSAR_MODERATION_PROVIDER=openai` to force the existing OpenAI moderation path.
+Moderation rejects category scores at or above `0.95` by default. Broad `violence` in narrative moderation uses a more permissive `0.99` cutoff; other narrative categories retain the general cutoff. `OPENAI_MODERATION_REJECT_SCORE_THRESHOLD` overrides `MODERATION_REJECT_SCORE_THRESHOLD`; the narrative violence variable overrides its separate default. Thresholds are read when the processor starts. Existing bounded retries, timeout/error bypass behavior, and unsafe-result decisions are unchanged.
 
-OpenAI and Google moderation reject category scores at or above `0.95` by default. Broad `violence` in narrative moderation uses a more permissive `0.99` cutoff; other narrative categories retain the general cutoff. Provider-specific variables override `MODERATION_REJECT_SCORE_THRESHOLD`; the narrative violence variable overrides its separate default. Thresholds are read when the processor starts.
-
-The processor applies these numerical cutoffs even when a provider marks a category as flagged. A flag with a valid score below its cutoff can pass; provider flags and scores remain unchanged in the external API response, and `decision` reports the processor's outcome. If any result is rejected, the whole response is rejected. Flagged categories with missing or unusable scores, uncategorized flags, and Vertex prompt-filter blocks still reject conservatively. Gemini normalization preserves valid zero scores and numeric strings, while invalid values such as null, empty strings, booleans, arrays, non-finite numbers, or values outside `0`–`1` use a score of `1` for a flagged category.
+The processor applies these numerical cutoffs even when a provider marks a category as flagged. A flag with a valid score below its cutoff can pass; provider flags and scores remain unchanged in the external API response, and `decision` reports the processor's outcome. If any result is rejected, the whole response is rejected. Flagged categories with missing or unusable scores and uncategorized flags still reject conservatively.
 
 ## Local Development
 

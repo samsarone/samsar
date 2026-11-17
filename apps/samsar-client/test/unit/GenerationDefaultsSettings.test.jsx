@@ -32,10 +32,10 @@ it('shows the requested system models when no personal choices are saved', () =>
 });
 
 it('keeps a saved choice through an unrelated settings save', async () => {
-  profile.user = { ...profile.user, selectedInferenceModel: 'gpt-6-astra', agentImageModel: 'SEEDREAM', agentVideoModel: 'RUNWAYML' };
+  profile.user = { ...profile.user, selectedInferenceModel: 'gpt-6.2-astra', agentImageModel: 'SEEDREAM', agentVideoModel: 'RUNWAYML' };
   mountSettings();
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Update', exact: true })));
-  expect(profile.update).toHaveBeenCalledWith(expect.objectContaining({ selectedInferenceModel: 'gpt-6-astra', agentImageModel: 'SEEDREAM', agentVideoModel: 'RUNWAYML' }));
+  expect(profile.update).toHaveBeenCalledWith(expect.objectContaining({ selectedInferenceModel: 'gpt-6.2-astra', agentImageModel: 'SEEDREAM', agentVideoModel: 'RUNWAYML' }));
 });
 
 it('saves model changes and updates the browser selection after success', async () => {

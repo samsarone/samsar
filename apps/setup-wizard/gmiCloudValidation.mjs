@@ -11,9 +11,9 @@ const CANONICAL_QWEN_MODEL_KEY = 'QWEN3.8';
 // Each candidate is an exact upstream version. Chat catalog matching ignores
 // only owner prefixes and case; it never falls forward to a different version.
 export const GMI_CLOUD_CHAT_MODEL_SPECS = Object.freeze({
-  'gpt-6-astra': Object.freeze({
-    text: Object.freeze({ candidates: Object.freeze(['openai/gpt-6-astra']) }),
-    vision: Object.freeze({ candidates: Object.freeze(['openai/gpt-6-astra']) }),
+  'gpt-6.2-astra': Object.freeze({
+    text: Object.freeze({ candidates: Object.freeze(['openai/gpt-6.2-astra']) }),
+    vision: Object.freeze({ candidates: Object.freeze(['openai/gpt-6.2-astra']) }),
   }),
   'gemini-4-carbon': Object.freeze({
     text: Object.freeze({ candidates: Object.freeze(['google/gemini-4-carbon']) }),

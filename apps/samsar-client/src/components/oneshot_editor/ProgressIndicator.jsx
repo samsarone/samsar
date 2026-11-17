@@ -4,6 +4,7 @@ import { SkeletonBlock, SkeletonStatus } from '../common/LoadingSkeleton.jsx';
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { translateText as uiText } from '../../utils/localization.js';
 import { getStudioMediaIdentity } from '../video/util/studioMediaIdentity.mjs';
+import { useStablePreviewMedia } from './useStablePreviewMedia.js';
 // ProgressIndicator.jsx
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FaPause, FaPlay, FaSpinner, FaStepForward, FaVolumeMute, FaVolumeUp } from 'react-icons/fa';
@@ -31,6 +32,9 @@ const PREVIEW_AUDIO_SEEK_TOLERANCE_SECONDS = 0.12;
 const PREVIEW_VIDEO_SEEK_TOLERANCE_SECONDS = 0.12;
 const PREVIEW_VIDEO_METADATA_READY_STATE = 1;
 const PREVIEW_VIDEO_FRAME_READY_STATE = 2;
+const PREVIEW_AUDIO_READY_STATE = 3;
+const PREVIEW_VIDEO_PLAYBACK_READY_STATE = 3;
+const PREVIEW_CLOCK_INTERVAL_MS = 50;
 const MOBILE_PREVIEW_MEDIA_QUERY = '(hover: none), (pointer: coarse), (max-width: 767px)';
 const USER_RESOURCES_PREFIX = 'user_resources/';
 const LAYER_ID_FIELDS = ['id', '_id', 'layerId', 'layer_id'];
@@ -39,6 +43,7 @@ const TIMELINE_SEGMENT_TARGET_WIDTH_PX = 48;
 const TIMELINE_SECONDS_TARGET_WIDTH_PX = 6;
 const TIMELINE_MAX_WIDTH_FACTOR = 2;
 const previewVisualReadyCache = new Set();
+const previewAudioPrimeOwners = new WeakMap();
 
 const STAGE_ORDER = [
   'prompt_generation',
@@ -221,7 +226,7 @@ function buildVideoSegment({
   const assetStage = asset.stage || source?.preview?.stage || 'media';
 
   return {
-    key: `${keyPrefix}-${sourceId}-${assetStage}-${normalizedUrl}`,
+    key: `${keyPrefix}-${sourceId}-${assetStage}-${getStudioMediaIdentity(normalizedUrl)}`,
     title,
     type: asset.type === 'video' ? 'video' : 'image',
     stage: assetStage,
@@ -609,13 +614,27 @@ function clearPreviewVisualCaches() {
   previewVisualReadyCache.clear();
 }
 
+function requiresPerElementAudioUnlock() {
+  if (typeof navigator === 'undefined') return false;
+  const userAgent = navigator.userAgent || '';
+  return /iP(?:ad|hone|od)/.test(userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+    || (/AppleWebKit/.test(userAgent) && /Safari/.test(userAgent)
+      && !/Chrome|Chromium|Edg|OPR|Android/.test(userAgent));
+}
+
 function primeInactiveAudioElement(element) {
   if (!element) return;
+  const owner = {};
+  previewAudioPrimeOwners.set(element, owner);
   const previousTime = element.currentTime;
   const previousVolume = element.volume;
   const previousMuted = element.muted;
 
   const restore = () => {
+    // A delayed unlock must not pause or rewind a scene that became active.
+    if (previewAudioPrimeOwners.get(element) !== owner) return;
+    previewAudioPrimeOwners.delete(element);
     element.pause();
     if (Number.isFinite(previousTime)) {
       try {
@@ -751,6 +770,7 @@ export default function ProgressIndicator(props) {
   const [previewAudioVolume, setPreviewAudioVolume] = useState(1);
   const [previewAudioUnlocked, setPreviewAudioUnlocked] = useState(false);
   const [visualPreloadVersion, setVisualPreloadVersion] = useState(0);
+  const [, setAudioReadyVersion] = useState(0);
   const [activeVideoReadyKey, setActiveVideoReadyKey] = useState(null);
   const [isMobilePreviewDevice, setIsMobilePreviewDevice] = useState(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -762,6 +782,9 @@ export default function ProgressIndicator(props) {
   const activeVideoRef = useRef(null);
   const timelineSegmentRefs = useRef(new Map());
   const previousSessionPreviewIdentityRef = useRef(null);
+  const playbackStateRef = useRef(null);
+  const pendingAudioPlayRef = useRef(new WeakSet());
+  const failedAudioSourcesRef = useRef(new WeakMap());
   const { colorMode } = useColorMode();
   const { t } = useLocalization();
 
@@ -801,17 +824,15 @@ export default function ProgressIndicator(props) {
     isGenerationPending &&
     !videoLink &&
     MOBILE_SINGLE_VIDEO_LOAD_STAGES.has(currentStageKey);
-  const visualSegments = useMemo(
+  const incomingVisualSegments = useMemo(
     () => buildVisualSegments(sessionPreview, rawSessionDetails),
     [rawSessionDetails, sessionPreview],
   );
-  const visualAssetSignature = useMemo(
-    () => visualSegments.map((segment) => (
-      `${segment.key}:${segment.type}:${segment.stage}:${segment.url}`
-    )).join('|'),
-    [visualSegments],
-  );
-  const audioSegments = useMemo(() => buildAudioSegments(sessionPreview), [sessionPreview]);
+  const { segments: visualSegments, refreshSource: refreshVisualSource } =
+    useStablePreviewMedia(incomingVisualSegments, sessionPreviewIdentity);
+  const incomingAudioSegments = useMemo(() => buildAudioSegments(sessionPreview), [sessionPreview]);
+  const { segments: audioSegments, refreshSource: refreshAudioSource } =
+    useStablePreviewMedia(incomingAudioSegments, sessionPreviewIdentity);
   const timelineDuration = useMemo(
     () => resolveTimelineDuration(sessionPreview, visualSegments, audioSegments),
     [audioSegments, sessionPreview, visualSegments],
@@ -855,22 +876,37 @@ export default function ProgressIndicator(props) {
     const cacheKey = getPreviewVisualCacheKey(segment);
     return !cacheKey || previewVisualReadyCache.has(cacheKey);
   }, [visualPreloadVersion]);
-  const isPreviewMediaReadyAtTime = useCallback((time) => {
-    const segmentAtTime = findActiveVisualSegment(visualSegments, time);
-    if (
-      segmentAtTime?.type === 'video' &&
-      segmentAtTime.key !== activeVisualSegment?.key
-    ) {
-      return true;
-    }
-    return isVisualSegmentPreloaded(segmentAtTime);
-  }, [activeVisualSegment?.key, isVisualSegmentPreloaded, visualSegments]);
   const isActiveVisualPreloaded = isVisualSegmentPreloaded(activeVisualSegment);
   const isActiveVideoElementReady = activeVisualSegment?.type !== 'video'
-    || activeVideoReadyKey === activeVisualRenderKey
-    || (activeVideoRef.current?.readyState ?? 0) >= PREVIEW_VIDEO_FRAME_READY_STATE;
+    || (activeVideoReadyKey === activeVisualRenderKey
+      && (activeVideoRef.current?.error
+        || (!activeVideoRef.current?.seeking
+          && (activeVideoRef.current?.readyState ?? 0) >= PREVIEW_VIDEO_PLAYBACK_READY_STATE)));
   const isActiveVisualReady = !activeVisualSegment
     || (isActiveVisualPreloaded && isActiveVideoElementReady);
+  // Buffer active tracks and the next two start positions, including overlaps.
+  const upcomingAudioStarts = [...new Set(audioSegments
+    .filter((segment) => segment.startTime > previewTime)
+    .map((segment) => segment.startTime))].slice(0, 2);
+  const audioKeysToPreload = new Set(audioSegments
+    .filter((segment) => isSegmentActiveAtTime(segment, previewTime)
+      || upcomingAudioStarts.includes(segment.startTime))
+    .map((segment) => segment.key));
+  // Read the mounted elements on media events as well as timeline changes.
+  const isActiveAudioReady = isPreviewAudioEffectivelyMuted
+    || audioSegments.every((segment) => {
+      if (!isSegmentActiveAtTime(segment, previewTime) || segment.volume <= 0) return true;
+      const element = audioRefs.current.get(segment.key);
+      if (element?.error || failedAudioSourcesRef.current.get(element) === segment.url) return true;
+      return Boolean(element && !element.seeking && element.readyState >= PREVIEW_AUDIO_READY_STATE);
+    });
+  const isPreviewMediaReady = isActiveVisualReady && isActiveAudioReady;
+  playbackStateRef.current = {
+    canAdvance: isPreviewMediaReady,
+    timelineDuration,
+    visualSegments,
+    audioSegments,
+  };
   const previewAspectRatio = normalizePreviewAspectRatio(sessionPreview || rawSessionDetails);
   const isPortraitPreview = previewAspectRatio === '9:16';
   const previewFrameStyle = getVidgeniePreviewFrameStyle(previewAspectRatio);
@@ -885,11 +921,6 @@ export default function ProgressIndicator(props) {
     setActiveVideoReadyKey(null);
     setVisualPreloadVersion((version) => version + 1);
   }, [sessionPreviewIdentity]);
-
-  useEffect(() => {
-    setActiveVideoReadyKey(null);
-    setVisualPreloadVersion((version) => version + 1);
-  }, [visualAssetSignature]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -927,8 +958,19 @@ export default function ProgressIndicator(props) {
         return;
       }
 
+      previewAudioPrimeOwners.delete(element);
       const localTime = Math.max(0, time - segment.startTime + segment.sourceTrimStartTime);
-      if (Math.abs(element.currentTime - localTime) > PREVIEW_AUDIO_SEEK_TOLERANCE_SECONDS) {
+      if (Number.isFinite(element.duration) && localTime >= element.duration) {
+        element.pause();
+        activeAudioKeys.add(segment.key);
+        return;
+      }
+      if (
+        (shouldPlay || !isPreviewPlaying) &&
+        element.readyState >= PREVIEW_VIDEO_METADATA_READY_STATE &&
+        !element.seeking &&
+        Math.abs(element.currentTime - localTime) > PREVIEW_AUDIO_SEEK_TOLERANCE_SECONDS
+      ) {
         element.currentTime = localTime;
       }
       element.muted = isAudioMuted || !isAudioUnlocked;
@@ -941,38 +983,55 @@ export default function ProgressIndicator(props) {
       );
       activeAudioKeys.add(segment.key);
 
-      if (shouldPlay && element.paused) {
-        element.play().catch(() => undefined);
+      if (shouldPlay && element.paused && !pendingAudioPlayRef.current.has(element)
+        && !element.error && failedAudioSourcesRef.current.get(element) !== segment.url) {
+        pendingAudioPlayRef.current.add(element);
+        Promise.resolve(element.play()).catch((error) => {
+          if (error?.name === 'NotSupportedError') {
+            failedAudioSourcesRef.current.set(element, segment.url);
+            setAudioReadyVersion((version) => version + 1);
+          }
+        }).finally(() => pendingAudioPlayRef.current.delete(element));
       } else if (!shouldPlay) {
         element.pause();
       }
     });
 
     if (shouldPlay && options.primeInactive) {
+      // Safari grants playback per element. Unlock later scenes in this gesture
+      // too; other browsers only need the nearby preload window.
+      const primeAllAudio = requiresPerElementAudioUnlock();
       audioRefs.current.forEach((element, key) => {
-        if (!activeAudioKeys.has(key)) {
+        if (!activeAudioKeys.has(key) && (primeAllAudio || audioKeysToPreload.has(key))) {
           primeInactiveAudioElement(element);
         }
       });
     }
-  }, [audioSegments, previewAudioMuted, previewAudioUnlocked, previewAudioVolume, videoLink]);
+  }, [audioKeysToPreload, audioSegments, isPreviewPlaying, previewAudioMuted, previewAudioUnlocked, previewAudioVolume, videoLink]);
 
   const syncActiveVideoElement = useCallback((time, shouldPlay) => {
     const element = activeVideoRef.current;
     if (!element || activeVisualSegment?.type !== 'video') return;
     const localTime = Math.max(0, time - activeVisualSegment.startTime);
+    if (!isSegmentActiveAtTime(activeVisualSegment, time)
+      || (Number.isFinite(element.duration) && localTime >= element.duration)) {
+      element.pause();
+      return;
+    }
     if (
       (element.readyState ?? 0) >= PREVIEW_VIDEO_METADATA_READY_STATE &&
+      !element.seeking &&
+      (shouldPlay || !isPreviewPlaying) &&
       Math.abs(element.currentTime - localTime) > PREVIEW_VIDEO_SEEK_TOLERANCE_SECONDS
     ) {
       element.currentTime = localTime;
     }
-    if (shouldPlay && !videoLink) {
+    if (shouldPlay && !videoLink && element.paused) {
       element.play().catch(() => undefined);
-    } else {
+    } else if (!shouldPlay || videoLink) {
       element.pause();
     }
-  }, [activeVisualSegment, videoLink]);
+  }, [activeVisualSegment, isPreviewPlaying, videoLink]);
 
   const handlePreviewPlaybackToggle = useCallback(() => {
     const shouldPlay = !isPreviewPlaying;
@@ -1064,34 +1123,47 @@ export default function ProgressIndicator(props) {
   }, [activeVisualRenderKey, activeVisualSegment?.type]);
 
   useEffect(() => {
-    if (!hasTimelinePreview || !timelineDuration || !isPreviewPlaying || videoLink || !isActiveVisualReady) {
-      return undefined;
-    }
+    if (!hasTimelinePreview || !isPreviewPlaying || videoLink || pendingPreviewVideoLink) return undefined;
+    let lastTick = performance.now();
     const intervalId = window.setInterval(() => {
+      const now = performance.now();
+      const elapsed = Math.max(0, (now - lastTick) / 1000);
+      lastTick = now;
+      const state = playbackStateRef.current;
+      if (!state?.canAdvance || !state.timelineDuration) return;
       setPreviewTime((current) => {
-        const next = current + 0.25;
-        const nextTime = next >= timelineDuration ? 0 : next;
-        return isPreviewMediaReadyAtTime(nextTime) ? nextTime : current;
+        let next = current + elapsed;
+        // Enter the next scene before waiting for it, so the previous media
+        // stop at their boundary instead of looping behind a frozen playhead.
+        for (const segment of [...state.visualSegments, ...state.audioSegments]) {
+          for (const boundary of [segment.startTime, segment.endTime]) {
+            if (boundary > current && boundary < next) next = boundary;
+          }
+        }
+        return next >= state.timelineDuration ? 0 : next;
       });
-    }, 250);
+    }, PREVIEW_CLOCK_INTERVAL_MS);
     return () => window.clearInterval(intervalId);
-  }, [
-    hasTimelinePreview,
-    isActiveVisualReady,
-    isPreviewMediaReadyAtTime,
-    isPreviewPlaying,
-    timelineDuration,
-    videoLink,
-  ]);
+    // Polls, ready events and buffering update the snapshot without resetting time.
+  }, [hasTimelinePreview, isPreviewPlaying, pendingPreviewVideoLink, videoLink]);
 
   useEffect(() => {
-    const canPlayPreviewMedia = isPreviewPlaying && !videoLink && isActiveVisualReady;
+    const canPlayPreviewMedia = isPreviewPlaying && !videoLink && !pendingPreviewVideoLink && isPreviewMediaReady;
     syncActiveAudioElements(previewTime, canPlayPreviewMedia);
-  }, [isActiveVisualReady, isPreviewPlaying, previewTime, syncActiveAudioElements, videoLink]);
+  }, [isPreviewMediaReady, isPreviewPlaying, pendingPreviewVideoLink, previewTime, syncActiveAudioElements, videoLink]);
 
   useEffect(() => {
-    syncActiveVideoElement(previewTime, isPreviewPlaying && !videoLink && isActiveVisualReady);
-  }, [isActiveVisualReady, isPreviewPlaying, previewTime, syncActiveVideoElement, videoLink]);
+    syncActiveVideoElement(previewTime, isPreviewPlaying && !videoLink && !pendingPreviewVideoLink && isPreviewMediaReady);
+  }, [isPreviewMediaReady, isPreviewPlaying, pendingPreviewVideoLink, previewTime, syncActiveVideoElement, videoLink]);
+
+  const handleAudioReadyChange = useCallback(() => {
+    setAudioReadyVersion((version) => version + 1);
+  }, []);
+
+  const handleAudioError = useCallback((segment) => {
+    refreshAudioSource(segment.key);
+    setAudioReadyVersion((version) => version + 1);
+  }, [refreshAudioSource]);
 
   const handleActiveVideoReady = useCallback((event) => {
     const element = event.currentTarget;
@@ -1113,7 +1185,8 @@ export default function ProgressIndicator(props) {
   }, [activeVisualCacheKey, activeVisualRenderKey, activeVisualSegment, previewTime]);
 
   const handleActiveVideoWaiting = useCallback((event) => {
-    if ((event.currentTarget?.readyState ?? 0) >= PREVIEW_VIDEO_FRAME_READY_STATE) {
+    if (!event.currentTarget?.seeking
+      && (event.currentTarget?.readyState ?? 0) >= PREVIEW_VIDEO_PLAYBACK_READY_STATE) {
       return;
     }
     setActiveVideoReadyKey(null);
@@ -1123,6 +1196,14 @@ export default function ProgressIndicator(props) {
     markPreviewVisualReady(activeVisualCacheKey);
     setVisualPreloadVersion((version) => version + 1);
   }, [activeVisualCacheKey]);
+
+  const handleActiveVisualError = useCallback(() => {
+    if (activeVisualSegment && refreshVisualSource(activeVisualSegment.key)) return;
+    // A failed asset must not strand the preview or replay the preceding scene.
+    markPreviewVisualReady(activeVisualCacheKey);
+    setActiveVideoReadyKey(activeVisualRenderKey);
+    setVisualPreloadVersion((version) => version + 1);
+  }, [activeVisualCacheKey, activeVisualRenderKey, activeVisualSegment, refreshVisualSource]);
 
   const registerAudioRef = useCallback((key, element) => {
     if (element) {
@@ -1300,7 +1381,8 @@ export default function ProgressIndicator(props) {
                     onLoadedData={handleActiveVideoReady}
                     onCanPlay={handleActiveVideoReady}
                     onSeeked={handleActiveVideoReady}
-                    onError={handleActiveVideoReady}
+                    onSeeking={handleActiveVideoWaiting}
+                    onError={handleActiveVisualError}
                     onWaiting={handleActiveVideoWaiting}
                     onStalled={handleActiveVideoWaiting}
                     className={`h-full w-full object-contain transition-opacity duration-150 ${isActiveVisualReady ? 'opacity-100' : 'opacity-0'}`}
@@ -1310,17 +1392,21 @@ export default function ProgressIndicator(props) {
                       <FaSpinner className="animate-spin" />{uiText("Loading preview media")}</div>
                   )}
                 </div>
-              ) : isActiveVisualReady ? (
-                <img
-                  src={activeVisualSourceUrl}
-                  alt={activeVisualSegment.title || uiText("Generated preview")}
-                  onLoad={handleActiveImageReady}
-                  onError={handleActiveImageReady}
-                  className="h-full w-full object-contain"
-                />
               ) : (
-                <div className={`flex h-full w-full items-center justify-center gap-2 text-sm ${mutedText}`}>
-                  <FaSpinner className="animate-spin" />{uiText("Loading preview media")}</div>
+                <div className="relative h-full w-full">
+                  <img
+                    key={activeVisualRenderKey}
+                    src={activeVisualSourceUrl}
+                    alt={activeVisualSegment.title || uiText("Generated preview")}
+                    onLoad={handleActiveImageReady}
+                    onError={handleActiveVisualError}
+                    className={`h-full w-full object-contain ${isActiveVisualReady ? 'opacity-100' : 'opacity-0'}`}
+                  />
+                  {!isActiveVisualReady && (
+                    <div className={`absolute inset-0 flex items-center justify-center gap-2 text-sm ${mutedText}`}>
+                      <FaSpinner className="animate-spin" />{uiText("Loading preview media")}</div>
+                  )}
+                </div>
               )
             ) : (
               <div className={`flex h-full w-full items-center justify-center text-sm ${mutedText}`}>{uiText("Waiting for preview assets")}</div>
@@ -1464,8 +1550,15 @@ export default function ProgressIndicator(props) {
                 key={segment.key}
                 ref={(element) => registerAudioRef(segment.key, element)}
                 src={segment.url}
-                preload={isSegmentActiveAtTime(segment, previewTime) ? 'metadata' : 'none'}
+                preload={audioKeysToPreload.has(segment.key) ? 'auto' : 'none'}
                 muted={previewAudioMuted || !previewAudioUnlocked}
+                onLoadedData={handleAudioReadyChange}
+                onCanPlay={handleAudioReadyChange}
+                onSeeked={handleAudioReadyChange}
+                onSeeking={handleAudioReadyChange}
+                onWaiting={handleAudioReadyChange}
+                onStalled={handleAudioReadyChange}
+                onError={() => handleAudioError(segment)}
               />
             ))}
           </div>

@@ -10,6 +10,29 @@ import {
   runInferenceAdapterFallback,
 } from './OpenAICompat.js';
 
+for (const model of ['gpt-6.2-astra', 'gpt-6-astra', 'gpt-5.6-sol']) {
+  for (const effort of ['high', 'xhigh']) {
+    for (const vision of [false, true]) {
+      test(`${model} upgrades native ${vision ? 'vision' : 'text'} to Astra 6.2 at ${effort}`, async () => {
+        let captured;
+        const messages = [{ role: 'user', content: vision
+          ? [{ type: 'text', text: 'Describe this.' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,QUJD' } }]
+          : 'Plan this.' }];
+        const before = structuredClone(messages);
+        await createCompatibleChatCompletion({ post: async (_url, options) => {
+          captured = options.body;
+          return { model: 'gpt-6.2-astra', output_text: 'ok' };
+        } }, { model: `${model}${effort === 'xhigh' ? '-xhigh' : ''}`, messages,
+          authorization: 'native', bypassSamsarExternalInference: true });
+        assert.equal(captured.model, 'gpt-6.2-astra');
+        assert.deepEqual(captured.reasoning, { effort });
+        if (vision) assert.ok(JSON.stringify(captured.input).includes('data:image/png;base64,QUJD'));
+        assert.deepEqual(messages, before);
+      });
+    }
+  }
+}
+
 for (const mediaMode of ['docker-local', 's3-cloudfront']) {
   test(`native Claude preserves the ${mediaMode} media route`, async (t) => {
     const overrides = {
@@ -47,7 +70,7 @@ for (const mediaMode of ['docker-local', 's3-cloudfront']) {
   });
 }
 
-test('forces high reasoning for GPT 6 Astra Responses requests', async () => {
+test('forces high reasoning for GPT 6.2 Astra Responses requests', async () => {
   let capturedPath;
   let capturedBody;
   const openaiClient = {
@@ -56,14 +79,14 @@ test('forces high reasoning for GPT 6 Astra Responses requests', async () => {
       capturedBody = options.body;
       return {
         id: 'resp-test',
-        model: 'gpt-6-astra',
+        model: 'gpt-6.2-astra',
         output_text: 'ok',
       };
     },
   };
 
   const response = await createCompatibleChatCompletion(openaiClient, {
-    model: 'gpt-6-astra',
+    model: 'gpt-6.2-astra',
     messages: [{ role: 'user', content: 'hello' }],
     reasoning: { effort: 'low' },
     temperature: 0.2,
@@ -77,40 +100,40 @@ test('forces high reasoning for GPT 6 Astra Responses requests', async () => {
   assert.equal(response.choices[0].message.content, 'ok');
 });
 
-test('routes GPT 6 Astra Extra High to the Sol provider model with xhigh reasoning', async () => {
+test('routes GPT 6.2 Astra Extra High to the Sol provider model with xhigh reasoning', async () => {
   let capturedBody;
   const openaiClient = {
     async post(_path, options) {
       capturedBody = options.body;
-      return { id: 'resp-xhigh-test', model: 'gpt-6-astra', output_text: 'ok' };
+      return { id: 'resp-xhigh-test', model: 'gpt-6.2-astra', output_text: 'ok' };
     },
   };
 
   await createCompatibleChatCompletion(openaiClient, {
-    model: 'gpt-6-astra-xhigh',
+    model: 'gpt-6.2-astra-xhigh',
     messages: [{ role: 'user', content: 'hello' }],
   });
 
-  assert.equal(capturedBody.model, 'gpt-6-astra');
+  assert.equal(capturedBody.model, 'gpt-6.2-astra');
   assert.deepEqual(capturedBody.reasoning, { effort: 'xhigh' });
 });
 
-test('honors explicit xhigh effort on the canonical GPT 6 Astra model', async () => {
+test('honors explicit xhigh effort on the canonical GPT 6.2 Astra model', async () => {
   let capturedBody;
   const openaiClient = {
     async post(_path, options) {
       capturedBody = options.body;
-      return { id: 'resp-explicit-xhigh', model: 'gpt-6-astra', output_text: 'ok' };
+      return { id: 'resp-explicit-xhigh', model: 'gpt-6.2-astra', output_text: 'ok' };
     },
   };
 
   await createCompatibleChatCompletion(openaiClient, {
-    model: 'gpt-6-astra',
+    model: 'gpt-6.2-astra',
     messages: [{ role: 'user', content: 'analyze deeply' }],
     reasoning_effort: 'xhigh',
   });
 
-  assert.equal(capturedBody.model, 'gpt-6-astra');
+  assert.equal(capturedBody.model, 'gpt-6.2-astra');
   assert.deepEqual(capturedBody.reasoning, { effort: 'xhigh' });
 });
 
@@ -133,7 +156,7 @@ test('preserves explicit xhigh for Sol publication metadata requests', async () 
     reasoning: { effort: 'xhigh' },
   });
 
-  assert.equal(capturedBody.model, 'gpt-6-astra');
+  assert.equal(capturedBody.model, 'gpt-6.2-astra');
   assert.deepEqual(capturedBody.reasoning, { effort: 'xhigh' });
 });
 
@@ -155,12 +178,12 @@ test('resolves multimodal media immediately before a native OpenAI Responses req
     async post(_path, options) {
       capturedOptions = options;
       capturedBody = options.body;
-      return { id: 'resp-media-test', model: 'gpt-6-astra', output_text: 'seen' };
+      return { id: 'resp-media-test', model: 'gpt-6.2-astra', output_text: 'seen' };
     },
   };
 
   await createCompatibleChatCompletion(openaiClient, {
-    model: 'gpt-6-astra',
+    model: 'gpt-6.2-astra',
     messages: sourceMessages,
   }, {
     resolveMediaUrl: async (source, options) => {
@@ -190,7 +213,7 @@ test('/external native GPT vision preserves the existing max_tokens Responses tr
       capturedBody = options.body;
       return {
         id: 'resp-external-vision',
-        model: 'gpt-6-astra',
+        model: 'gpt-6.2-astra',
         output_text: 'described',
       };
     },
@@ -206,7 +229,7 @@ test('/external native GPT vision preserves the existing max_tokens Responses tr
   }];
 
   await createCompatibleChatCompletion(openaiClient, {
-    model: 'gpt-6-astra',
+    model: 'gpt-6.2-astra',
     messages,
     bypassSamsarExternalInference: true,
     max_tokens: 16384,
@@ -306,11 +329,11 @@ test('adapter fallback does not hide a non-retryable request error', async () =>
 test('automatic adapter attempts disable provider-local retries and preserve provider pins', () => {
   assert.deepEqual(
     buildProviderPinnedChatRequest(
-      { model: 'gpt-6-astra', maxRetries: 4, externalMaxRetries: 4 },
+      { model: 'gpt-6.2-astra', maxRetries: 4, externalMaxRetries: 4 },
       'openrouter',
     ),
     {
-      model: 'gpt-6-astra',
+      model: 'gpt-6.2-astra',
       maxRetries: 0,
       externalMaxRetries: 0,
       authorization: 'openrouter',

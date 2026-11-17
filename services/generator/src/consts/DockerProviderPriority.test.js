@@ -73,6 +73,18 @@ test('keeps Wan2.7 Pro on adapters that preserve its aspect-ratio contract', () 
   ]);
 });
 
+test('Kling Image 4 uses Fal with a Samsar fallback when the corresponding credentials are configured', () => {
+  process.env.CURRENT_ENV = 'standalone';
+  process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+  clearCredentials();
+  assert.deepEqual(getDockerImageGenerationProviderPriority('KLINGIMAGE4'), ['fal', 'samsar']);
+  assert.equal(resolveDockerImageGenerationProvider('KLINGIMAGE4'), '');
+  process.env.FAL_API_KEY = 'test-key';
+  process.env.SAMSAR_API_KEY = 'test-key';
+  assert.equal(resolveDockerImageGenerationProvider('KLINGIMAGE4'), 'fal');
+  assert.equal(resolveNextDockerImageGenerationProvider('KLINGIMAGE4', 'fal'), 'samsar');
+});
+
 test('classifies the exact Alibaba credential modes supported by Qwen Image 3.0 Pro', () => {
   const supportedKeyTypes = ['', 'pay_as_you_go'];
   const supportedEndpointTypes = ['', 'pay_as_you_go'];

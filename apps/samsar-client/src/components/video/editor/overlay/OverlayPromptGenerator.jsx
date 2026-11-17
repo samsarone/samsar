@@ -1,4 +1,5 @@
 import { useUiLanguage } from '../../../../hooks/useUiLanguage.js';
+import { getKlingImageAppRequestOptions } from '../../../../utils/KlingImageModel.mjs';
 import { translateText as uiText } from '../../../../utils/localization.js';
 import { useEffect, useMemo, useState } from "react";
 import CommonButton from "../../../common/CommonButton.tsx";
@@ -213,6 +214,7 @@ export default function OverlayPromptGenerator(props) {
     const payload = {
       prompt: promptText,
       model: selectedGenerationModel,
+      ...getKlingImageAppRequestOptions(selectedGenerationModel),
       retryOnFailure,
       isCharacterImage,
       aspectRatio,

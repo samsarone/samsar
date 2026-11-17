@@ -230,14 +230,20 @@ export const VIDEO_MODEL_PRICES = [
 
 export const ASSISTANT_MODEL_PRICES = [
   {
-    key: "gpt-6-astra",
-    prices: [
-      {
-        operationType: "words",
-        tokens: 1000,
-        price: 1
-      },
-    ]
+    key: "gpt-6.2-astra",
+    billing: "token_usage",
+    get prices() {
+      return [
+        ['input_tokens', { input_tokens: 1_000, output_tokens: 0 }],
+        ['cached_input_tokens', { input_tokens: 1_000, input_tokens_details: { cached_tokens: 1_000 }, output_tokens: 0 }],
+        ['output_tokens', { input_tokens: 0, output_tokens: 1_000 }],
+      ].map(([operationType, usage]) => ({
+        operationType,
+        tokens: 1_000_000,
+        // Quote Standard rates below the long-context threshold.
+        price: calculateAssistantCreditsFromUsage({ model: 'gpt-6.2-astra', usage }).credits * 1000,
+      }));
+    },
   },
   {
     key: "gemini-4-carbon",

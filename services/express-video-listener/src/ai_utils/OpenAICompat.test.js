@@ -30,13 +30,13 @@ test('responses dispatch passes maxRetries zero to the SDK', async () => {
   };
 
   await createCompatibleChatCompletion(openaiClient, {
-    model: 'gpt-6-astra-xhigh',
+    model: 'gpt-6.2-astra-xhigh',
     messages: [{ role: 'user', content: 'hello' }],
     maxRetries: 9,
   });
 
   assert.equal(receivedOptions.maxRetries, 0);
-  assert.equal(receivedOptions.body.model, 'gpt-6-astra');
+  assert.equal(receivedOptions.body.model, 'gpt-6.2-astra');
   assert.deepEqual(receivedOptions.body.reasoning, { effort: 'xhigh' });
 });
 
@@ -108,7 +108,7 @@ test('completion dispatch retries the next saved adapter after a retryable failu
   });
   fs.writeFileSync(preferencePath, JSON.stringify({
     modelProviderPriority: {
-      'gpt-6-astra': ['openai', 'openrouter'],
+      'gpt-6.2-astra': ['openai', 'openrouter'],
     },
   }));
   Object.assign(process.env, {
@@ -132,13 +132,13 @@ test('completion dispatch retries the next saved adapter after a retryable failu
   t.mock.method(OpenAI.Chat.Completions.prototype, 'create', async () => {
     attempts.push('openrouter');
     return {
-      model: 'openai/gpt-6-astra',
+      model: 'openai/gpt-6.2-astra',
       choices: [{ message: { content: 'fallback ok' } }],
     };
   });
 
   const response = await createCompatibleChatCompletion(openaiClient, {
-    model: 'gpt-6-astra',
+    model: 'gpt-6.2-astra',
     messages: [{ role: 'user', content: 'hello' }],
     authorization: 'native',
     maxRetries: 0,

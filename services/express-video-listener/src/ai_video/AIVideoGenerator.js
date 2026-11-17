@@ -591,7 +591,7 @@ function shouldPrepareAiVideoLayer(layer = {}) {
   return !shouldSkipAiVideoGenerationForLayer(layer) &&
     getNormalizedAiVideoGenerationStatus(layer) === 'INIT' &&
     layer.aiVideoGenerationPending !== true &&
-    !(layer.hasAiVideoLayer !== false && (layer.aiVideoLayer || layer.aiVideoRemoteLink));
+    !(layer.aiVideoLayer || layer.aiVideoRemoteLink);
 }
 
 async function dispatchAiVideo(payload, videoGenerationModel, videoTone) {
@@ -647,21 +647,24 @@ async function dispatchAiVideo(payload, videoGenerationModel, videoTone) {
 }
 
 
-export async function setSessionLayerAiVideoGenerationPending(payload) {
-  await getDBConnectionString();
+export async function setSessionLayerAiVideoGenerationPending(payload, dependencies = {}) {
+  const Session = dependencies.VideoSession || VideoSession;
+  await (dependencies.getDBConnectionString || getDBConnectionString)();
 
   try {
     const { videoSessionId, layerId, duration } = payload;
     const targetLayerId = typeof layerId === 'string' ? layerId : layerId?.toString();
 
-    const sessionForValidation = await VideoSession.findById(videoSessionId);
-    if (!sessionForValidation) {
+    const sessionForValidation = await Session.findById(videoSessionId);
+    if (!sessionForValidation || sessionForValidation.expressGenerationPending === false ||
+        sessionForValidation.expressGenerationPaused || sessionForValidation.expressGenerationCancelled ||
+        sessionForValidation.expressGenerationFailed) {
       return;
     }
     const layerForValidation = Array.isArray(sessionForValidation.layers)
       ? sessionForValidation.layers.find((layer) => layer?._id?.toString() === targetLayerId)
       : null;
-    if (!layerForValidation || shouldSkipAiVideoGenerationForLayer(layerForValidation)) {
+    if (!layerForValidation || !shouldPrepareAiVideoLayer(layerForValidation)) {
       return;
     }
 
@@ -676,8 +679,23 @@ export async function setSessionLayerAiVideoGenerationPending(payload) {
 
     layerUpdate["layers.$.isAudioVideoLayer"] = payload.isAudioVideoLayer === true;
 
-    const sessionDataValue = await VideoSession.findOneAndUpdate(
-      { _id: videoSessionId, "layers._id": layerId },
+    const sessionDataValue = await Session.findOneAndUpdate(
+      {
+        _id: videoSessionId,
+        expressGenerationPending: { $ne: false },
+        expressGenerationPaused: { $ne: true },
+        expressGenerationCancelled: { $ne: true },
+        expressGenerationFailed: { $ne: true },
+        // Bind all predicates to this same layer. An earlier preparation read
+        // cannot reset a completed clip or enqueue a second in-flight request.
+        layers: { $elemMatch: {
+          _id: layerId,
+          aiVideoGenerationStatus: { $in: [/^\s*(?:INIT)?\s*$/i, null] },
+          aiVideoGenerationPending: { $ne: true },
+          aiVideoLayer: { $in: ['', null] },
+          aiVideoRemoteLink: { $in: ['', null] },
+        } },
+      },
       {
         $set: layerUpdate
       },
@@ -756,6 +774,19 @@ export async function setSessionLayerAiVideoGenerationPending(payload) {
 
     }
 
+    // Other workers can complete media while timing is being calculated. Patch
+    // only timing values so their saved assets/statuses never become stale copies.
+    const timingFields = { [`layers.${currentLayerIndex}.duration`]: targetDuration };
+    for (let i = currentLayerIndex + 1; i < updatedLayers.length; i++) {
+      timingFields[`layers.${i}.durationOffset`] = updatedLayers[i].durationOffset;
+    }
+    for (let i = 0; i < audioLayers.length; i++) {
+      if (!audioLayers[i].connectedLayerId) continue;
+      for (const field of ['startTime', 'endTime', 'connectedLayerStartTimeOffset']) {
+        if (audioLayers[i][field] !== undefined) timingFields[`audioLayers.${i}.${field}`] = audioLayers[i][field];
+      }
+    }
+
     if (isBranchedVideoSession(sessionDataValue)) {
       const branchRenderPaths = retimeBranchRenderPathsForSharedLayer({
         branchRenderPaths: sessionDataValue.branchRenderPaths,
@@ -779,12 +810,11 @@ export async function setSessionLayerAiVideoGenerationPending(payload) {
         defaultBranchPathId: sessionDataValue.defaultBranchPathId,
       });
 
-      await VideoSession.updateOne(
+      await Session.updateOne(
         { _id: videoSessionId },
         {
           $set: {
-            layers: updatedLayers,
-            audioLayers,
+            ...timingFields,
             branchRenderPaths,
             branchingTimeline,
             ...durationMetadata,
@@ -806,12 +836,11 @@ export async function setSessionLayerAiVideoGenerationPending(payload) {
     }
 
 
-    await VideoSession.updateOne(
+    await Session.updateOne(
       { _id: videoSessionId },
       {
         $set: {
-          layers: updatedLayers,
-          audioLayers,
+          ...timingFields,
         },
       },
     );

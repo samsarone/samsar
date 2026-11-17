@@ -39,6 +39,7 @@ import { ensureNarratorAvatarVideoForSession } from './ai_video/NarratorAvatar.j
 import { processSessionCompletionFailure, processSessionCompletionSuccess } from "./ExpressSessionStateUpdater.js";
 import { recoverHostedAgentSettlements } from './HostedAgentBilling.js';
 import { ensureGeneratedOutroTilesForSession } from './utils/GeneratedOutroTiles.js';
+import { ensureExpressImageRecoveryRequests } from './utils/ExpressImageRecovery.js';
 import {
   EXPRESS_VIDEO_BILLING_STAGES,
   chargeExpressVideoStageCredits,
@@ -1295,6 +1296,8 @@ async function checkVideoRenderStatus(session, operationOverrides = {}) {
     await forceEjectSession(latestSession);
     return;
   }
+
+  await ensureExpressImageRecoveryRequests(latestSession, { ImageGeneration, VideoSession });
 
   if (isExpressBuilderStillPreparing(latestSession)) {
     return;

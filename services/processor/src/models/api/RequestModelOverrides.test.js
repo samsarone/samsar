@@ -72,21 +72,21 @@ test('normalizes request TTS model aliases', () => {
 });
 
 test('normalizes request inference model aliases', () => {
-  assert.equal(normalizeInferenceModelFromPayload({ inference_model: 'GPT 6 Astra' }), 'gpt-6-astra');
+  assert.equal(normalizeInferenceModelFromPayload({ inference_model: 'GPT 6.2 Astra' }), 'gpt-6.2-astra');
   assert.equal(
-    normalizeInferenceModelFromPayload({ inference_model: 'GPT 6 Astra High' }),
-    'gpt-6-astra',
+    normalizeInferenceModelFromPayload({ inference_model: 'GPT 6.2 Astra High' }),
+    'gpt-6.2-astra',
   );
   assert.equal(
-    normalizeInferenceModelFromPayload({ inference_model: 'gpt-6-astra-high' }),
-    'gpt-6-astra',
+    normalizeInferenceModelFromPayload({ inference_model: 'gpt-6.2-astra-high' }),
+    'gpt-6.2-astra',
   );
-  assert.equal(normalizeInferenceModelFromPayload({ inferenceModel: 'gpt-6-astra' }), 'gpt-6-astra');
+  assert.equal(normalizeInferenceModelFromPayload({ inferenceModel: 'gpt-6.2-astra' }), 'gpt-6.2-astra');
   assert.equal(
-    normalizeInferenceModelFromPayload({ inferenceModel: 'GPT 6 Astra Extra High' }),
-    'gpt-6-astra-xhigh',
+    normalizeInferenceModelFromPayload({ inferenceModel: 'GPT 6.2 Astra Extra High' }),
+    'gpt-6.2-astra-xhigh',
   );
-  assert.equal(normalizeInferenceModelFromPayload({ inferenceModel: 'gpt-5.6' }), 'gpt-6-astra');
+  assert.equal(normalizeInferenceModelFromPayload({ inferenceModel: 'gpt-5.6' }), 'gpt-6.2-astra');
   assert.equal(normalizeInferenceModelFromPayload({ inference_model: 'Gemini 4 Carbon' }), 'gemini-4-carbon');
   assert.equal(normalizeInferenceModelFromPayload({ inference_model: 'GEMINI4' }), 'gemini-4-carbon');
   assert.equal(normalizeInferenceModelFromPayload({ inferenceModel: 'gemini-4-carbon' }), 'gemini-4-carbon');
@@ -109,29 +109,29 @@ test('rejects unsupported request inference model aliases', () => {
   );
 });
 
-test('resolves canonical GPT 6 Astra plus explicit effort and legacy suffixes', () => {
+test('resolves canonical GPT 6.2 Astra plus explicit effort and legacy suffixes', () => {
   assert.equal(normalizeInferenceEffortFromPayload({ effort: 'XHIGH' }), 'xhigh');
   assert.deepEqual(
     resolveEffectiveInferenceSettings({
-      inference_model: 'gpt-6-astra',
+      inference_model: 'gpt-6.2-astra',
       effort: 'xhigh',
     }),
-    { inferenceModel: 'gpt-6-astra-xhigh', inferenceEffort: 'xhigh' },
+    { inferenceModel: 'gpt-6.2-astra-xhigh', inferenceEffort: 'xhigh' },
   );
   assert.deepEqual(
-    resolveEffectiveInferenceSettings({ inference_model: 'gpt-6-astra-high' }),
-    { inferenceModel: 'gpt-6-astra', inferenceEffort: 'high' },
+    resolveEffectiveInferenceSettings({ inference_model: 'gpt-6.2-astra-high' }),
+    { inferenceModel: 'gpt-6.2-astra', inferenceEffort: 'high' },
   );
   assert.deepEqual(
     resolveEffectiveInferenceSettings({
-      inference_model: 'gpt-6-astra-xhigh',
+      inference_model: 'gpt-6.2-astra-xhigh',
       effort: 'high',
     }),
-    { inferenceModel: 'gpt-6-astra', inferenceEffort: 'high' },
+    { inferenceModel: 'gpt-6.2-astra', inferenceEffort: 'high' },
   );
   assert.deepEqual(
-    resolveEffectiveInferenceSettings({}, 'gpt-6-astra', 'xhigh'),
-    { inferenceModel: 'gpt-6-astra-xhigh', inferenceEffort: 'xhigh' },
+    resolveEffectiveInferenceSettings({}, 'gpt-6.2-astra', 'xhigh'),
+    { inferenceModel: 'gpt-6.2-astra-xhigh', inferenceEffort: 'xhigh' },
   );
   assert.throws(
     () => resolveEffectiveInferenceSettings({
@@ -144,14 +144,14 @@ test('resolves canonical GPT 6 Astra plus explicit effort and legacy suffixes', 
 
 test('resolves effective inference model from request override or account setting', () => {
   assert.equal(
-    resolveEffectiveInferenceModel({ inference_model: 'GPT 6 Astra' }, 'gemini-4-carbon'),
-    'gpt-6-astra',
+    resolveEffectiveInferenceModel({ inference_model: 'GPT 6.2 Astra' }, 'gemini-4-carbon'),
+    'gpt-6.2-astra',
   );
   assert.equal(
     resolveEffectiveInferenceModel({}, 'gemini-4-carbon'),
     'gemini-4-carbon',
   );
-  assert.equal(resolveEffectiveInferenceModel({}, null), 'gpt-6-astra');
+  assert.equal(resolveEffectiveInferenceModel({}, null), 'gpt-6.2-astra');
 });
 
 test('reads request speaker options aliases', () => {
@@ -327,7 +327,7 @@ test('request TTS model suppresses custom text-to-speech adapter only', () => {
   );
 });
 
-for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
+for (const model of ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
   test(`${model} supports both effort levels at request ingestion`, () => {
     for (const effort of ['high', 'xhigh']) {
       assert.deepEqual(resolveEffectiveInferenceSettings({ inference_model: model, effort }), {

@@ -394,7 +394,7 @@ Use simpler synonyms or phrasing to preserve the prompt’s intent and style. En
 
 export async function sendAssistantMessageRequest(
   messageList,
-  inferenceModel = 'gpt-6-astra',
+  inferenceModel = 'gpt-6.2-astra',
   inferenceAuthorization,
 ) {
   return sendInferenceMessageRequest(messageList, inferenceModel, inferenceAuthorization);

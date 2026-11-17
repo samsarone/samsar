@@ -129,7 +129,7 @@ test('Qwen OpenRouter applies Qwen 3.8 Max to text and vision with bounded setti
     messages: [{ role: 'user', content: 'hello' }],
   });
   await createOpenRouterChatCompletion({
-    model: 'gpt-6-astra',
+    model: 'gpt-6.2-astra',
     messages: [{ role: 'user', content: 'hello' }],
     reasoning_effort: 'xhigh',
   });

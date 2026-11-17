@@ -34,7 +34,7 @@ test('inference settings resolve model and authorization independently by preced
       selectedInferenceModelAuthorization: 'native',
     },
     user: {
-      selectedInferenceModel: 'gpt-6-astra',
+      selectedInferenceModel: 'gpt-6.2-astra',
       selectedInferenceModelAuthorization: 'native',
     },
   }), {

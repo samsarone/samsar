@@ -1,4 +1,5 @@
 import { normalizeGPTImageRequestModelKey } from '../../consts/GPTImageModelKeys.js';
+import { assertKlingImageAppPayload } from '../../consts/KlingImageModel.js';
 import VideoSession from "../../schema/VideoSession.js";
 import { beginHostedAgentBilling, settleHostedAgentBilling } from '../HostedAgentBilling.js';
 import ExpressGenerationBuilderRequest from '../../schema/ExpressGenerationBuilderRequest.js';
@@ -327,6 +328,8 @@ async function getOrCreateSessionId(userId, payload, operations = {}) {
 
 export async function requestCreateMovie(userId, payload, webhookUrl) {
 
+  assertKlingImageAppPayload(payload);
+
   await getDBConnectionString();
 
   const sessionId = await createNewBlankQuickSession(userId);
@@ -354,6 +357,8 @@ export async function requestCreateMovie(userId, payload, webhookUrl) {
 
 
 export async function requestCreateNarrative(userId, payload, webhookUrl) {
+
+  assertKlingImageAppPayload(payload);
   
   await getDBConnectionString();
 
@@ -457,6 +462,8 @@ async function requestCreateVideoInternal(userId, payload = {}, webhookUrl, {
   preparedNarrativeArtifacts = null,
 } = {}) {
 
+  assertKlingImageAppPayload(payload);
+
   payload = applyDockerSubtitleAvailability({ ...payload,
     ...(payload.image_model !== undefined ? { image_model: normalizeGPTImageRequestModelKey(payload.image_model) } : {}),
     ...(payload.imageModel !== undefined ? { imageModel: normalizeGPTImageRequestModelKey(payload.imageModel) } : {}),
@@ -557,6 +564,7 @@ async function requestCreateVideoInternal(userId, payload = {}, webhookUrl, {
     defaultImageModel: payload.image_model || payload.imageModel || 'GPTIMAGEONE',
     defaultVideoModel: payload.video_model || payload.videoModel || 'RUNWAYML',
   });
+  assertKlingImageAppPayload(customModelOverrides.payload);
   const samsarExternalProviderStages = buildDockerSamsarExternalProviderStages({
     routeType: 'text_to_video',
     userData: textToVideoUserData,
@@ -997,6 +1005,7 @@ export async function requestCreateGroundedVideo(userId, payload, webhookUrl) {
 
 
 export async function requestCreateVideoFromImageListAndMetadata(userId, payload = {}, webhookUrl) {
+  assertKlingImageAppPayload(payload);
   if (!userId) {
     throw new Error('userId is required.');
   }

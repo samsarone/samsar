@@ -135,6 +135,7 @@ export const DOCKER_FAL_IMAGE_GENERATION_MODELS = Object.freeze([
   'HIDREAMI1',
   'FLITE',
   'SEEDREAM',
+  'KLINGIMAGE4',
   'HUNYUAN',
 ]);
 

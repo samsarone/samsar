@@ -3,6 +3,7 @@ import { Types } from 'mongoose';
 import { getDBConnectionString } from '../DBString.js';
 import VideoSession from '../../schema/VideoSession.js';
 import { settleHostedAgentBilling, controlHostedAgentBilling } from '../HostedAgentBilling.js';
+import { buildExpressImageRecovery } from './ExpressImageRecovery.js';
 
 const CANCELLED_STATUS = 'CANCELLED';
 const PAUSED_STATUS = 'PAUSED';
@@ -150,7 +151,9 @@ async function getOwnedVideoSessionForRenderControl(userId, payload = {}, depend
   }).select(
     '_id isExpressGeneration expressGenerationPending expressGenerationPaused ' +
     'expressGenerationStatus expressGenerationCancelled expressGenerationFailed ' +
-    'videoGenerationPending videoLink remoteURL hostedAgentBilling postProcessingBilling',
+    'videoGenerationPending videoLink remoteURL hostedAgentBilling postProcessingBilling ' +
+    'layers userId aspectRatio expressGenerationImageModel imageGenerationModel expressGenerationImageStyle imageStyle ' +
+    'expressGenerationInferenceModel inferenceModel customAdapterFallbacks movieResourceList expressImageRecovery',
   );
 
   if (!videoSession) {
@@ -262,7 +265,8 @@ export async function resumeVideoSessionRender(userId, payload = {}, dependencie
     throw error;
   }
 
-  if (videoSession.expressGenerationFailed) {
+  const imageRecovery = buildExpressImageRecovery(videoSession);
+  if (videoSession.expressGenerationFailed && !imageRecovery) {
     const error = new Error('Cannot resume a failed render.');
     error.status = 409;
     throw error;
@@ -284,6 +288,10 @@ export async function resumeVideoSessionRender(userId, payload = {}, dependencie
   const resumedExpressGenerationStatus = buildResumedExpressGenerationStatus(
     videoSession.expressGenerationStatus,
   );
+  if (imageRecovery) {
+    resumedExpressGenerationStatus.status = PENDING_STATUS;
+    resumedExpressGenerationStatus.image_generation = PENDING_STATUS;
+  }
   const now = new Date();
 
   const controlFields = {
@@ -293,11 +301,15 @@ export async function resumeVideoSessionRender(userId, payload = {}, dependencie
     expressGenerationResumedAt: now,
     expressGenerationStatus: resumedExpressGenerationStatus,
     expressGenerationCancelled: false,
+    ...(imageRecovery ? { expressGenerationFailed: false, expressGenerationError: null,
+      generationError: null, expressImageRecovery: imageRecovery.recovery, ...imageRecovery.layerFields } : {}),
   };
   if (!videoSession.postProcessingBilling && videoSession.hostedAgentBilling?.version === 2) {
     await (dependencies.control || controlHostedAgentBilling)(sessionId, 'ACTIVE', controlFields);
   } else {
-    await VideoSession.updateOne({ _id: sessionId, userId: userIdString }, { $set: controlFields });
+    const layerGuard = Object.fromEntries((imageRecovery?.recovery.layerOrder || []).map((id, index) => [`layers.${index}._id`, id]));
+    const saved = await VideoSession.updateOne({ _id: sessionId, userId: userIdString, ...layerGuard }, { $set: controlFields });
+    if (saved?.matchedCount === 0) throw Object.assign(new Error('Image recovery changed before resume; reload the session and retry.'), { status: 409 });
     await (dependencies.settle || settleHostedAgentBilling)(sessionId, 'ACTIVE');
   }
 

@@ -145,7 +145,7 @@ export function localizationInteractionTests() {
         useUiLanguage();
         return <><LanguageSelect /><ModelAdapterSelect
           aria-label={tx('Assistant model')} hostedControl="native"
-          options={ASSISTANT_MODEL_TYPES} value={ASSISTANT_MODEL_TYPES.find((option) => option.value === 'gpt-6-astra')}
+          options={ASSISTANT_MODEL_TYPES} value={ASSISTANT_MODEL_TYPES.find((option) => option.value === 'gpt-6.2-astra')}
           onChange={onChange}
         /></>;
       }
@@ -153,8 +153,8 @@ export function localizationInteractionTests() {
       for (const language of ['th', 'ja', 'en']) {
         changeLanguage(language);
         const picker = screen.getByRole('combobox', { name: tx('Assistant model') });
-        expect(picker.value).toBe('gpt-6-astra');
-        expect(picker.selectedOptions[0].textContent).toBe(tx('GPT 6 Astra High'));
+        expect(picker.value).toBe('gpt-6.2-astra');
+        expect(picker.selectedOptions[0].textContent).toBe(tx('GPT 6.2 Astra High'));
       }
       expect(onChange).not.toHaveBeenCalled();
     });

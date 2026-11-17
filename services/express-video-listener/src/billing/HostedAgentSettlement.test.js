@@ -89,6 +89,97 @@ function assertBalance(h, expectedNet) {
   assert.equal(h.session.hostedAgentBilling.netFunded, expectedNet);
 }
 
+function failedImageRecoveryFields(h) {
+  return { expressGenerationFailed: false, expressGenerationError: null,
+    expressGenerationPending: true, videoGenerationPending: true,
+    expressGenerationStatus: { ...h.session.expressGenerationStatus, status: 'PENDING', image_generation: 'PENDING' },
+    expressImageRecovery: { version: 1, id: 'image-repair', sessionId: 'session', stage: 'image_generation',
+      status: 'PENDING', failedBillingRevision: h.session.hostedAgentBilling.revision,
+      controlRevision: Number(h.session.hostedAgentBilling.controlRevision || 0) + 1, jobs: [] } };
+}
+
+test('explicit failed-image resume funds only the remaining allocation and preserves earned charges', async () => {
+  const h = harness(), q = quote(); await h.engine.begin('session', q); partial(h.session);
+  h.session.expressGenerationFailed = true;
+  h.session.expressGenerationStatus.image_generation = 'FAILED';
+  await h.engine.transition('session', 'FAILED');
+  const earned = h.session.hostedAgentBilling.netFunded;
+  assert.ok(earned > 0 && earned < q.credits);
+  const accepted = structuredClone(h.session.layers[0]);
+  await h.engine.control('session', 'ACTIVE', failedImageRecoveryFields(h));
+  assertBalance(h, q.credits);
+  assert.equal(h.session.hostedAgentBilling.state, 'ACTIVE');
+  assert.equal(h.session.expressGenerationFailed, false);
+  assert.equal(h.session.expressGenerationPending, true);
+  assert.deepEqual(h.session.layers[0], accepted);
+  const ledgerSize = h.ledger.size;
+  await h.engine.control('session', 'ACTIVE', failedImageRecoveryFields(h));
+  assert.equal(h.ledger.size, ledgerSize, 'repeated resume cannot debit a second time');
+  await h.engine.transition('session', 'FAILED');
+  assertBalance(h, earned);
+});
+
+test('failed-image recovery cannot reopen cancellation, completion or a different failed stage', async () => {
+  for (const outcome of ['CANCELLED', 'COMPLETED', 'FAILED']) {
+    const h = harness(); await h.engine.begin('session', quote()); partial(h.session);
+    h.session.expressGenerationStatus.image_generation = 'COMPLETED';
+    await h.engine.transition('session', outcome);
+    const before = h.owner.generationCredits;
+    await assert.rejects(h.engine.control('session', 'ACTIVE', failedImageRecoveryFields(h)));
+    assert.equal(h.owner.generationCredits, before);
+  }
+});
+
+test('failed-image funding rejection leaves work stopped and a retry uses the same recovery', async () => {
+  const h = harness(); await h.engine.begin('session', quote()); partial(h.session);
+  h.session.expressGenerationFailed = true; h.session.expressGenerationStatus.image_generation = 'FAILED';
+  await h.engine.transition('session', 'FAILED');
+  const before = h.owner.generationCredits;
+  h.faults.beforeDebit = 1;
+  await assert.rejects(h.engine.control('session', 'ACTIVE', failedImageRecoveryFields(h)), { code: 'API_KEY_USAGE_LIMIT_EXCEEDED' });
+  assert.equal(h.session.expressGenerationPending, false);
+  assert.equal(h.session.expressGenerationPaused, true);
+  assert.equal(h.owner.generationCredits, before);
+  await h.engine.control('session', 'ACTIVE', failedImageRecoveryFields(h));
+  assert.equal(h.session.expressGenerationPending, true);
+  assert.equal(h.session.expressImageRecovery.id, 'image-repair');
+});
+
+test('stale image-resume calls cannot replace the plan or reset newly completed image layers', async () => {
+  const h = harness(); await h.engine.begin('session', quote()); partial(h.session);
+  h.session.expressGenerationFailed = true; h.session.expressGenerationStatus.image_generation = 'FAILED';
+  await h.engine.transition('session', 'FAILED');
+  const fields = failedImageRecoveryFields(h);
+  fields.expressImageRecovery.layerOrder = ['a', 'b'];
+  fields['layers.1.imageSession.generationStatus'] = 'PENDING';
+  h.hooks.beforeDebit = async () => { h.session.layers[1].imageSession = layer('b', 30, true).imageSession; };
+  await h.engine.control('session', 'ACTIVE', fields);
+  assert.equal(h.session.layers[1].imageSession.generationStatus, 'COMPLETED', 'activation must not replay index writes');
+  h.session.expressImageRecovery.status = 'QUEUED';
+  const ledgerSize = h.ledger.size;
+  await h.engine.control('session', 'ACTIVE', fields);
+  assert.equal(h.session.layers[1].imageSession.generationStatus, 'COMPLETED');
+  assert.equal(h.session.expressImageRecovery.status, 'QUEUED');
+  assert.equal(h.ledger.size, ledgerSize);
+  const stale = { ...fields, expressImageRecovery: { ...fields.expressImageRecovery, id: 'competing-repair' } };
+  await assert.rejects(h.engine.control('session', 'ACTIVE', stale), { code: 'AGENT_CONTROL_SUPERSEDED' });
+  assert.equal(h.session.expressImageRecovery.id, 'image-repair');
+});
+
+test('moving a layer after the recovery snapshot rejects old index writes before funding', async () => {
+  const h = harness(); await h.engine.begin('session', quote()); partial(h.session);
+  h.session.expressGenerationFailed = true; h.session.expressGenerationStatus.image_generation = 'FAILED';
+  await h.engine.transition('session', 'FAILED');
+  const fields = failedImageRecoveryFields(h);
+  fields.expressImageRecovery.layerOrder = ['a', 'b'];
+  fields['layers.1.imageSession.generationStatus'] = 'PENDING';
+  h.session.layers.reverse();
+  const before = h.owner.generationCredits;
+  await assert.rejects(h.engine.control('session', 'ACTIVE', fields), { code: 'AGENT_CONTROL_SUPERSEDED' });
+  assert.equal(h.owner.generationCredits, before);
+  assert.equal(h.session.expressGenerationFailed, true);
+});
+
 for (const model of Object.keys(models)) {
   for (const sourceState of ['ACTIVE', 'PAUSED', 'COMPLETED']) {
     test(`${model}: a ${sourceState} source quota cannot fund or refund a copied session`, async () => {

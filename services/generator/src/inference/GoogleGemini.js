@@ -6,6 +6,7 @@ import {
   getProviderModelForInferenceModel,
 } from './InferenceModels.js';
 import { resolveLocalMediaReferencePath } from '../utils/MediaReferenceUtils.js';
+import { buildGoogleGeminiDeveloperUrl, resolveGoogleGeminiTransport } from './GoogleGeminiTransport.js';
 
 const DEFAULT_GEMINI_LOCATION = 'global';
 const DEFAULT_IMAGE_MIME_TYPE = 'image/png';
@@ -218,12 +219,13 @@ function buildGenerationConfig(model = '') {
 }
 
 export async function createGoogleGeminiChatCompletion(messages, inferenceModel) {
-  const model = resolveGeminiModel(inferenceModel);
+  const transport = resolveGoogleGeminiTransport(resolveGeminiModel(inferenceModel));
+  const { model } = transport;
   const location = resolveGeminiLocation();
-  const config = getGoogleCloudConfig();
-  const projectId = normalizeString(config.projectId);
+  const config = transport.kind === 'developer' ? null : getGoogleCloudConfig();
+  const projectId = normalizeString(config?.projectId);
 
-  if (!projectId) {
+  if (transport.kind === 'vertex' && !projectId) {
     throw new Error('Google Gemini inference requires GOOGLE_CLOUD_PROJECT or GOOGLE_PROJECT_ID.');
   }
 
@@ -235,12 +237,16 @@ export async function createGoogleGeminiChatCompletion(messages, inferenceModel)
     throw new Error('Google Gemini inference requires at least one user message.');
   }
 
-  const token = await getGoogleAccessToken(config);
+  const token = transport.kind === 'developer' ? null : await getGoogleAccessToken(config);
   const generationConfig = buildGenerationConfig(model);
-  const response = await fetch(buildVertexGenerateContentUrl({ projectId, location, model }), {
+  const response = await fetch(transport.kind === 'developer'
+    ? buildGoogleGeminiDeveloperUrl({ model })
+    : buildVertexGenerateContentUrl({ projectId, location, model }), {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${token}`,
+      ...(transport.kind === 'developer'
+        ? { 'x-goog-api-key': transport.apiKey }
+        : { Authorization: `Bearer ${token}` }),
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -258,6 +264,7 @@ export async function createGoogleGeminiChatCompletion(messages, inferenceModel)
 
   return {
     model,
+    ...(transport.kind === 'developer' ? { samsarBilling: { adapter: 'google', region: 'global', api: 'developer' } } : {}),
     choices: [
       {
         index: 0,

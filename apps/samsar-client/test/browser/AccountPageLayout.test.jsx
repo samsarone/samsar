@@ -9,8 +9,8 @@ const fixture = vi.hoisted(() => ({
   pathname: '/account/usage',
   standalone: false,
   user: {
-    _id: 'owner', username: 'Usage test', selectedInferenceModel: 'gpt-6-astra',
-    selectedAssistantModel: 'gpt-6-astra', selectedInferenceEffort: 'high',
+    _id: 'owner', username: 'Usage test', selectedInferenceModel: 'gpt-6.2-astra',
+    selectedAssistantModel: 'gpt-6.2-astra', selectedInferenceEffort: 'high',
   },
 }));
 

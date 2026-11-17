@@ -316,6 +316,7 @@ const videoSessionSchema = new Schema({
   expressGenerationPaused: { type: Boolean, default: false },
   expressGenerationPausedAt: { type: Date, default: null },
   expressGenerationResumedAt: { type: Date, default: null },
+  expressImageRecovery: { type: Schema.Types.Mixed, default: null },
   expressGenerationCancelled: { type: Boolean, default: false },
   expressGenerationStatus: {
     type: Object,

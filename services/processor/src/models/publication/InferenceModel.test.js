@@ -14,7 +14,7 @@ test('prefers the inference model persisted for express generation', () => {
 
   assert.equal(getStoredSessionInferenceModel(sessionData), 'QWEN3.8');
   assert.equal(
-    resolvePublicationMetadataInferenceModel(sessionData, 'gpt-6-astra'),
+    resolvePublicationMetadataInferenceModel(sessionData, 'gpt-6.2-astra'),
     'QWEN3.8',
   );
 });
@@ -37,5 +37,5 @@ test('falls back to the user inference model for older sessions', () => {
     resolvePublicationMetadataInferenceModel({}, 'gemini-4-carbon'),
     'gemini-4-carbon',
   );
-  assert.equal(resolvePublicationMetadataInferenceModel({}), 'gpt-6-astra');
+  assert.equal(resolvePublicationMetadataInferenceModel({}), 'gpt-6.2-astra');
 });

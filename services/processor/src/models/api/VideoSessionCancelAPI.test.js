@@ -46,6 +46,24 @@ test('failed funding never enables work', async t => {
   await assert.rejects(resumeVideoSessionRender('owner', { session_id: id }, h.dependencies), { code: 'INSUFFICIENT_CREDITS' });
   assert.equal(h.calls.length, 0);
 });
+test('normal resume accepts failed image stage and preserves completed stages while scheduling durable recovery', async t => {
+  const h = harness(t, { userId: 'owner', expressGenerationFailed: true,
+    expressGenerationStatus: { status: 'FAILED', prompt_generation: 'COMPLETED', image_generation: 'FAILED',
+      speech_generation: 'COMPLETED', music_generation: 'COMPLETED' },
+    layers: [{ _id: 'done', imageSession: { generationStatus: 'COMPLETED', activeGeneratedImage: 'accepted.png' } },
+      { _id: 'failed', originalImageGenerationPrompt: 'Canonical scene', prompt: 'Modified retry', imageSession: { generationStatus: 'FAILED' } }],
+  });
+  const result = await resumeVideoSessionRender('owner', { session_id: id }, h.dependencies);
+  assert.equal(result.resumed, true);
+  const fields = h.calls[0][2];
+  assert.equal(fields.expressGenerationFailed, false);
+  assert.equal(fields.expressGenerationStatus.image_generation, 'PENDING');
+  assert.equal(fields.expressGenerationStatus.speech_generation, 'COMPLETED');
+  assert.equal(fields.expressGenerationStatus.music_generation, 'COMPLETED');
+  assert.deepEqual(fields.expressImageRecovery.jobs.map(j => j.layerId), ['failed']);
+  assert.equal(fields.expressImageRecovery.jobs[0].prompt, 'Canonical scene');
+  assert.equal(fields['layers.0.imageSession.generationStatus'], undefined);
+});
 test('legacy pause still uses its existing state and settlement path', async t => {
   const h = harness(t, { hostedAgentBilling: undefined });
   await pauseVideoSessionRender('owner', { session_id: id }, h.dependencies);

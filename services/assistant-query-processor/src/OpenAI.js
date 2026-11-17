@@ -541,6 +541,7 @@ export async function sendAssistantOpenAICompletionRequest(
       const sourcePayload = {
         messages: normalizeMessagesForChatCompletions(messageList),
         model,
+        reasoning_effort: getGPT56SolReasoningEffort(inferenceModel, reasoningEffort),
       };
       const response = await runExternalInferenceWithRetry(
         async ({ signal }) => {

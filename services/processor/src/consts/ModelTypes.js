@@ -1,3 +1,5 @@
+import { KLING_IMAGE_V4_APP_ASPECT_RATIOS, KLING_IMAGE_V4_APP_RESOLUTION } from './KlingImageModel.js';
+
 export const FLITE_IMAGE_STYLES = [
   'standard',
   'texture',
@@ -107,6 +109,7 @@ export const CURRENT_EDITOR_VIEW = {
 
 
 export const IMAGE_GENERAITON_MODEL_TYPES = [
+
 
   {
     name: 'GPTImage 2.6',
@@ -235,7 +238,16 @@ export const IMAGE_GENERAITON_MODEL_TYPES = [
     isExpressModel: true,
     isBranchedImageModel: false,
     supportedAspectRatios: ['1:1', '16:9', '9:16'],
-  }
+  },
+  {
+    name: 'Kling Image 4',
+    key: 'KLINGIMAGE4',
+    isExpressModel: true,
+    isBranchedImageModel: true,
+    supportedAspectRatios: [...KLING_IMAGE_V4_APP_ASPECT_RATIOS],
+    resolutions: [KLING_IMAGE_V4_APP_RESOLUTION],
+  },
+
 
 
 ];
@@ -636,8 +648,8 @@ export const ASSISTANT_MODEL_TYPES = [
   { label: 'Claude Fable 5.2', value: 'claude-fable-5.2' },
   { label: 'GPT 6.1 Sol', value: 'gpt-6.1-sol' },
   {
-    label: 'GPT 6 Astra',
-    value: 'gpt-6-astra',
+    label: 'GPT 6.2 Astra',
+    value: 'gpt-6.2-astra',
   },
   {
     label: 'Gemini 4 Carbon High',
@@ -659,8 +671,8 @@ export const INFERENCE_MODEL_TYPES = [
   { label: 'Claude Fable 5.2', value: 'claude-fable-5.2', isBranchedInferenceModel: true },
   { label: 'GPT 6.1 Sol', value: 'gpt-6.1-sol', isBranchedInferenceModel: true },
   {
-    label: 'GPT 6 Astra',
-    value: 'gpt-6-astra',
+    label: 'GPT 6.2 Astra',
+    value: 'gpt-6.2-astra',
     isBranchedInferenceModel: true,
   },
   {

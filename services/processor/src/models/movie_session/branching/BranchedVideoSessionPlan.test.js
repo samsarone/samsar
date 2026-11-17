@@ -47,7 +47,7 @@ async function createTree(sceneCount, numLevels) {
     narrativeJson: {},
     prompt: 'Create a test branching story.',
     numLevels,
-    inferenceModel: 'gpt-6-astra',
+    inferenceModel: 'gpt-6.2-astra',
     generateDivergencePaths: async ({ parentMovieResourceList }) => {
       const marker = parentMovieResourceList.scenes.at(-1).visual;
       return [

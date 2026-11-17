@@ -2,10 +2,6 @@ import { accessSync, constants as fsConstants } from "node:fs";
 
 import OpenAI from "openai";
 
-import {
-  isGeminiInferenceModel,
-  isQwenInferenceModel,
-} from "../../consts/InferenceModels.js";
 import { resolveProviderMediaPayload } from "../ai_utils/ProviderMediaPayload.js";
 import { createDeployedSamsarClient } from "../api/DeployedSamsarClient.js";
 import { createGoogleModerationForNarrative } from "./GoogleModeration.js";
@@ -19,6 +15,7 @@ export const MODERATION_PROVIDERS = Object.freeze({
 });
 
 const DEFAULT_OPENAI_MODERATION_MODEL = "omni-moderation-latest";
+const OPENAI_MODERATION_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_MODERATION_TIMEOUT_MS = 15_000;
 const MAX_MODERATION_TIMEOUT_MS = 20_000;
 const DEFAULT_MODERATION_MAX_RETRIES = 3;
@@ -180,14 +177,6 @@ function parseProviderList(value) {
     .filter(Boolean);
 }
 
-function getExplicitModerationProvider(env = process.env) {
-  return normalizeProviderName(
-    env.SAMSAR_MODERATION_PROVIDER ||
-    env.MODERATION_PROVIDER ||
-    env.CONTENT_MODERATION_PROVIDER,
-  );
-}
-
 function getConfiguredDeploymentProviders({ env = process.env, availableModelConfig = null } = {}) {
   const envProviders = parseProviderList(
     env.SAMSAR_DEPLOYMENT_PROVIDERS ||
@@ -205,10 +194,6 @@ function getConfiguredDeploymentProviders({ env = process.env, availableModelCon
         .filter(Boolean),
     ),
   ];
-}
-
-function isDockerRuntime(env = process.env) {
-  return isStandaloneEdition(env);
 }
 
 function tryParseGoogleCredentials(env = process.env) {
@@ -301,97 +286,25 @@ export function hasSamsarModerationCredential(env = process.env) {
   );
 }
 
-function getAvailableDockerModerationProviders(env = process.env) {
-  return new Set([
-    ...(hasOpenAIModerationCredential(env) ? [MODERATION_PROVIDERS.OPENAI] : []),
-    ...(hasGoogleModerationCredential(env) ? [MODERATION_PROVIDERS.GOOGLE] : []),
-    ...(hasSamsarModerationCredential(env) ? [MODERATION_PROVIDERS.SAMSAR] : []),
-  ]);
-}
-
 export function isGoogleOnlyDeploymentProviderConfig({ env = process.env, availableModelConfig = null } = {}) {
   const providers = getConfiguredDeploymentProviders({ env, availableModelConfig });
   return providers.length === 1 && providers[0] === MODERATION_PROVIDERS.GOOGLE;
 }
 
-function isTextToVideoModerationRoute(routeType) {
-  const normalized = normalizeString(routeType).toLowerCase().replace(/[\s-]+/g, "_");
-  return normalized === "text_to_video" || normalized === "t2v" || normalized === "vidgpt";
-}
-
-export function shouldUseGoogleModerationForInferenceContext({
-  inferenceModel = null,
-  routeType = null,
-} = {}) {
-  return isTextToVideoModerationRoute(routeType) && isGeminiInferenceModel(inferenceModel);
+export function shouldUseGoogleModerationForInferenceContext() {
+  // Retain the legacy predicate for callers without selecting Google moderation.
+  return false;
 }
 
 export function resolveModerationProvider({
   env = process.env,
-  availableModelConfig = undefined,
-  inferenceModel = null,
-  routeType = null,
 } = {}) {
-  const explicitProvider = getExplicitModerationProvider(env);
-  const useGoogleForInferenceContext = shouldUseGoogleModerationForInferenceContext({
-    inferenceModel,
-    routeType,
-  });
-  const useQwenInference = isQwenInferenceModel(inferenceModel);
-
-  if (explicitProvider === MODERATION_PROVIDERS.DISABLED) {
+  // Moderation is independent of the inference model and legacy provider
+  // overrides. A sandbox needs its own OpenAI credential; other provider keys
+  // must not trigger Google or hosted moderation calls.
+  if (isStandaloneEdition(env) && !hasOpenAIModerationCredential(env)) {
     return MODERATION_PROVIDERS.DISABLED;
   }
-
-  if (isDockerRuntime(env)) {
-    const availableProviders = getAvailableDockerModerationProviders(env);
-
-    // OpenRouter and Alibaba credentials provide Qwen inference, not a compatible
-    // moderation endpoint. A standalone Qwen render therefore uses a separately
-    // configured OpenAI or Samsar-js moderation credential, or skips moderation.
-    if (useQwenInference) {
-      if (availableProviders.has(MODERATION_PROVIDERS.OPENAI)) {
-        return MODERATION_PROVIDERS.OPENAI;
-      }
-      if (availableProviders.has(MODERATION_PROVIDERS.SAMSAR)) {
-        return MODERATION_PROVIDERS.SAMSAR;
-      }
-      return MODERATION_PROVIDERS.DISABLED;
-    }
-
-    if (explicitProvider && availableProviders.has(explicitProvider)) {
-      return explicitProvider;
-    }
-    if (useGoogleForInferenceContext && availableProviders.has(MODERATION_PROVIDERS.GOOGLE)) {
-      return MODERATION_PROVIDERS.GOOGLE;
-    }
-    return [
-      MODERATION_PROVIDERS.OPENAI,
-      MODERATION_PROVIDERS.GOOGLE,
-      MODERATION_PROVIDERS.SAMSAR,
-    ].find((provider) => availableProviders.has(provider)) || MODERATION_PROVIDERS.DISABLED;
-  }
-
-  // The Samsar production deployment always owns an OpenAI moderation credential.
-  // Qwen/OpenRouter is only the inference route and must not alter moderation.
-  if (useQwenInference) {
-    return MODERATION_PROVIDERS.OPENAI;
-  }
-
-  if (explicitProvider === MODERATION_PROVIDERS.GOOGLE) {
-    return useGoogleForInferenceContext
-      ? MODERATION_PROVIDERS.GOOGLE
-      : MODERATION_PROVIDERS.OPENAI;
-  }
-
-  if (explicitProvider) {
-    return explicitProvider;
-  }
-
-  if (useGoogleForInferenceContext) {
-    return MODERATION_PROVIDERS.GOOGLE;
-  }
-
   return MODERATION_PROVIDERS.OPENAI;
 }
 
@@ -773,6 +686,7 @@ function requireModerationResponse(moderation) {
 function createOpenAIClient(apiKey) {
   return new OpenAI({
     apiKey,
+    baseURL: OPENAI_MODERATION_BASE_URL,
     maxRetries: 0,
     timeout: DEFAULT_MODERATION_TIMEOUT_MS,
   });

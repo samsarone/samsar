@@ -27,7 +27,7 @@ import {
 } from './dockerModelAvailability.js';
 
 const INFERENCE_MODEL_KEYS = Object.freeze([
-  'gpt-6-astra',
+  'gpt-6.2-astra',
   'gpt-6.1-sol',
   'claude-opus-5.5',
   'claude-fable-5.2',
@@ -112,7 +112,7 @@ test('Samsar exposes every supported inference model, including Kimi K3', () => 
 
   assert.deepEqual(
     getAvailableInferenceModels(available),
-    ['KIMIK3', 'QWEN3.8', 'claude-fable-5.2', 'claude-opus-5.5', 'gemini-4-carbon', 'gpt-6-astra', 'gpt-6.1-sol'],
+    ['KIMIK3', 'QWEN3.8', 'claude-fable-5.2', 'claude-opus-5.5', 'gemini-4-carbon', 'gpt-6.1-sol', 'gpt-6.2-astra'],
   );
   for (const model of INFERENCE_MODEL_KEYS) {
     assert.equal(available.modelProviders[model], DOCKER_PROVIDER.SAMSAR);
@@ -125,10 +125,10 @@ test('OpenRouter alone exposes GPT, Claude, Gemini, and Qwen inference', () => {
   ]);
   assert.deepEqual(
     getAvailableInferenceModels(available),
-    ['QWEN3.8', 'claude-fable-5.2', 'claude-opus-5.5', 'gemini-4-carbon', 'gpt-6-astra', 'gpt-6.1-sol'],
+    ['QWEN3.8', 'claude-fable-5.2', 'claude-opus-5.5', 'gemini-4-carbon', 'gpt-6.1-sol', 'gpt-6.2-astra'],
   );
   assert.deepEqual(available.actions, ['assistant', 'chat']);
-  for (const model of ['gpt-6-astra', 'claude-opus-5.5', 'gemini-4-carbon', 'QWEN3.8']) {
+  for (const model of ['gpt-6.2-astra', 'claude-opus-5.5', 'gemini-4-carbon', 'QWEN3.8']) {
     assert.equal(available.modelProviders[model], DOCKER_PROVIDER.OPENROUTER);
   }
   assert.equal(available.modelProviders.KIMIK3, undefined);
@@ -152,9 +152,9 @@ test('GMICloud exposes only credential-scoped compatible mappings', () => {
     DOCKER_PROVIDER.GMI_CLOUD,
   ], {
     gmiCloudModelMappings: {
-      'gpt-6-astra': {
-        text: { modelId: 'openai/gpt-6-astra' },
-        vision: { modelId: 'openai/gpt-6-astra' },
+      'gpt-6.2-astra': {
+        text: { modelId: 'openai/gpt-6.2-astra', operation: 'chat.completions' },
+        vision: { modelId: 'openai/gpt-6.2-astra', operation: 'chat.completions' },
       },
       'QWEN3.8': {
         text: { modelId: 'Qwen/Qwen3.8-Max' },
@@ -165,7 +165,7 @@ test('GMICloud exposes only credential-scoped compatible mappings', () => {
   });
 
   assert.deepEqual(available.providers, [DOCKER_PROVIDER.GMI_CLOUD]);
-  assert.deepEqual(available.models, ['QWEN3.8', 'VEO3.1', 'gpt-6-astra']);
+  assert.deepEqual(available.models, ['QWEN3.8', 'VEO3.1', 'gpt-6.2-astra']);
   assert.deepEqual(available.actions, ['assistant', 'chat', 'video']);
   assert.equal(available.modelProviders['QWEN3.8'], DOCKER_PROVIDER.GMI_CLOUD);
   assert.equal(available.modelProviders['gemini-4-carbon'], undefined);
@@ -181,7 +181,7 @@ test('GMICloud inference is not advertised until both text and vision routes are
     DOCKER_PROVIDER.GMI_CLOUD,
   ], {
     gmiCloudModelMappings: {
-      'gpt-6-astra': { text: { modelId: 'openai/gpt-6-astra' } },
+      'gpt-6.2-astra': { text: { modelId: 'openai/gpt-6.2-astra', operation: 'chat.completions' } },
       'gemini-4-carbon': { vision: { modelId: 'google/gemini-4-carbon' } },
       'QWEN3.8': { text: { modelId: 'Qwen/Qwen3.8-Max' } },
     },
@@ -360,7 +360,7 @@ test('Samsar keeps moderation available when OpenRouter owns inference routing',
     DOCKER_PROVIDER.SAMSAR,
   ]);
 
-  assert.equal(available.modelProviders['gpt-6-astra'], DOCKER_PROVIDER.OPENROUTER);
+  assert.equal(available.modelProviders['gpt-6.2-astra'], DOCKER_PROVIDER.OPENROUTER);
   assert.equal(available.actions.includes('moderation'), true);
 });
 
@@ -372,20 +372,20 @@ test('validated GMI inference is preferred over Samsar only for mapped models', 
   ];
   const available = buildDockerAvailableModelsFromEnabledProviders(enabledProviders, {
     gmiCloudModelMappings: {
-      'gpt-6-astra': {
-        text: { modelId: 'openai/gpt-6-astra' },
-        vision: { modelId: 'openai/gpt-6-astra' },
+      'gpt-6.2-astra': {
+        text: { modelId: 'openai/gpt-6.2-astra', operation: 'chat.completions' },
+        vision: { modelId: 'openai/gpt-6.2-astra', operation: 'chat.completions' },
       },
     },
   });
 
-  assert.deepEqual(available.modelProviderPriority['gpt-6-astra'], [
+  assert.deepEqual(available.modelProviderPriority['gpt-6.2-astra'], [
     DOCKER_PROVIDER.OPENAI,
     DOCKER_PROVIDER.GMI_CLOUD,
     DOCKER_PROVIDER.SAMSAR,
     DOCKER_PROVIDER.OPENROUTER,
   ]);
-  assert.equal(available.modelProviders['gpt-6-astra'], DOCKER_PROVIDER.GMI_CLOUD);
+  assert.equal(available.modelProviders['gpt-6.2-astra'], DOCKER_PROVIDER.GMI_CLOUD);
   assert.deepEqual(available.modelProviderPriority['gemini-4-carbon'], [
     DOCKER_PROVIDER.GOOGLE_CLOUD,
     DOCKER_PROVIDER.OPENROUTER,
@@ -642,8 +642,8 @@ test('an inference-only config reports every missing Express media type', () => 
 
 
 test('legacy GPT 5.6 selections retain the Astra setup catalog', () => {
-  for (const model of ['gpt-6-astra', 'gpt-5.6-sol', 'gpt-6-astra']) {
-    assert.deepEqual(getDockerModelProviderPriority(model), getDockerModelProviderPriority('gpt-6-astra'));
+  for (const model of ['gpt-6.2-astra', 'gpt-5.6-sol', 'gpt-6-astra']) {
+    assert.deepEqual(getDockerModelProviderPriority(model), getDockerModelProviderPriority('gpt-6.2-astra'));
     assert.ok(getDockerModelProviderPriority(model).includes('openai'));
   }
 });
@@ -667,8 +667,39 @@ for (const [model, native, aliases] of [
 }
 
 test('all GPT and Claude choices satisfy setup inference readiness', () => {
-  for (const model of ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
+  for (const model of ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
     const status = buildExpressPipelineAvailability({ models: [model], actions: ['chat', 'assistant'] });
     assert.equal(status.requirements.find((item) => item.key === 'inference').isAvailable, true);
   }
+});
+
+
+test('Astra 6.2 requires exact current GenBlaze text and vision operations', () => {
+  for (const [key, modelId, operation, advertised] of [
+    ['gpt-6.2-astra', 'tenant/openai/gpt-6.2-astra', 'chat.completions', true],
+    ['gpt-6-astra', 'openai/gpt-6-astra', 'chat.completions', false],
+    ['gpt-6.2-astra', 'openai/gpt-6-astra', 'chat.completions', false],
+    ['gpt-6.2-astra', 'openai/gpt-6.2-astra', 'responses.create', false],
+    ['gpt-6.2-astra', 'openai/gpt-6.2-astra', undefined, false],
+  ]) {
+    const route = { modelId, operation };
+    const available = buildDockerAvailableModelsFromEnabledProviders(['gmicloud'], {
+      gmiCloudModelMappings: { [key]: { text: route, vision: route } },
+    });
+    assert.equal(available.models.includes('gpt-6.2-astra'), advertised, JSON.stringify(route));
+  }
+});
+
+test('Kling Image 4 is available through fal and Samsar without legacy GMI routes', () => {
+  for (const provider of ['fal', 'samsar']) {
+    const available = buildDockerAvailableModelsFromEnabledProviders([provider]);
+    assert.ok(available.models.includes('KLINGIMAGE4'));
+    assert.equal(available.modelProviders.KLINGIMAGE4, provider);
+    assert.ok(available.actions.includes('image'));
+  }
+  const available = buildDockerAvailableModelsFromEnabledProviders(['gmicloud'], {
+    gmiCloudModelMappings: { KLINGIMAGE4: { image: { modelId: 'kling-v3-image' } } },
+  });
+  assert.equal(available.models.includes('KLINGIMAGE4'), false);
+  assert.equal(getDockerModelDisplayName('KLINGIMAGE4'), 'Kling Image 4');
 });

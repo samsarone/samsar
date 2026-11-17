@@ -7,6 +7,7 @@ import {
   pollSamsarExternalImageEditRequest,
   pollSamsarExternalTextToImageRequest,
   submitSamsarExternalTextToImageRequest,
+  shouldUseSamsarExternalImageProvider,
 } from './SamsarExternalImage.js';
 
 function createModelRecorder() {
@@ -20,6 +21,91 @@ function createModelRecorder() {
     },
   };
 }
+
+test('Kling Image 4 preserves its canonical model and normalized resolution through the Samsar fallback', async () => {
+  for (const [requested, expected] of [['1k', '2K'], ['2K', '2K'], ['4k', '4K'], ['8K', '8K']]) {
+    let observed;
+    await submitSamsarExternalTextToImageRequest({ _id: 'kling-image', model: 'KLINGIMAGE4',
+      prompt: 'A tree', aspectRatio: '3:2', resolution: requested }, {
+      connect: async () => {}, recordProviderUsageLog: async () => {},
+      imageGenerationModel: { async findByIdAndUpdate() {}, async findOneAndUpdate() {} },
+      client: { async requestV2ExternalImage(route, request) {
+        observed = { route, request }; return { data: { request_id: 'hosted-kling' } };
+      } },
+    });
+    assert.equal(observed.route, 'text_to_image');
+    assert.equal(observed.request.input.model, 'KLINGIMAGE4');
+    assert.equal(observed.request.input.aspect_ratio, '3:2');
+    assert.equal(observed.request.input.resolution, expected);
+    assert.equal(observed.request.input.num_images, 1);
+  }
+});
+
+test('Kling app 720p intent survives Samsar fallback submission and accepted-result polling', async () => {
+  for (const aspectRatio of ['16:9', '9:16']) {
+    const updates = [];
+    const payload = { _id: 'kling-app', model: 'KLINGIMAGE4', prompt: 'A tree', resolution: '720p', aspectRatio };
+    const dependencies = {
+      connect: async () => {}, recordProviderUsageLog: async () => {},
+      imageGenerationModel: { async findByIdAndUpdate() {}, async findOneAndUpdate(filter, update) { updates.push(update); } },
+      client: {
+        async requestV2ExternalImage(route, request) {
+          assert.equal(request.input.model, 'KLINGIMAGE4');
+          assert.equal(request.input.resolution, '720p');
+          assert.equal(request.input.aspect_ratio, aspectRatio);
+          return { data: { request_id: 'hosted-720p' } };
+        },
+        async getV2ExternalImageStatus(id) {
+          assert.equal(id, 'hosted-720p');
+          return { data: { status: 'COMPLETED', result_url: 'https://cdn.example/kling-720p.png' } };
+        },
+      },
+      async saveFile(url) { assert.equal(url, 'https://cdn.example/kling-720p.png'); return 'kling-720p.png'; },
+    };
+    await submitSamsarExternalTextToImageRequest(payload, dependencies);
+    assert.equal(updates[0].apiRequestId, 'samsar-external-image:hosted-720p');
+    const result = await pollSamsarExternalTextToImageRequest({ ...payload, apiGenerationStatus: 'PENDING', apiRequestId: updates[0].apiRequestId }, dependencies);
+    assert.deepEqual(result, { image: 'kling-720p.png', resultUrl: 'https://cdn.example/kling-720p.png', resultUrls: ['https://cdn.example/kling-720p.png'],
+      ...(aspectRatio === '16:9' ? { width: 1280, height: 720 } : { width: 720, height: 1280 }), resolution: '720p' });
+  }
+});
+
+test('Samsar wrapper retains existing completion metadata for native Kling jobs and other image models', async () => {
+  for (const payload of [
+    { model: 'KLINGIMAGE4', resolution: '2K', aspectRatio: '16:9' },
+    { model: 'KLINGIMAGE4', resolution: '4K', aspectRatio: '3:2' },
+    { model: 'KLINGIMAGE4', resolution: '8K', aspectRatio: '9:16' },
+    { model: 'SEEDREAM', resolution: '720p', aspectRatio: '16:9' },
+  ]) {
+    const result = await pollSamsarExternalTextToImageRequest({ ...payload, _id: 'native-image',
+      apiRequestId: 'samsar-external-image:accepted-native' }, {
+      connect: async () => {}, imageGenerationModel: { async findOneAndUpdate() {} },
+      client: { async getV2ExternalImageStatus() { return { data: { status: 'COMPLETED', result_url: 'https://cdn.example/native.png' } }; } },
+      saveFile: async () => 'native.png',
+    });
+    assert.deepEqual(result, { image: 'native.png', resultUrl: 'https://cdn.example/native.png', resultUrls: ['https://cdn.example/native.png'] });
+  }
+});
+
+test('Kling Image 4 chooses Samsar when selected and retains hosted request polling affinity', () => {
+  const keys = ['SAMSAR_DEPLOYMENT_EDITION', 'SAMSAR_API_KEY', 'SAMSAR_EXTERNAL_PROVIDERS_ENABLED'];
+  const saved = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  try {
+    process.env.SAMSAR_DEPLOYMENT_EDITION = 'standalone';
+    process.env.SAMSAR_API_KEY = 'test-key';
+    process.env.SAMSAR_EXTERNAL_PROVIDERS_ENABLED = 'true';
+    assert.equal(shouldUseSamsarExternalImageProvider({ model: 'KLINGIMAGE4', adapterProvider: 'samsar' }), true);
+    assert.equal(shouldUseSamsarExternalImageProvider({ model: 'KLINGIMAGE4', adapterProvider: 'fal' }), false);
+    assert.equal(shouldUseSamsarExternalImageProvider({ model: 'KLINGIMAGE4', apiGenerationStatus: 'PENDING',
+      apiRequestId: 'samsar-external-image:accepted-kling', adapterProvider: 'fal' }), true);
+    assert.equal(shouldUseSamsarExternalImageProvider({ model: 'KLINGIMAGE4', apiGenerationStatus: 'PENDING',
+      apiRequestId: 'fal-accepted-kling', adapterProvider: 'samsar' }), false);
+  } finally {
+    for (const key of keys) {
+      if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
+    }
+  }
+});
 
 test('Seedream 5.5 keeps the canonical SEEDREAM key through the Samsar image adapter', async () => {
   let observed;

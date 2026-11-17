@@ -8,6 +8,7 @@ export const EXPRESS_VIDEO_IMAGE_MODEL_KEYS = Object.freeze([
   'SEEDREAM',
   'QWENIMAGE3PRO',
   'WAN2.7PRO',
+  'KLINGIMAGE4',
 ]);
 
 export const STANDALONE_PROVIDER_BILLED_EXPRESS_VIDEO_MODEL_KEYS = Object.freeze([

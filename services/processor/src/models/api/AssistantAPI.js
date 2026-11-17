@@ -7,25 +7,25 @@ import VideoSession from '../../schema/VideoSession.js';
 import ExternalUser from '../../schema/ExternalUser.js';
 import User from '../../schema/User.js';
 import { getDBConnectionString } from '../DBString.js';
-import { getModelForUserInferenceModel } from '../agent/ModelUtils.js';
 import { createCompatibleChatCompletion } from '../ai_utils/OpenAICompat.js';
 import { isClaudeModel } from '../../inference/AnthropicChatAdapter.js';
 import { resolveProviderMediaPayload } from '../ai_utils/ProviderMediaPayload.js';
 import {
+  DEFAULT_USER_INFERENCE_MODEL,
   GPT_56_SOL_REASONING_EFFORT,
   getProviderModelForInferenceModel,
   getReasoningEffortForInferenceModel,
   isGeminiInferenceModel,
   isKimiInferenceModel,
   isQwenInferenceModel,
-  normalizeInferenceModel,
+  normalizeSupportedInferenceModel,
 } from '../../consts/InferenceModels.js';
 import { assistantRequestIdentity, runAssistantRequest } from './AssistantRequestBilling.js';
 import { assistantBillingStore, admitAssistantRequest, chargeAssistantRequest } from './AssistantBillingStore.js';
 import { isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
 import { getCurrentAPIKeyUsageContext } from './RequestAuthContext.js';
 
-const DEFAULT_ASSISTANT_MODEL = 'gpt-6-astra';
+const DEFAULT_ASSISTANT_MODEL = DEFAULT_USER_INFERENCE_MODEL;
 const DEFAULT_ASSISTANT_COMPLETION_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_ASSISTANT_SYSTEM_PROMPT =
   'You are a helpful assistant for Samsar. Respond clearly, accurately, and preserve any multimodal context provided by the user.';
@@ -82,7 +82,7 @@ export async function setAssistantSystemPromptForUser(userId, payload = {}, { ex
     return {
       system_prompt: null,
       model: resolveAssistantModelName(user),
-      selected_assistant_model: normalizeInferenceModel(user.selectedAssistantModel),
+      selected_assistant_model: resolveSelectedAssistantModel(user),
     };
   }
 
@@ -102,7 +102,7 @@ export async function setAssistantSystemPromptForUser(userId, payload = {}, { ex
   return {
     system_prompt: normalizedPrompt,
     model: resolveAssistantModelName(user),
-    selected_assistant_model: normalizeInferenceModel(user.selectedAssistantModel),
+    selected_assistant_model: resolveSelectedAssistantModel(user),
   };
 }
 
@@ -145,7 +145,7 @@ export async function createAssistantCompletion(userId, payload = {}, { external
 
   const Sessions = dependencies.VideoSession || VideoSession;
   const identity = assistantRequestIdentity(userId, `session:${sessionId}:${scopedExternalUser?._id || 'internal'}`, payload, idempotencyKey);
-  const selectedAssistantModel = normalizeInferenceModel(user.selectedAssistantModel);
+  const selectedAssistantModel = resolveSelectedAssistantModel(user);
   const model = resolveAssistantModelName(user);
   const timeoutMs = getAssistantCompletionTimeoutMs(payload);
   return runAssistantRequest({
@@ -208,10 +208,12 @@ function getAssistantSystemPromptForContext({ user, externalUser } = {}) {
   return userPrompt || DEFAULT_ASSISTANT_SYSTEM_PROMPT;
 }
 
+function resolveSelectedAssistantModel(user) {
+  return normalizeSupportedInferenceModel(user?.selectedAssistantModel) || DEFAULT_ASSISTANT_MODEL;
+}
+
 function resolveAssistantModelName(user) {
-  return getProviderModelForInferenceModel(
-    getModelForUserInferenceModel(user?.selectedAssistantModel || DEFAULT_ASSISTANT_MODEL),
-  );
+  return getProviderModelForInferenceModel(resolveSelectedAssistantModel(user));
 }
 
 function normalizeModelAuthorization(value) {

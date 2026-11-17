@@ -37,6 +37,7 @@ export const DOCKER_IMAGE_PROVIDER_PRIORITY_BY_MODEL = Object.freeze({
 });
 
 export const DOCKER_FAL_IMAGE_MODELS = Object.freeze([
+  'KLINGIMAGE4',
   'FLUX1PRO',
   'FLUX1DEV',
   'FLUX1.1PRO',

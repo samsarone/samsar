@@ -5,7 +5,7 @@ import { getDBConnectionString } from '../DBString.js';
 import User from '../../schema/User.js';
 import { sendWelcomeEmail, sendForgotPasswordEmailMailer } from '../Mailer.js';
 import { generateAuthToken } from '../Auth.js';
-import { formatUserClientProfile } from '../User.js';
+import { ensureDefaultTextModelsForUser, formatUserClientProfile } from '../User.js';
 import bcrypt from 'bcrypt';
 import hat from 'hat';
 import dayjs from 'dayjs';
@@ -109,6 +109,8 @@ export async function loginUserByEmail(payload) {
   if (!isPasswordValid) {
     throw new Error('Invalid email or password');
   }
+
+  await ensureDefaultTextModelsForUser(user);
 
   // Generate auth token
   const token = await generateAuthToken(user._id.toString());

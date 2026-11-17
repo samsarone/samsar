@@ -8,8 +8,8 @@ All prices are **credits per one million tokens**. Each row applies to the speci
 
 | Model | Adapter | Context / date period | Input | Cached input | Output |
 | --- | --- | --- | ---: | ---: | ---: |
-| `gpt-6-astra` | OpenAI | ≤ 272k input tokens | 1,200 | 120 | 6,000 |
-| `gpt-6-astra` | OpenAI | > 272k input tokens | 2,400 | 240 | 9,000 |
+| `gpt-6.2-astra` | OpenAI | ≤ 272k input tokens | 960 | 48 | 4,800 |
+| `gpt-6.2-astra` | OpenAI | > 272k input tokens | 1,920 | 96 | 7,200 |
 | `gpt-6.1-sol` | OpenAI | ≤ 272k input tokens | 240 | 12 | 1,200 |
 | `gpt-6.1-sol` | OpenAI | > 272k input tokens | 480 | 24 | 1,800 |
 | `claude-opus-5.5` | Anthropic | Standard | 480 | 24 | 2,400 |
@@ -20,6 +20,8 @@ All prices are **credits per one million tokens**. Each row applies to the speci
 | `gemini-4-carbon` | Google regional | From Dec 1, 2026 | 528 | 26.4 | 2,640 |
 | `QWEN3.8` | Alibaba international | Standard | 240 | 30 | 720 |
 | `kimi-k3` | Moonshot | Standard | 360 | 36 | 1,800 |
+
+New requests use GPT 6.2 Astra; saved GPT 6 Astra and GPT 5.6 Sol selections normalize to it. Historical receipts retain their original model and tariff.
 
 GPT Astra/Sol and Claude Opus/Fable support High and XHigh at the same per-token rates. Charges follow actual token usage. Other adapter routes may have different final prices. Credit receipts report the final charge for a completed request. See the [public pricing reference](https://docs.samsar.one/pricing) for the shared assistant and external-chat rate tables.
 
@@ -48,7 +50,7 @@ Save one request key for each logical submission and reuse it if the response is
 
 ```js
 const payload = {
-  model: 'gpt-6-astra',
+  model: 'gpt-6.2-astra',
   messages: [{ role: 'user', content: 'Write a launch caption.' }],
 };
 const options = { idempotencyKey: 'launch-caption-001' };

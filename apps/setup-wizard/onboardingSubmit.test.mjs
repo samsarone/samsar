@@ -202,7 +202,7 @@ test('GMICloud tooltip shows discovered supported routes and excludes incomplete
       providers: { gmicloud: { ok: true, modelMappings: {
         SEEDREAM: { image: { modelId: 'fixture-seedream' } },
         NANOBANANA2: { image: { modelId: 'gemini-3.1-flash-image' } },
-        'gpt-6-astra': { text: { modelId: 'fixture-text-without-vision' } },
+        'gpt-6.2-astra': { text: { modelId: 'fixture-text-without-vision' } },
         UNKNOWN: { video: { modelId: 'unsupported-model' } },
       } } },
       available: { models: ['NANOBANANA2'], actions: ['image'], providers: ['gmicloud'] },

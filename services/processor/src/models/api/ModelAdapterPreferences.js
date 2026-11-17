@@ -20,7 +20,7 @@ export const MODEL_ADAPTER_STAGE_DEFINITIONS = Object.freeze([
     key: MODEL_ADAPTER_STAGE.INFERENCE,
     label: 'Inference',
     modelKeys: Object.freeze([
-      'gpt-6-astra',
+      'gpt-6.2-astra',
       'claude-opus-5.5',
       'claude-fable-5.2',
       'gpt-6.1-sol',
@@ -39,6 +39,7 @@ export const MODEL_ADAPTER_STAGE_DEFINITIONS = Object.freeze([
       'NANOBANANAPRO',
       'QWENIMAGE3PRO',
       'WAN2.7PRO',
+      'KLINGIMAGE4',
     ]),
   }),
   Object.freeze({
@@ -60,7 +61,7 @@ export const MODEL_ADAPTER_STAGE_DEFINITIONS = Object.freeze([
 ]);
 
 const MODEL_LABELS = Object.freeze({
-  'gpt-6-astra': 'GPT 6 Astra',
+  'gpt-6.2-astra': 'GPT 6.2 Astra',
   'claude-opus-5.5': 'Claude Opus 5.5',
   'claude-fable-5.2': 'Claude Fable 5.2',
   'gpt-6.1-sol': 'GPT 6.1 Sol',
@@ -68,6 +69,7 @@ const MODEL_LABELS = Object.freeze({
   KIMIK3: 'Kimi K3',
   'QWEN3.8': 'Qwen 3.8 Max',
   'GPTIMAGE2.5': 'GPTImage 2.6',
+  KLINGIMAGE4: 'Kling Image 4',
   SEEDREAM: 'Seedream 5.5',
   NANOBANANA2: 'Nano Banana 2',
   NANOBANANAPRO: 'Nano Banana Pro',
@@ -150,7 +152,7 @@ export function normalizeModelAdapterModelKey(value) {
   if (normalizeReasoningModel(value)) return getReasoningModelBase(value);
   const token = normalizeModelToken(normalizeStoredGPTImageModelKey(value));
   if (['GEMINI4', 'GEMINI4CARBON', 'GEMINI4ARGON', 'GOOGLEGEMINI4', 'GOOGLEGEMINI4CARBON', 'GOOGLEGEMINI4ARGON'].includes(token)) return 'gemini-4-carbon';
-  if (['GPT6ASTRA', 'GPT6', 'GPT56SOL', 'GPT56'].includes(token)) return 'gpt-6-astra';
+  if (['GPT6ASTRA', 'GPT6', 'GPT56SOL', 'GPT56'].includes(token)) return 'gpt-6.2-astra';
   if (KIMI_MODEL_TOKENS.has(token)) {
     return 'KIMIK3';
   }

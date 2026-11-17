@@ -129,7 +129,7 @@ test('Samsar stays ahead of OpenRouter for Qwen in Docker', () => {
     SAMSAR_API_KEY: 'samsar-key',
   }, () => {
     assert.equal(resolveConfiguredInferenceProvider('QWEN3.8'), DOCKER_INFERENCE_PROVIDER.SAMSAR);
-    for (const model of ['gemini-4-carbon', 'gpt-6-astra']) {
+    for (const model of ['gemini-4-carbon', 'gpt-6.2-astra']) {
       assert.equal(resolveConfiguredInferenceProvider(model), DOCKER_INFERENCE_PROVIDER.OPENROUTER);
     }
     assert.equal(getOpenRouterModelForInferenceRequest({
@@ -186,7 +186,7 @@ test('standalone inference adapters follow the saved per-model preference order'
   t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
   fs.writeFileSync(preferencePath, JSON.stringify({
     modelProviderPriority: {
-      'gpt-6-astra': ['samsar', 'openrouter', 'openai'],
+      'gpt-6.2-astra': ['samsar', 'openrouter', 'openai'],
     },
   }));
 
@@ -198,7 +198,7 @@ test('standalone inference adapters follow the saved per-model preference order'
     OPENROUTER_API_KEY: 'openrouter-key',
     SAMSAR_API_KEY: 'samsar-key',
   }, () => {
-    assert.deepEqual(getConfiguredInferenceProviders('gpt-6-astra'), [
+    assert.deepEqual(getConfiguredInferenceProviders('gpt-6.2-astra'), [
       DOCKER_INFERENCE_PROVIDER.SAMSAR,
       DOCKER_INFERENCE_PROVIDER.OPENROUTER,
       DOCKER_INFERENCE_PROVIDER.OPENAI,
@@ -212,7 +212,7 @@ test('production inference ignores standalone preference files', (t) => {
   t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
   fs.writeFileSync(preferencePath, JSON.stringify({
     modelProviderPriority: {
-      'gpt-6-astra': ['samsar', 'openrouter', 'openai'],
+      'gpt-6.2-astra': ['samsar', 'openrouter', 'openai'],
       'QWEN3.8': ['alibabaCloud', 'samsar', 'openrouter'],
     },
   }));
@@ -226,7 +226,7 @@ test('production inference ignores standalone preference files', (t) => {
     SAMSAR_API_KEY: 'samsar-key',
     ALIBABA_API_KEY: 'alibaba-key',
   }, () => {
-    assert.deepEqual(getConfiguredInferenceProviders('gpt-6-astra'), [
+    assert.deepEqual(getConfiguredInferenceProviders('gpt-6.2-astra'), [
       DOCKER_INFERENCE_PROVIDER.OPENAI,
       DOCKER_INFERENCE_PROVIDER.OPENROUTER,
       DOCKER_INFERENCE_PROVIDER.SAMSAR,
@@ -243,7 +243,7 @@ test('the existing GPT and Gemini native-credential decisions are unchanged', ()
     SAMSAR_API_KEY: 'samsar-key',
     OPENAI_API_KEY: 'openai-key',
   }, () => {
-    assert.equal(shouldUseSamsarExternalInference({ model: 'gpt-6-astra' }), false);
+    assert.equal(shouldUseSamsarExternalInference({ model: 'gpt-6.2-astra' }), false);
     assert.equal(shouldUseSamsarExternalInference({ model: 'gemini-4-carbon' }), true);
   });
 });
@@ -300,7 +300,7 @@ test('an explicit native authorization falls back to Samsar when its provider ke
       authorization: 'native',
     }), true);
     assert.equal(shouldUseSamsarExternalInference({
-      model: 'gpt-6-astra',
+      model: 'gpt-6.2-astra',
       authorization: 'native',
     }), true);
   });
@@ -371,7 +371,7 @@ test('Qwen OpenRouter applies Qwen 3.8 Max routing with bounded settings', async
     messages: [{ role: 'user', content: 'hello' }],
   });
   await createOpenRouterChatCompletion({
-    model: 'gpt-6-astra',
+    model: 'gpt-6.2-astra',
     messages: [{ role: 'user', content: 'hello' }],
   });
 

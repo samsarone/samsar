@@ -14,7 +14,7 @@ function sse(values) { return new Response(values.map(data => `data: ${JSON.stri
 for (const [name, create, model] of [
   ['Qwen', createAlibabaQwenChatCompletion, 'qwen3.8-max'],
   ['Kimi', createKimiK3ChatCompletion, 'kimi-k3'],
-  ['OpenRouter', createOpenRouterChatCompletion, 'gpt-6-astra'],
+  ['OpenRouter', createOpenRouterChatCompletion, 'gpt-6.2-astra'],
 ]) {
   test(`${name} processor adapter requests usage-bearing streaming without exposing internal callbacks`, async () => {
     const texts = [];
@@ -35,9 +35,9 @@ test('processor OpenAI compatibility layer preserves final Responses usage and R
   const result = await createCompatibleChatCompletion({ post: async (_path, options) => {
     assert.equal(options.body.stream, true);
     return events([{ type: 'response.output_text.delta', delta: 'Hello' }, { type: 'response.completed', response: {
-      id: 'r', model: 'gpt-6-astra', output: [], usage: { input_tokens: 10, output_tokens: 4 },
+      id: 'r', model: 'gpt-6.2-astra', output: [], usage: { input_tokens: 10, output_tokens: 4 },
     } }]);
-  } }, { model: 'gpt-6-astra', messages, bypassSamsarExternalInference: true, onText: text => texts.push(text) });
+  } }, { model: 'gpt-6.2-astra', messages, bypassSamsarExternalInference: true, onText: text => texts.push(text) });
   assert.deepEqual(texts, ['Hello']);
   assert.equal(result.choices[0].message.content, 'Hello');
   assert.equal(result.usage.output_tokens, 4);
@@ -80,7 +80,7 @@ test('an interrupted stream cannot fall through to another billable provider', a
 
 test('hosted Samsar SSE overrides internal polling and keeps the same request key', async () => {
   const texts = [];
-  const result = await createSamsarExternalChatCompletion({ model: 'gpt-6-astra', messages,
+  const result = await createSamsarExternalChatCompletion({ model: 'gpt-6.2-astra', messages,
     authorization: 'deployed', externalPolling: true, assistantBillingRequestId: 'stable-request',
     onText: text => texts.push(text), maxRetries: 0,
   }, { client: {}, fetchImpl: async (url, init) => {

@@ -9,10 +9,12 @@ its timers independently of media-generation polling.
   uncertain submission once with the **same payload and client request ID**.
   Further recovery is exposed through the popup's Retry action. Never create a
   new request ID when retrying a submission whose outcome is unknown.
-- `watch()` starts SSE and an immediate authenticated status read. After an
-  accepted SSE snapshot, recent stream data or heartbeats suppress duplicate REST
-  reads. Polling resumes after 15 seconds without stream activity, with a REST
-  reconciliation at least every 30 seconds even while heartbeats arrive.
+- `watch()` starts SSE and an immediate authenticated status read. REST polling
+  stays active until SSE delivers visible answer text. Changed SSE text suppresses
+  duplicate REST reads for up to 15 seconds; heartbeats, queued snapshots and
+  repeated text keep contact alive without extending that window. Polling resumes
+  when text stops progressing, with a REST reconciliation at least every 30 seconds
+  even while SSE text keeps changing.
   Unsupported streams use REST immediately. REST reads take at most 10 seconds, with one read
   in flight and a one-second delay between reads. SSE connections are released on
   terminal events and bounded to 45 seconds even when a proxy leaves the body

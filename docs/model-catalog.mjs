@@ -53,9 +53,9 @@ export const modalities = [
 ];
 
 const inference = new Map(INFERENCE_MODEL_OPTIONS.filter(row => row.exposeInCatalog !== false).map(row => [row.availabilityModel, row]));
-const native = { 'gpt-6-astra': 'openai', 'gpt-6.1-sol': 'openai', 'claude-opus-5.5': 'anthropic', 'claude-fable-5.2': 'anthropic', 'gemini-4-carbon': 'googleCloud', KIMIK3: 'kimi', 'QWEN3.8': 'alibabaCloud' };
+const native = { 'gpt-6.2-astra': 'openai', 'gpt-6.1-sol': 'openai', 'claude-opus-5.5': 'anthropic', 'claude-fable-5.2': 'anthropic', 'gemini-4-carbon': 'googleCloud', KIMIK3: 'kimi', 'QWEN3.8': 'alibabaCloud' };
 const notes = {
-  'gpt-6-astra': 'Default GPT model. Supports high and xhigh effort. Legacy gpt-5.6-sol choices still normalize to Astra; GPT 6.1 Sol is a separate choice. GenBlaze requires an exact validated mapping.',
+  'gpt-6.2-astra': 'Default GPT model. Supports high and xhigh effort. Legacy gpt-6-astra and gpt-5.6-sol choices normalize to Astra 6.2; GPT 6.1 Sol is a separate choice. GenBlaze requires an exact validated mapping.',
   'gpt-6.1-sol': 'Supports text inference and vision with high or xhigh effort. Native OpenAI, OpenRouter, and Samsar adapters.',
   'claude-opus-5.5': 'Supports text inference and vision with high or xhigh effort. Native Anthropic, OpenRouter, and Samsar adapters.',
   'claude-fable-5.2': 'Supports text inference and vision with high or xhigh effort. Native Anthropic uses claude-fable-5-2; OpenRouter uses anthropic/claude-fable-5.2.',
@@ -65,6 +65,7 @@ const notes = {
   'GPTIMAGE2.5EDIT': 'Stable internal key for GPTImage 2.6 Sunburst editing; requests also accept GPTIMAGE2.6EDIT. Legacy GenBlaze routes are excluded.',
   QWENIMAGE3PRO: 'Standalone native adapter only. Requires Alibaba standard pay-as-you-go credentials; Token Plan credentials do not enable it.',
   SEEDREAM: 'Stable key maps to Seedream 5.5 through fal or Samsar. GMICloud 5.0 mappings are excluded for new requests; accepted historical jobs retain their submitted route.',
+  KLINGIMAGE4: 'Text-to-image through fal or Samsar. App workflows support one 720p image in 16:9 or 9:16; direct image requests support native 2K, 4K and 8K output. No image-edit route.',
   NANOBANANA2: 'Image generation catalog model; not in the current Express image allowlist.',
   NANOBANANA2EDIT: 'Used by image enhancement and branding removal. Multi-output image-set jobs bypass GenBlaze.',
   NANOBANANAPROEDIT: 'Required by VidGenie image-list mode. Multi-output image-set jobs bypass GenBlaze.',
@@ -97,7 +98,7 @@ function modalityFor(key) {
 }
 
 export const models = Object.entries(providerMap).map(([setupKey, adapters]) => {
-  const key = setupKey === 'gpt-5.6-sol' ? 'gpt-6-astra' : setupKey;
+  const key = setupKey === 'gpt-5.6-sol' ? 'gpt-6.2-astra' : setupKey;
   const modality = modalityFor(key);
   const nativeAdapter = native[key];
   // Editorial order is deliberately separate from the runtime priority array.
@@ -105,7 +106,7 @@ export const models = Object.entries(providerMap).map(([setupKey, adapters]) => 
   const option = inference.get(key);
   return {
     key, setupKey, requestKey: option?.value || ({ KIMIK3: 'kimi-k3', OPENAI_TTS: 'OPENAI', GOOGLE_TTS: 'GOOGLE' })[key] || key,
-    label: ({ 'gpt-6-astra': 'GPT 6 Astra', SEEDREAM: 'Seedream 5.5', SEEDANCEI2V: 'Seedance 1.5 I2V', HAPPYHORSEI2V: 'Happy Horse 1.1 I2V', HAILUOPRO: 'Hailuo 02 Pro', KLINGIMGTOVID3PRO: 'Kling 4 I2V (legacy 3 Pro key)', KLINGIMGTOVIDTURBO: 'Kling 4 I2V (legacy Turbo key)' })[key] || mediaLabels.get(key) || getDockerModelDisplayName(setupKey),
+    label: ({ 'gpt-6.2-astra': 'GPT 6.2 Astra', SEEDREAM: 'Seedream 5.5', SEEDANCEI2V: 'Seedance 1.5 I2V', HAPPYHORSEI2V: 'Happy Horse 1.1 I2V', HAILUOPRO: 'Hailuo 02 Pro', KLINGIMGTOVID3PRO: 'Kling 4 I2V (legacy 3 Pro key)', KLINGIMGTOVIDTURBO: 'Kling 4 I2V (legacy Turbo key)' })[key] || mediaLabels.get(key) || getDockerModelDisplayName(setupKey),
     modality, adapters: ordered, runtimePriority: adapters, nativeAdapter: nativeAdapter || null,
     hosted: adapters.includes('samsar') || key === 'ELEVENLABS',
     scope: 'deployment',

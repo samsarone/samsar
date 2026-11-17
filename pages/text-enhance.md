@@ -58,7 +58,7 @@ Response:
 | Step | Behavior |
 | --- | --- |
 | Credit charge | The processor charges the configured chat enhance credit cost before generation. |
-| Inference model | The processor normalizes the selected inference model; current default is `gpt-6-astra`. See the [inference matrix](model-matrix.md#inference) for Claude, Gemini, Kimi, Qwen and reasoning options. |
+| Inference model | The processor normalizes the selected inference model; current default is `gpt-6.2-astra`. See the [inference matrix](model-matrix.md#inference) for Claude, Gemini, Kimi, Qwen and reasoning options. |
 | Provider routing | Standalone uses the selected model's compatible configured adapter order. Hosted `QWEN3.8` always uses OpenRouter; native Alibaba Qwen is Docker-only. |
 | Persistence | Successful and failed API chat sessions are saved with metadata, input, output/error, model, and credit information. |
 | Refunds | If generation fails after credit charge, the route attempts to refund the charged credits. |

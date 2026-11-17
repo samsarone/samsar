@@ -7,6 +7,7 @@ import {
   getExpressVideoPricingDistributionPerSecond,
 } from './pricing/ExpressVideoPricingDistribution.js';
 import { isStandaloneEdition } from '../utils/EnvironmentUtils.js';
+import { KLING_IMAGE_V4_APP_ASPECT_RATIOS, KLING_IMAGE_V4_STUDIO_CREDITS } from './KlingImageModel.js';
 
 const IS_STANDALONE_DEPLOYMENT = isStandaloneEdition();
 const QWEN_IMAGE_3_PRO_CREDITS = IS_STANDALONE_DEPLOYMENT ? 0 : 46;
@@ -124,6 +125,16 @@ export const IMAGE_MODEL_PRICES = [
       { aspectRatio: '16:9', price: 15 },
       { aspectRatio: '9:16', price: 15 },
     ],
+  },
+  {
+    key: 'KLINGIMAGE4',
+    name: 'Kling Image 4',
+    isExpressModel: true,
+    isBranchedImageModel: true,
+    prices: KLING_IMAGE_V4_APP_ASPECT_RATIOS.map((aspectRatio) => ({
+      aspectRatio,
+      price: KLING_IMAGE_V4_STUDIO_CREDITS,
+    })),
   },
 ]
 
@@ -426,14 +437,20 @@ export const TTS_TYPES = [
 
 export const ASSISTANT_MODEL_PRICES = [
   {
-    key: "gpt-6-astra",
-    prices: [
-      {
-        operationType: "words",
-        tokens: 1000,
-        price: 9
-      },
-    ]
+    key: "gpt-6.2-astra",
+    billing: "token_usage",
+    get prices() {
+      return [
+        ['input_tokens', { input_tokens: 1_000, output_tokens: 0 }],
+        ['cached_input_tokens', { input_tokens: 1_000, input_tokens_details: { cached_tokens: 1_000 }, output_tokens: 0 }],
+        ['output_tokens', { input_tokens: 0, output_tokens: 1_000 }],
+      ].map(([operationType, usage]) => ({
+        operationType,
+        tokens: 1_000_000,
+        // Quote Standard rates below the long-context threshold.
+        price: calculateAssistantCreditsFromUsage({ model: 'gpt-6.2-astra', usage }).credits * 1000,
+      }));
+    },
   },
   {
     key: "gemini-4-carbon",

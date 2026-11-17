@@ -14,21 +14,21 @@ const REQUEST_ID = '507f1f77bcf86cd799439013';
 const TRANSACTION_ID = '507f1f77bcf86cd799439014';
 
 const PROVIDER_RECEIPT = Object.freeze({
-  model: 'gpt-6-astra',
+  model: 'gpt-6.2-astra',
   usage: Object.freeze({ input_tokens: 1000, output_tokens: 100 }),
 });
 
 const SAFE_RECEIPT = Object.freeze({
   stage: 'publication_metadata_generation',
   attempt: 1,
-  model: 'gpt-6-astra',
+  model: 'gpt-6.2-astra',
   usage: PROVIDER_RECEIPT.usage,
 });
 
 const BILLING_SNAPSHOT = Object.freeze({
   credits: 2.25,
   costUsd: 0.003,
-  pricingModel: 'gpt-6-astra',
+  pricingModel: 'gpt-6.2-astra',
   pricingMultiplier: 1.5,
   creditsPerDollar: 100,
   usage: Object.freeze({
@@ -69,7 +69,7 @@ function buildCompletedSession(overrides = {}) {
     narrativeType: 'branched',
     sourceNarrativeType: 'branched',
     inputPrompt: 'A traveler follows a signal through a luminous forest.',
-    expressGenerationInferenceModel: 'gpt-6-astra',
+    expressGenerationInferenceModel: 'gpt-6.2-astra',
     defaultBranchPathId: 'root.1',
     branchRenderCompletionFinalized: true,
     branchingMeta: { leafNodeIds: ['root.1', 'root.2'] },
@@ -200,7 +200,7 @@ function buildPayloadHash(session) {
     sessionId: SESSION_ID,
     defaultPathId,
     originalPrompt: session.inputPrompt,
-    inferenceModel: 'gpt-6-astra',
+    inferenceModel: 'gpt-6.2-astra',
     movieResourceList,
   });
 }
@@ -218,7 +218,7 @@ function buildStoredRequest(clientRequestId, overrides = {}, session = buildComp
     attempts: 1,
     defaultPathId: 'root.1',
     originalPrompt: session.inputPrompt,
-    inferenceModel: 'gpt-6-astra',
+    inferenceModel: 'gpt-6.2-astra',
     inferenceReceipt: null,
     billing: null,
     billingStatus: 'PENDING',
@@ -262,7 +262,7 @@ function createHarness({
     userModel: {
       findById(id) {
         assert.equal(id, USER_ID);
-        return queryResult({ generationCredits, selectedInferenceModel: 'gpt-6-astra' });
+        return queryResult({ generationCredits, selectedInferenceModel: 'gpt-6.2-astra' });
       },
     },
     requestModel: requestStore.model,
@@ -387,12 +387,12 @@ test('generates, meters, and durably settles default-path publication metadata',
     sounds: [{ type: 'speech', sceneIndex: 0, audio: 'We made it.' }],
   });
   assert.equal(inferenceInput.options.originalPrompt, harness.session.inputPrompt);
-  assert.equal(inferenceInput.options.inferenceModel, 'gpt-6-astra');
+  assert.equal(inferenceInput.options.inferenceModel, 'gpt-6.2-astra');
   assert.equal(harness.charges.length, 1);
   assert.equal(harness.charges[0].userId, USER_ID);
-  assert.equal(harness.charges[0].credits, 1.8);
+  assert.equal(harness.charges[0].credits, 1.44);
   assert.equal(harness.charges[0].options.metadata.pricingMultiplier, 1.2);
-  assert.equal(harness.charges[0].options.metadata.pricingModel, 'gpt-6-astra');
+  assert.equal(harness.charges[0].options.metadata.pricingModel, 'gpt-6.2-astra');
   assert.equal(harness.charges[0].options.settleIncurredUsage, true);
   assert.equal(
     harness.charges[0].options.idempotencyKey,
@@ -412,7 +412,7 @@ test('generates, meters, and durably settles default-path publication metadata',
     title: 'Signal at Dawn',
     description: 'Choose a route through the forest.',
     defaultPathId: 'root.1',
-    creditsCharged: 1.8,
+    creditsCharged: 1.44,
     remainingCredits: 19.76,
     reused: false,
   });
@@ -428,7 +428,7 @@ test('interactive Sol publication metadata keeps the baseline GPT 5.6 Luna xhigh
         createChatCompletion: async (_client, payload) => {
           completionPayload = payload;
           return {
-            model: 'gpt-6-astra',
+            model: 'gpt-6.2-astra',
             usage: PROVIDER_RECEIPT.usage,
             choices: [{
               message: {
@@ -450,9 +450,9 @@ test('interactive Sol publication metadata keeps the baseline GPT 5.6 Luna xhigh
     harness.dependencies,
   );
 
-  assert.equal(completionPayload.model, 'gpt-6-astra');
+  assert.equal(completionPayload.model, 'gpt-6.2-astra');
   assert.deepEqual(completionPayload.reasoning, { effort: 'xhigh' });
-  assert.equal(harness.charges[0].options.metadata.pricingModel, 'gpt-6-astra');
+  assert.equal(harness.charges[0].options.metadata.pricingModel, 'gpt-6.2-astra');
 });
 
 test('replays a completed metadata request without inference or a second debit', async () => {
@@ -475,7 +475,7 @@ test('replays a completed metadata request without inference or a second debit',
   assert.equal(harness.charges.length, 1);
   assert.equal(harness.requestStore.writes.length, writesBeforeReplay);
   assert.equal(replay.reused, true);
-  assert.equal(replay.creditsCharged, 1.8);
+  assert.equal(replay.creditsCharged, 1.44);
 });
 
 test('charges persisted usage and then fails when structured metadata is malformed', async () => {
@@ -495,14 +495,14 @@ test('charges persisted usage and then fails when structured metadata is malform
     (error) => {
       assert.equal(error?.code, 'PUBLICATION_METADATA_GENERATION_FAILED');
       assert.equal(error?.status, 502);
-      assert.equal(error?.creditsCharged, 1.8);
+      assert.equal(error?.creditsCharged, 1.44);
       assert.equal(error?.remainingCredits, 19.76);
       return true;
     },
   );
 
   assert.equal(harness.charges.length, 1);
-  assert.equal(harness.charges[0].credits, 1.8);
+  assert.equal(harness.charges[0].credits, 1.44);
   assert.equal(harness.requestStore.getDocument().status, 'FAILED');
   assert.equal(harness.requestStore.getDocument().billingStatus, 'CHARGED');
   assert.equal(harness.requestStore.getDocument().generationSucceeded, false);

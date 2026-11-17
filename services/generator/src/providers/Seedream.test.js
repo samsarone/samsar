@@ -143,3 +143,139 @@ test('Seedream provider failures return to the shared retry path without a termi
     assert.equal(Object.hasOwn(update, 'apiGenerationStatus'), false);
   }
 });
+
+function pendingSeedream(overrides = {}) {
+  return {
+    _id: 'accepted-image', model: 'SEEDREAM', apiGenerationStatus: 'PENDING',
+    apiRequestId: 'accepted-provider-request', seedreamFalEndpoint: SEEDREAM_FAL_ENDPOINT,
+    imageSubmissionAttempt: { state: 'ACCEPTED', token: 'original-submission' },
+    ...overrides,
+  };
+}
+
+function pollingDependencies(overrides = {}) {
+  const updates = [];
+  return {
+    updates,
+    connect: async () => {},
+    imageGenerationModel: {
+      async findOneAndUpdate(filter, update) { updates.push({ filter, update }); },
+    },
+    queueStatus: async () => ({ status: 'COMPLETED' }),
+    queueResult: async () => ({ data: { images: [{ url: 'https://media.example/generated.png' }] } }),
+    queueSubmit: async () => assert.fail('polling an accepted request must not submit another generation'),
+    saveFile: async () => 'saved.png',
+    logger: { error() {} },
+    ...overrides,
+  };
+}
+
+for (const [status, body, detail] of [
+  [422, { detail: [{ loc: ['body', 'prompt'], msg: 'Input text data may contain inappropriate content.', type: 'value_error' }] },
+    'Input text data may contain inappropriate content.'],
+  [422, { detail: { error: { message: 'Provider rejected the submitted scene.' } } },
+    'Provider rejected the submitted scene.'],
+  [400, { detail: 'Provider could not generate this image.' }, 'Provider could not generate this image.'],
+]) {
+  test(`completed Seedream result ${status} surfaces meaningful provider detail: ${detail}`, async () => {
+    const payload = pendingSeedream();
+    const failure = Object.assign(new Error('Unprocessable Entity'), { status, body });
+    const dependencies = pollingDependencies({
+      queueResult: async (endpoint, request) => {
+        assert.equal(endpoint, SEEDREAM_FAL_ENDPOINT);
+        assert.equal(request.requestId, payload.apiRequestId);
+        throw failure;
+      },
+      saveFile: async () => assert.fail('failed provider results have no image to download'),
+    });
+    const result = await pollSeedreamRequest(payload, dependencies);
+    assert.deepEqual(result, {
+      image: null, error: `Seedream result failed (${status}): ${detail}`,
+      status, definitiveAdapterFailure: true,
+    });
+    assert.equal(payload.apiRequestId, 'accepted-provider-request');
+    assert.deepEqual(dependencies.updates, [{ filter: { _id: payload._id }, update: { rowLocked: true } }]);
+  });
+}
+
+for (const phase of ['status', 'result']) {
+  for (const [name, fields] of [
+    ['network reset', { code: 'ECONNRESET' }],
+    ['server error', { status: 503 }],
+    ['throttled read', { status: 429 }],
+    ['missing read endpoint', { status: 404 }],
+  ]) {
+    test(`Seedream ${phase} ${name} reaches bounded polling recovery with the accepted identity`, async () => {
+      const payload = pendingSeedream();
+      const failure = Object.assign(new Error(name), fields);
+      const dependencies = pollingDependencies({
+        [phase === 'status' ? 'queueStatus' : 'queueResult']: async () => { throw failure; },
+        saveFile: async () => assert.fail('failed reads cannot download an image'),
+      });
+      await assert.rejects(pollSeedreamRequest(payload, dependencies), error => {
+        assert.equal(error, failure);
+        assert.equal(error.providerPollFailure, true);
+        assert.equal(error.providerPollPhase, phase);
+        assert.equal(error.nonPromptProviderFailure, true);
+        assert.equal(error.preserveExpressImageLayer, true);
+        assert.notEqual(error.definitiveAdapterFailure, true);
+        assert.notEqual(error.submissionOutcomeUnknown, true);
+        return true;
+      });
+      assert.equal(payload.apiRequestId, 'accepted-provider-request');
+      assert.equal(payload.imageSubmissionAttempt.token, 'original-submission');
+      // Shared recovery owns unlocking and nextAttemptAfter, instead of a
+      // provider-local null result being polled again on the next one-second tick.
+      assert.deepEqual(dependencies.updates, [{ filter: { _id: payload._id }, update: { rowLocked: true } }]);
+    });
+  }
+}
+
+test('a Seedream status read 422 is uncertain and cannot be treated as failed generation', async () => {
+  const failure = Object.assign(new Error('Unprocessable Entity'), { status: 422 });
+  await assert.rejects(pollSeedreamRequest(pendingSeedream(), pollingDependencies({
+    queueStatus: async () => { throw failure; },
+  })), error => error === failure && error.providerPollPhase === 'status' && !error.definitiveAdapterFailure);
+});
+
+for (const status of ['IN_QUEUE', 'IN_PROGRESS']) {
+  test(`Seedream ${status} stays pending without consuming failure recovery`, async () => {
+    const dependencies = pollingDependencies({
+      queueStatus: async () => ({ status }),
+      queueResult: async () => assert.fail('unfinished provider requests have no result'),
+    });
+    assert.equal(await pollSeedreamRequest(pendingSeedream(), dependencies), null);
+    assert.deepEqual(dependencies.updates.map(entry => entry.update), [{ rowLocked: true }, { rowLocked: false }]);
+  });
+}
+
+for (const [name, fields] of [
+  ['download network failure', { code: 'ECONNRESET' }],
+  ['download HTTP 422', { status: 422 }],
+  ['local disk failure', { code: 'ENOSPC' }],
+]) {
+  test(`Seedream ${name} preserves the successful provider result without a generation retry`, async () => {
+    const failure = Object.assign(new Error(name), fields);
+    const dependencies = pollingDependencies({ saveFile: async () => { throw failure; } });
+    await assert.rejects(pollSeedreamRequest(pendingSeedream(), dependencies), error => {
+      assert.equal(error, failure);
+      assert.equal(error.providerPollPhase, 'download');
+      assert.equal(error.providerPollFailure, true);
+      assert.notEqual(error.definitiveAdapterFailure, true);
+      return true;
+    });
+    assert.deepEqual(dependencies.updates.map(entry => entry.update), [{ rowLocked: true }]);
+  });
+}
+
+test('a completed Seedream response without an image URL cannot trigger another generation', async () => {
+  await assert.rejects(pollSeedreamRequest(pendingSeedream(), pollingDependencies({
+    queueResult: async () => ({ data: {} }),
+  })), error => {
+    assert.match(error.message, /did not include an image URL/);
+    assert.equal(error.providerPollPhase, 'result');
+    assert.equal(error.providerPollFailure, true);
+    assert.notEqual(error.definitiveAdapterFailure, true);
+    return true;
+  });
+});

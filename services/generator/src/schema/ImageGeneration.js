@@ -60,6 +60,7 @@ const imageGenerationSchema = new Schema({
   isBaseGeneration: {type: Boolean, default: false},
   isBatchGeneration: {type: Boolean, default: false},
   retryCount: {type: Number, default: 0},
+  generationRetryCount: { type: Number, default: null },
   retryOnFailure: { type: Boolean, default: false },
   generationError: { type: String, default: null },
   lastFailureAt: { type: Date, default: null },

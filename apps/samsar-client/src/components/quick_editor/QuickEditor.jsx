@@ -61,6 +61,11 @@ import {
   mergeCustomTextToImageModelDefinitions,
 } from '../../utils/customTextToImageAdapters.mjs';
 import { filterImageModelsForDeploymentScope } from '../../utils/imageModelAvailability.mjs';
+import {
+  KLING_IMAGE_V4_MODEL_KEY,
+  KLING_IMAGE_V4_ASPECT_RATIOS,
+  getKlingImageAppRequestOptions,
+} from '../../utils/KlingImageModel.mjs';
 
 import {
   COSMOS3_SUPER_MODEL_KEY,
@@ -343,6 +348,15 @@ export default function QuickEditor() {
     setIsAssistantQueryGenerating(false);
   }
 
+  const [aspectRatio, setAspectRatio] = useState(() => {
+    const defaultAspectRatio = localStorage.getItem('defaultAspectRatio');
+    if (defaultAspectRatio) {
+      return aspectRatioOptions.find((ratio) => ratio.value === defaultAspectRatio);
+    } else {
+      return aspectRatioOptions[0];
+    }
+  });
+
   // For infinite-zoom we only want certain models in the Image dropdown:
   const imageModelOptions = useMemo(() => {
     const scopedModels = filterImageModelsForDeploymentScope(
@@ -370,12 +384,14 @@ export default function QuickEditor() {
     } else {
       return modelsWithCustomAdapters
         .filter((model) => model.isExpressModel === true)
+        .filter((model) => model.key !== KLING_IMAGE_V4_MODEL_KEY ||
+          KLING_IMAGE_V4_ASPECT_RATIOS.includes(aspectRatio?.value))
         .map((model) => ({
           value: model.key,
           label: model.name,
         }));
     }
-  }, [uiLanguage, isStandaloneModelFilteringEnabled, textToVideoImageModelValues, user?.custom_adapters, videoType]);
+  }, [uiLanguage, isStandaloneModelFilteringEnabled, textToVideoImageModelValues, user?.custom_adapters, videoType, aspectRatio?.value]);
 
   const [selectedImageModel, setSelectedImageModel] = useState(() => {
     const defaultModel = localStorage.getItem('defaultModel');
@@ -397,15 +413,6 @@ export default function QuickEditor() {
       return subtitleFontOptions.find((font) => font.value === defaultFont);
     } else {
       return subtitleFontOptions[0];
-    }
-  });
-
-  const [aspectRatio, setAspectRatio] = useState(() => {
-    const defaultAspectRatio = localStorage.getItem('defaultAspectRatio');
-    if (defaultAspectRatio) {
-      return aspectRatioOptions.find((ratio) => ratio.value === defaultAspectRatio);
-    } else {
-      return aspectRatioOptions[0];
     }
   });
 
@@ -783,6 +790,8 @@ export default function QuickEditor() {
 
   const submitQuickRender = (evt) => {
     evt.preventDefault();
+    if (selectedImageModel?.value === KLING_IMAGE_V4_MODEL_KEY &&
+        !KLING_IMAGE_V4_ASPECT_RATIOS.includes(aspectRatio?.value)) return;
     const headers = getHeaders();
     if (!headers) {
       showLoginDialog();
@@ -868,6 +877,7 @@ export default function QuickEditor() {
       addSubtitlesRequired: finalAddSubtitles,
       addTranscriptionsRequired: finalAddTranscriptions,
       imageModel: selectedImageModel ? selectedImageModel.value : null,
+      ...getKlingImageAppRequestOptions(selectedImageModel?.value),
       bannerText,
       addBannerToComposition,
       aspectRatio: aspectRatio.value,

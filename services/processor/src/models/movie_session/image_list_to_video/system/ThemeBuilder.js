@@ -14,7 +14,7 @@ const openai = new OpenAI({ apiKey: API_KEY || '' });
 
 export async function extractThemeFromInputPayload(
   payload,
-  inferenceModel = 'gpt-6-astra',
+  inferenceModel = 'gpt-6.2-astra',
   options = {},
 ) {
 

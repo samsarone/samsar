@@ -5,7 +5,7 @@ import InferenceModelSelect from '../../src/components/common/InferenceModelSele
 import { ASSISTANT_MODEL_TYPES, INFERENCE_MODEL_TYPES } from '../../src/constants/Types.ts';
 
 function ModelForm({ options = ASSISTANT_MODEL_TYPES, groupByFamily = false }) {
-  const [model, setModel] = useState(options.find((option) => option.value === 'gpt-6-astra') || options[0]);
+  const [model, setModel] = useState(options.find((option) => option.value === 'gpt-6.2-astra') || options[0]);
   return <>
     <InferenceModelSelect options={options} value={model} onChange={setModel} hostedControl="native" groupByFamily={groupByFamily} />
     <output data-testid="selected">{model?.value}</output>
@@ -18,7 +18,7 @@ function setXHigh() {
 }
 it('offers one row per assistant model and preserves effort when changing models', () => {
   render(<ModelForm />);
-  expect(screen.getByTestId('selected')).toHaveTextContent('gpt-6-astra');
+  expect(screen.getByTestId('selected')).toHaveTextContent('gpt-6.2-astra');
   expect(screen.getAllByRole('combobox')).toHaveLength(2);
   expect(screen.getAllByRole('option')).toHaveLength(INFERENCE_MODEL_TYPES.length);
   expect(screen.getByRole('option', { name: 'Claude Opus 5.5', exact: true })).toBeInTheDocument();
@@ -39,7 +39,7 @@ it('offers one row per assistant model and preserves effort when changing models
   expect(screen.getByTestId('selected').textContent).toBe('claude-opus-5.5');
 });
 it('does not offer models removed by deployment availability', () => {
-  render(<ModelForm options={ASSISTANT_MODEL_TYPES.filter((option) => option.value.startsWith('gpt-6-astra'))} />);
+  render(<ModelForm options={ASSISTANT_MODEL_TYPES.filter((option) => option.value.startsWith('gpt-6.2-astra'))} />);
   expect(screen.queryByRole('option', { name: 'GPT 6.1 Sol' })).not.toBeInTheDocument();
   expect(screen.queryByRole('option', { name: /Claude/ })).not.toBeInTheDocument();
 });

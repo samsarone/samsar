@@ -15,7 +15,7 @@ function sse(values) { return new Response(values.map(data => `data: ${JSON.stri
 for (const [name, create, model] of [
   ['Qwen', createQwenChatCompletion, 'qwen3.8-max'],
   ['Kimi', createKimiK3ChatCompletion, 'kimi-k3'],
-  ['OpenRouter', createOpenRouterChatCompletion, 'gpt-6-astra'],
+  ['OpenRouter', createOpenRouterChatCompletion, 'gpt-6.2-astra'],
 ]) {
   test(`${name} requests streaming and retains provider usage through its real adapter`, async () => {
     const texts = [];
@@ -33,13 +33,13 @@ for (const [name, create, model] of [
 
 test('OpenAI Responses streams through the worker and returns the final raw usage', async () => {
   const texts = [];
-  const response = { id: 'r', model: 'gpt-6-astra', output_text: 'Hello', output: [], usage: { input_tokens: 10, output_tokens: 4 } };
+  const response = { id: 'r', model: 'gpt-6.2-astra', output_text: 'Hello', output: [], usage: { input_tokens: 10, output_tokens: 4 } };
   const client = { post: async (_path, options) => {
     assert.equal(options.body.stream, true);
     assert.equal(options.stream, true);
     return events([{ type: 'response.output_text.delta', delta: 'Hello' }, { type: 'response.completed', response }]);
   } };
-  const result = await sendAssistantOpenAICompletionRequest(messages, 'gpt-6-astra', 'high', {
+  const result = await sendAssistantOpenAICompletionRequest(messages, 'gpt-6.2-astra', 'high', {
     onText: text => texts.push(text), maxRetries: 0,
   }, { client });
   assert.deepEqual(texts, ['Hello']);

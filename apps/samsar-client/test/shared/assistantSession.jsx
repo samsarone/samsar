@@ -7,8 +7,9 @@ import { useAssistantRequestGuard } from '../../src/hooks/useAssistantRequestGua
 
 const mocks = vi.hoisted(() => ({
   user: { _id: 'owner' },
-  options: [{ value: 'gpt-6-astra', label: 'GPT 6 Astra High' },
-    { value: 'gpt-6-astra-xhigh', label: 'GPT 6 Astra XHigh' }],
+  options: [{ value: 'gpt-6.2-astra', label: 'GPT 6.2 Astra High' },
+    { value: 'gpt-6.2-astra-xhigh', label: 'GPT 6.2 Astra XHigh' },
+    { value: 'claude-opus-5.5', label: 'Claude Opus 5.5' }],
 }));
 
 vi.mock('axios', () => ({ default: { post: vi.fn() } }));
@@ -25,6 +26,7 @@ const history = [{ role: 'user', id: 'old', content: 'Old question' }, { role: '
 const cleared = { data: { sessionDetails: { sessionMessages: [], sessionMessageGenerationPending: false } } };
 
 beforeEach(() => {
+  mocks.user = { _id: 'owner' };
   axios.post.mockReset();
   axios.post.mockResolvedValue(cleared);
   if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = vi.fn();
@@ -49,6 +51,31 @@ function open() { fireEvent.click(screen.getByRole('button', { name: 'Assistant'
 function requestClear() { fireEvent.click(screen.getByRole('button', { name: 'Clear session', exact: true })); }
 function confirmClear() { fireEvent.click(screen.getByRole('button', { name: 'Clear messages', exact: true })); }
 
+it.each([
+  ['missing', {}],
+  ['null', { selectedAssistantModel: null }],
+  ['blank', { selectedAssistantModel: '' }],
+  ['whitespace', { selectedAssistantModel: ' \t ' }],
+])('defaults a %s assistant choice to Opus while preserving saved inference', (_state, preference) => {
+  mocks.user = { _id: 'owner', selectedInferenceModel: 'gemini-4-carbon', ...preference };
+  render(<Conversation />);
+  open();
+  const picker = screen.getByRole('combobox', { name: 'Assistant model', exact: true });
+  expect(within(picker.closest('header')).getByText('Claude Opus 5.5')).toBeInTheDocument();
+  expect(mocks.user.selectedInferenceModel).toBe('gemini-4-carbon');
+  expect(axios.post.mock.calls.every(([, payload]) => !Object.hasOwn(payload, 'selectedInferenceModel'))).toBe(true);
+});
+
+it('preserves an explicit assistant model and effort independently of saved inference', () => {
+  mocks.user = { _id: 'owner', selectedInferenceModel: 'gemini-4-carbon', selectedAssistantModel: 'gpt-6.2-astra-xhigh' };
+  render(<Conversation />);
+  open();
+  const picker = screen.getByRole('combobox', { name: 'Assistant model', exact: true });
+  expect(within(picker.closest('header')).getByText('GPT 6.2 Astra XHigh')).toBeInTheDocument();
+  expect(axios.post).not.toHaveBeenCalled();
+  expect(mocks.user.selectedInferenceModel).toBe('gemini-4-carbon');
+});
+
 it('uses the selected model as the header picker and retains an accessible clear action', async () => {
   render(<Conversation />);
   open();
@@ -61,10 +88,10 @@ it('uses the selected model as the header picker and retains an accessible clear
   expect(modelPicker.closest('form')).toBeNull();
   expect(screen.queryByText('Get help with prompts, captions, titles, descriptions, or edits.')).not.toBeInTheDocument();
   fireEvent.keyDown(modelPicker, { key: 'ArrowDown' });
-  fireEvent.click(screen.getByRole('option', { name: 'GPT 6 Astra XHigh' }));
+  fireEvent.click(screen.getByRole('option', { name: 'GPT 6.2 Astra XHigh' }));
   await waitFor(() => expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/users/update'),
-    { selectedAssistantModel: 'gpt-6-astra-xhigh' }, { headers: { Authorization: 'test-auth' } }));
-  expect(within(header).getByText('GPT 6 Astra XHigh')).toBeInTheDocument();
+    { selectedAssistantModel: 'gpt-6.2-astra-xhigh' }, { headers: { Authorization: 'test-auth' } }));
+  expect(within(header).getByText('GPT 6.2 Astra XHigh')).toBeInTheDocument();
 });
 
 it('shows successive SSE chunks in the popup before the response stream closes', async () => {

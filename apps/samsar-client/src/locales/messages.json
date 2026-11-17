@@ -3434,20 +3434,20 @@
     "th": "ชุดกระบวนการสร้างครบครัน",
     "ja": "生成ワークフローの全機能"
   },
-  "GPT 6 Astra": {
-    "en": "GPT 6 Astra",
-    "th": "GPT 6 Astra",
-    "ja": "GPT 6 Astra"
+  "GPT 6.2 Astra": {
+    "en": "GPT 6.2 Astra",
+    "th": "GPT 6.2 Astra",
+    "ja": "GPT 6.2 Astra"
   },
-  "GPT 6 Astra High": {
-    "en": "GPT 6 Astra High",
-    "th": "GPT 6 Astra — สูง",
-    "ja": "GPT 6 Astra — 高"
+  "GPT 6.2 Astra High": {
+    "en": "GPT 6.2 Astra High",
+    "th": "GPT 6.2 Astra — สูง",
+    "ja": "GPT 6.2 Astra — 高"
   },
-  "GPT 6 Astra XHigh": {
-    "en": "GPT 6 Astra XHigh",
-    "th": "GPT 6 Astra — สูงมาก",
-    "ja": "GPT 6 Astra — 最高"
+  "GPT 6.2 Astra XHigh": {
+    "en": "GPT 6.2 Astra XHigh",
+    "th": "GPT 6.2 Astra — สูงมาก",
+    "ja": "GPT 6.2 Astra — 最高"
   },
   "GPT 6.1 Sol": {
     "en": "GPT 6.1 Sol",
@@ -6853,6 +6853,11 @@
     "en": "Retry generation if it fails",
     "th": "ลองสร้างใหม่หากไม่สำเร็จ",
     "ja": "生成に失敗した場合は再試行"
+  },
+  "Retry image generation": {
+    "en": "Retry image generation",
+    "th": "ลองสร้างรูปภาพอีกครั้ง",
+    "ja": "画像生成を再試行"
   },
   "Retry on fail": {
     "en": "Retry on fail",
@@ -11998,5 +12003,10 @@
     "en": "Seedream 5.5",
     "th": "Seedream 5.5",
     "ja": "Seedream 5.5"
+  },
+  "Kling Image 4": {
+    "en": "Kling Image 4",
+    "th": "Kling Image 4",
+    "ja": "Kling Image 4"
   }
 }

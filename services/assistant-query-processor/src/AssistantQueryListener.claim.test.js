@@ -55,14 +55,14 @@ function harness({ standalone = false } = {}) {
       assert.equal(options.maxRetries, 0);
       assert.ok(options.assistantBillingRequestId);
       state.providerCalls++;
-      return { response: { id: 'provider-response', model: 'gpt-6-astra', usage: { input_tokens: 1000, output_tokens: 100, cost: 999 },
+      return { response: { id: 'provider-response', model: 'gpt-6.2-astra', usage: { input_tokens: 1000, output_tokens: 100, cost: 999 },
         samsarBilling: { adapter: 'openrouter', costUsd: 0.025 } }, outputText: 'Hello', outputContent: ['Hello'] };
     },
     buildAssistantMessages,
     getSystemPrompt: () => ({ role: 'system', content: 'System' }),
     isStandaloneEdition: () => standalone,
     isGeminiInferenceModel: () => false, isKimiK3InferenceModel: () => false,
-    normalizeInferenceModel: () => 'gpt-6-astra', console: { error() {} },
+    normalizeInferenceModel: () => 'gpt-6.2-astra', console: { error() {} },
   });
   context.AssistantWorkspace = context.VideoSession;
   vm.runInContext(source, context);
@@ -76,7 +76,7 @@ test('two hosted assistant workers claim one job, invoke once, debit once and de
   await Promise.all([h.processPending(), h.processPending()]);
   assert.equal(h.state.providerCalls, 1);
   assert.equal(h.account.debits, 1);
-  assert.equal(h.account.account.generationCredits, 98.2);
+  assert.equal(h.account.account.generationCredits, 98.56);
   assert.equal(h.account.transactions.size, 1);
   assert.equal(h.state.deliveries, 1);
   assert.equal(h.state.jobs.length, 0);

@@ -7,7 +7,7 @@ const OUTRO_CTA_TYPE_QR = 'qr';
 const OUTRO_CTA_TYPE_IMAGE = 'image';
 const hasTextValue = value => typeof value === 'string' && value.trim().length > 0;
 const isPlainObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const normalizeInferenceModelKey = value => normalizeDeploymentInferenceModelValue(value) || 'gpt-6-astra';
+const normalizeInferenceModelKey = value => normalizeDeploymentInferenceModelValue(value) || 'gpt-6.2-astra';
 const normalizeInferenceEffort = value => value === 'xhigh' ? 'xhigh' : 'high';
 function isHttpUrl(value) {
   if (typeof value !== 'string' || !value.trim()) {

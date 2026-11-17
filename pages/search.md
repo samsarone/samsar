@@ -106,5 +106,5 @@ Response shape:
 - Search runs inside the processor API and depends on MongoDB state.
 - Template search uses `text-embedding-3-large`. The separate `/v2/external/embeddings` vector endpoint uses `text-embedding-3-small` at 1536 dimensions; its output cannot be mixed into a large-model template index.
 - The processor attempts indexed `$vectorSearch`; if unavailable, it loads the matching template records and scores cosine similarity in memory. Verify index support for the deployment before relying on this path for a large corpus.
-- Optional reranking uses `OPENAI_RERANK_MODEL` (default `gpt-6-astra`), independently of the selected assistant model.
+- Optional reranking uses `OPENAI_RERANK_MODEL` (default `gpt-6.2-astra`), independently of the selected assistant model.
 - Credit usage is returned in `x-credits-charged` and `x-credits-remaining` headers where the route charges credits.

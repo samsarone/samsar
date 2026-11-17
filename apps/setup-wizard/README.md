@@ -18,10 +18,14 @@ OpenRouter enables these supported inference selections through one credential:
 
 | Stable model | OpenRouter coverage |
 | --- | --- |
-| `gpt-6-astra`, `gpt-6.1-sol` | Text, assistant, and corresponding vision-input calls; High or XHigh effort. |
+| `gpt-6.2-astra`, `gpt-6.1-sol` | Text, assistant, and corresponding vision-input calls; High or XHigh effort. |
 | `claude-opus-5.5`, `claude-fable-5.2` | Native Anthropic, OpenRouter, or Samsar text, assistant, and vision calls; High or XHigh effort. |
 | `gemini-4-carbon` | Text, assistant, and corresponding vision-input calls; defaults to OpenRouter model `google/gemini-4-carbon`. |
 | `QWEN3.8` | Qwen 3.8 Max text, assistant, and vision inference through Alibaba Cloud, OpenRouter, GMICloud, or Samsar. |
+
+GPT 6.2 Astra is the current Astra model. Saved GPT 6 Astra and GPT 5.6 Sol choices normalize to it, while historical assistant receipts keep their submitted model tariff. GMICloud enables Astra 6.2 only when credential discovery verifies that exact version for text and vision.
+
+Kling Image 4 (`KLINGIMAGE4`) is available through fal or Samsar for text-to-image. Studio and agent workflows use one 720p landscape or portrait image; direct image API requests also support native 2K, 4K, and 8K output.
 
 Gemini 4 Carbon is configured automatically when OpenRouter, Samsar API, or native Google Cloud credentials are supplied, either directly or through environment references. The wizard saves the OpenRouter model as `google/gemini-4-carbon` and the native Google model as `gemini-4-carbon`; runtime rendering sets High thinking and shares the corresponding model settings with every inference worker. A music-only Gemini API key enables Lyria without enabling Gemini inference. Run `npm run test:carbon-migration` to verify the wizard, generated configuration, and text/vision adapter contracts without paid inference calls.
 

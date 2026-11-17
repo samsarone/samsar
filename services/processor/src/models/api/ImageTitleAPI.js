@@ -5,7 +5,7 @@ import { getAccessibleProviderMediaUrl } from '../ai_utils/VisionMediaUrl.js';
 import { deductGenerationCredits } from '../GenerationCredits.js';
 import { assertAssistantTariffAvailable, calculateInferenceCreditsFromUsage as calculateAssistantCreditsFromUsage } from './AssistantBilling.js';
 
-const ASSIGN_TITLE_MODEL = process.env.IMAGE_ASSIGN_TITLE_MODEL || 'gpt-6-astra';
+const ASSIGN_TITLE_MODEL = process.env.IMAGE_ASSIGN_TITLE_MODEL || 'gpt-6.2-astra';
 const ASSIGN_TITLE_REASONING_EFFORT = GPT_56_SOL_REASONING_EFFORT;
 const ASSIGN_TITLE_IMAGE_DETAIL = 'low';
 const ASSIGN_TITLE_PRICING_MULTIPLIER = GENERATION_PRICING_MULTIPLIER;

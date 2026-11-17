@@ -17,13 +17,13 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   samsar: {
     label: 'Samsar API Key',
     requiredFor: ['All models', 'All actions', 'moderation'],
-    models: ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2', 'gemini-4-carbon', 'QWEN3.8', 'KIMIK3', 'GPTIMAGE2.5', 'SEEDREAM', 'WAN2.7PRO', 'RUNWAYML', 'VEO3.1I2V', 'HAPPYHORSEI2V', 'SEEDANCE2.5FLASHI2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
+    models: ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2', 'gemini-4-carbon', 'QWEN3.8', 'KIMIK3', 'GPTIMAGE2.5', 'SEEDREAM', 'KLINGIMAGE4', 'WAN2.7PRO', 'RUNWAYML', 'VEO3.1I2V', 'HAPPYHORSEI2V', 'SEEDANCE2.5FLASHI2V', 'LYRIA3', 'OPENAI_TTS', 'GOOGLE_TTS', 'MMAUDIO', 'LATENT_SYNC'],
     actions: ['chat', 'assistant', 'moderation', 'image', 'video', 'audio', 'lip_sync', 'sound_effect'],
   },
   openai: {
     label: 'OpenAI',
-    requiredFor: ['GPT 6 Astra', 'assistant', 'vision', 'moderation', 'OpenAI image', 'OpenAI TTS'],
-    models: ['gpt-6-astra', 'gpt-6.1-sol', 'GPTIMAGE2.5', 'OPENAI_TTS'],
+    requiredFor: ['GPT 6.2 Astra', 'assistant', 'vision', 'moderation', 'OpenAI image', 'OpenAI TTS'],
+    models: ['gpt-6.2-astra', 'gpt-6.1-sol', 'GPTIMAGE2.5', 'OPENAI_TTS'],
     actions: ['chat', 'assistant', 'moderation', 'image', 'audio'],
   },
   anthropic: {
@@ -34,8 +34,8 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   },
   openrouter: {
     label: 'OpenRouter',
-    requiredFor: ['GPT 6 Astra', 'Claude Opus 5.5', 'Gemini 4 Carbon', 'Qwen 3.8 Max text and vision'],
-    models: ['gpt-6-astra', 'gpt-6.1-sol', 'gemini-4-carbon', 'QWEN3.8', 'claude-opus-5.5', 'claude-fable-5.2'],
+    requiredFor: ['GPT 6.2 Astra', 'Claude Opus 5.5', 'Gemini 4 Carbon', 'Qwen 3.8 Max text and vision'],
+    models: ['gpt-6.2-astra', 'gpt-6.1-sol', 'gemini-4-carbon', 'QWEN3.8', 'claude-opus-5.5', 'claude-fable-5.2'],
     actions: ['chat', 'assistant'],
   },
   kimi: {
@@ -59,7 +59,7 @@ export const DEPLOYMENT_PROVIDER_CAPABILITIES = Object.freeze({
   fal: {
     label: 'FAL',
     requiredFor: ['FAL image models', 'Seedream 5.5 image', 'Wan2.7 Pro image', 'FAL audio models', 'Seedance 2.0 video', 'Seedance 2.5 video', 'Seedance 2.5 Flash video', 'Happy Horse 1.1 video', 'lip sync', 'sound effects'],
-    models: ['NANOBANANA2', 'NANOBANANAPRO', 'SEEDREAM', 'WAN2.7PRO', 'SEEDANCE2.0I2V', 'SEEDANCE2.5I2V', 'SEEDANCE2.5FLASHI2V', 'HAPPYHORSEI2V', 'MMAUDIO', 'LATENT_SYNC'],
+    models: ['NANOBANANA2', 'NANOBANANAPRO', 'SEEDREAM', 'KLINGIMAGE4', 'WAN2.7PRO', 'SEEDANCE2.0I2V', 'SEEDANCE2.5I2V', 'SEEDANCE2.5FLASHI2V', 'HAPPYHORSEI2V', 'MMAUDIO', 'LATENT_SYNC'],
     actions: ['image', 'video', 'audio', 'lip_sync', 'sound_effect'],
   },
   runway: {

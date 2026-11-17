@@ -6,7 +6,7 @@ import { toAnthropicMessages, createAnthropicChatCompletion } from '../../infere
 import { createSamsarExternalChatCompletion, createOpenRouterChatCompletion, getOpenRouterModelForInferenceRequest, getConfiguredInferenceProviders } from './SamsarExternalInferenceAdapter.js';
 import { normalizeInferenceModel } from '../../consts/InferenceModels.js';
 
-const models = ['gpt-6-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2'];
+const models = ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2'];
 const messages = [{ role: 'user', content: [{ type: 'text', text: 'Describe this image' }, { type: 'image_url', image_url: { url: 'https://example.com/frame.png' } }] }];
 for (const model of models) for (const effort of ['high', 'xhigh']) {
   test(`${model}/${effort} preserves model and effort through normalization and OpenRouter vision`, async (t) => {
@@ -75,5 +75,18 @@ for (const model of models) {
     assert.equal(providers[0], model.startsWith('claude') ? 'anthropic' : 'openai');
     assert.ok(providers.includes('openrouter'));
     assert.ok(providers.includes('samsar'));
+  });
+}
+
+for (const legacyModel of ['gpt-6-astra', 'gpt-6-astra-xhigh', 'gpt-5.6-sol-xhigh']) {
+  test(`upgrades saved ${legacyModel} and stale OpenRouter model overrides to Astra 6.2`, () => {
+    const effortSuffix = legacyModel.endsWith('-xhigh') ? '-xhigh' : '';
+    assert.equal(normalizeInferenceModel(legacyModel), `gpt-6.2-astra${effortSuffix}`);
+    for (const envKey of ['OPENROUTER_GPT_62_ASTRA_MODEL', 'OPENROUTER_GPT_6_ASTRA_MODEL', 'OPENROUTER_GPT_56_SOL_MODEL']) {
+      assert.equal(getOpenRouterModelForInferenceRequest({ model: legacyModel }, { [envKey]: 'openai/gpt-6-astra' }), 'openai/gpt-6.2-astra');
+    }
+    assert.equal(getOpenRouterModelForInferenceRequest({ model: legacyModel }, {
+      OPENROUTER_GPT_62_ASTRA_MODEL: 'openai/gpt-6.2-astra', OPENROUTER_GPT_6_ASTRA_MODEL: 'openai/gpt-6-astra',
+    }), 'openai/gpt-6.2-astra');
   });
 }

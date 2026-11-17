@@ -134,6 +134,9 @@ services/generator/image_*.png
 **/*.gz
 **/*.rar
 
+# Deterministic audio fixture required by Chromium preview playback regressions.
+!/apps/samsar-client/test/fixtures/vidgenie-preview-tone.wav
+
 # Self-hosted UI fonts required by the distributed client.
 !apps/samsar-client/src/fonts/inter-latin-opsz-normal.woff2
 !apps/samsar-client/src/fonts/inter-latin-ext-opsz-normal.woff2

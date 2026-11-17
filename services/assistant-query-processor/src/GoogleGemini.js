@@ -7,6 +7,7 @@ import {
 } from './InferenceModels.js';
 import { runExternalInferenceWithRetry } from './ExternalInferenceRetry.js';
 import { readMountedProviderMediaBufferIfAvailable } from './ProviderMediaUrl.js';
+import { buildGoogleGeminiDeveloperUrl, resolveGoogleGeminiTransport } from './GoogleGeminiTransport.js';
 
 const DEFAULT_GEMINI_LOCATION = 'global';
 const DEFAULT_IMAGE_MIME_TYPE = 'image/png';
@@ -432,15 +433,18 @@ export async function sendAssistantGeminiCompletionRequest(
   options = {},
   dependencyOverrides = {},
 ) {
-  const model = resolveGeminiModel(options.model || options.providerModel || options.vertexModel || inferenceModel);
-  const location = resolveGeminiLocation(options);
+  const transport = resolveGoogleGeminiTransport(
+    resolveGeminiModel(options.model || options.providerModel || options.vertexModel || inferenceModel),
+  );
+  const model = transport.model;
+  const location = transport.kind === 'developer' ? 'global' : resolveGeminiLocation(options);
   const getCloudConfig = dependencyOverrides.getGoogleCloudConfig || getGoogleCloudConfig;
   const getAccessToken = dependencyOverrides.getGoogleAccessToken || getGoogleAccessToken;
   const fetchImpl = dependencyOverrides.fetchImpl || globalThis.fetch;
-  const config = getCloudConfig({ ...options, location });
-  const projectId = normalizeString(config.projectId);
+  const config = transport.kind === 'vertex' ? getCloudConfig({ ...options, location }) : null;
+  const projectId = normalizeString(config?.projectId);
 
-  if (!projectId) {
+  if (transport.kind === 'vertex' && !projectId) {
     throw new Error('Google Gemini inference requires GOOGLE_CLOUD_PROJECT or GOOGLE_PROJECT_ID.');
   }
 
@@ -466,11 +470,17 @@ export async function sendAssistantGeminiCompletionRequest(
         contents,
         ...(generationConfig ? { generationConfig } : {}),
       };
-      const token = await getAccessToken(config);
-      const response = await fetchImpl(buildVertexGenerateContentUrl({ projectId, location, model }).replace(':generateContent', options.onText ? ':streamGenerateContent?alt=sse' : ':generateContent'), {
+      const url = transport.kind === 'developer'
+        ? buildGoogleGeminiDeveloperUrl({ model, stream: Boolean(options.onText) })
+        : buildVertexGenerateContentUrl({ projectId, location, model })
+          .replace(':generateContent', options.onText ? ':streamGenerateContent?alt=sse' : ':generateContent');
+      const authorizationHeaders = transport.kind === 'developer'
+        ? { 'x-goog-api-key': transport.apiKey }
+        : { Authorization: `Bearer ${await getAccessToken(config)}` };
+      const response = await fetchImpl(url, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${token}`,
+          ...authorizationHeaders,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestBody),
@@ -501,7 +511,13 @@ export async function sendAssistantGeminiCompletionRequest(
   const outputText = extractGeminiOutputText(responsePayload);
   return {
     model,
-    response: { ...normalizeGeminiToResponses(responsePayload, outputText, model), samsarBilling: { adapter: 'google', region: location } },
+    response: {
+      ...normalizeGeminiToResponses(responsePayload, outputText, model),
+      samsarBilling: {
+        adapter: 'google', region: location,
+        ...(transport.kind === 'developer' ? { api: 'developer' } : {}),
+      },
+    },
     outputText,
     outputContent: [
       {

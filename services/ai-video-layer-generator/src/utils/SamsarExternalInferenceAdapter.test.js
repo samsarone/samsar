@@ -187,7 +187,7 @@ test('Samsar stays ahead of OpenRouter for Qwen in Docker', () => {
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
   );
   assert.equal(shouldUseSamsarExternalInference({ model: 'QWEN3.8' }), true);
-  for (const model of ['gemini-4-carbon', 'gpt-6-astra']) {
+  for (const model of ['gemini-4-carbon', 'gpt-6.2-astra']) {
     assert.equal(
       resolveConfiguredInferenceProvider(model),
       DOCKER_INFERENCE_PROVIDER.OPENROUTER,
@@ -205,7 +205,7 @@ test('standalone inference overlays saved adapter order and appends omitted defa
     modelProviderPriority: {
       'QWEN3.8': ['samsar', 'openrouter'],
       KIMIK3: ['samsar'],
-      'gpt-6-astra': ['openrouter', 'samsar'],
+      'gpt-6.2-astra': ['openrouter', 'samsar'],
     },
   }));
   process.env.CURRENT_ENV = 'docker';
@@ -225,7 +225,7 @@ test('standalone inference overlays saved adapter order and appends omitted defa
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
     DOCKER_INFERENCE_PROVIDER.KIMI,
   ]);
-  assert.deepEqual(getConfiguredInferenceProviders('gpt-6-astra'), [
+  assert.deepEqual(getConfiguredInferenceProviders('gpt-6.2-astra'), [
     DOCKER_INFERENCE_PROVIDER.OPENROUTER,
     DOCKER_INFERENCE_PROVIDER.SAMSAR,
     DOCKER_INFERENCE_PROVIDER.OPENAI,
@@ -242,7 +242,7 @@ test('production and staging ignore standalone inference preferences', (t) => {
   t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
   fs.writeFileSync(preferencesPath, JSON.stringify({
     modelProviderPriority: {
-      'gpt-6-astra': ['samsar', 'openrouter', 'openai'],
+      'gpt-6.2-astra': ['samsar', 'openrouter', 'openai'],
     },
   }));
 
@@ -255,10 +255,10 @@ test('production and staging ignore standalone inference preferences', (t) => {
     process.env.SAMSAR_API_KEY = 'samsar-test-key';
 
     assert.equal(
-      resolveConfiguredInferenceProvider('gpt-6-astra'),
+      resolveConfiguredInferenceProvider('gpt-6.2-astra'),
       DOCKER_INFERENCE_PROVIDER.OPENAI,
     );
-    assert.deepEqual(getConfiguredInferenceProviders('gpt-6-astra'), [
+    assert.deepEqual(getConfiguredInferenceProviders('gpt-6.2-astra'), [
       DOCKER_INFERENCE_PROVIDER.OPENAI,
       DOCKER_INFERENCE_PROVIDER.OPENROUTER,
       DOCKER_INFERENCE_PROVIDER.SAMSAR,
@@ -273,7 +273,7 @@ test('production Docker runtime does not activate standalone inference fallback'
   t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
   fs.writeFileSync(preferencesPath, JSON.stringify({
     modelProviderPriority: {
-      'gpt-6-astra': ['samsar', 'openrouter', 'openai'],
+      'gpt-6.2-astra': ['samsar', 'openrouter', 'openai'],
     },
   }));
   process.env.CURRENT_ENV = 'docker';
@@ -285,11 +285,11 @@ test('production Docker runtime does not activate standalone inference fallback'
   process.env.SAMSAR_API_KEY = 'samsar-test-key';
 
   assert.equal(
-    resolveConfiguredInferenceProvider('gpt-6-astra'),
+    resolveConfiguredInferenceProvider('gpt-6.2-astra'),
     DOCKER_INFERENCE_PROVIDER.OPENAI,
   );
   const attempts = [];
-  const request = { model: 'gpt-6-astra' };
+  const request = { model: 'gpt-6.2-astra' };
   await runInferenceWithConfiguredAdapters(request, async (provider, dispatchedRequest) => {
     attempts.push({ provider, dispatchedRequest });
     return 'ok';
@@ -304,7 +304,7 @@ test('configured adapter fallback advances in saved order on retryable errors', 
   t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
   fs.writeFileSync(preferencesPath, JSON.stringify({
     modelProviderPriority: {
-      'gpt-6-astra': ['openrouter', 'samsar', 'openai'],
+      'gpt-6.2-astra': ['openrouter', 'samsar', 'openai'],
     },
   }));
   process.env.CURRENT_ENV = 'docker';
@@ -316,7 +316,7 @@ test('configured adapter fallback advances in saved order on retryable errors', 
   const attempts = [];
   const response = await runInferenceWithConfiguredAdapters(
     {
-      model: 'gpt-6-astra',
+      model: 'gpt-6.2-astra',
       messages: [{ role: 'user', content: 'hello' }],
       authorization: 'native',
     },
@@ -354,11 +354,11 @@ test('explicit external pins and bypass flags do not enter the cross-adapter cha
   process.env.SAMSAR_API_KEY = 'samsar-test-key';
 
   for (const request of [
-    { model: 'gpt-6-astra', authorization: 'deployed' },
-    { model: 'gpt-6-astra', authorization: 'openrouter' },
-    { model: 'gpt-6-astra', bypassSamsarExternalInference: true },
-    { model: 'gpt-6-astra', samsarExternalInference: true },
-    { model: 'gpt-6-astra', samsarExternalInference: false },
+    { model: 'gpt-6.2-astra', authorization: 'deployed' },
+    { model: 'gpt-6.2-astra', authorization: 'openrouter' },
+    { model: 'gpt-6.2-astra', bypassSamsarExternalInference: true },
+    { model: 'gpt-6.2-astra', samsarExternalInference: true },
+    { model: 'gpt-6.2-astra', samsarExternalInference: false },
   ]) {
     const attempts = [];
     await runInferenceWithConfiguredAdapters(request, async (provider, dispatchedRequest) => {
@@ -378,7 +378,7 @@ test('standalone fallback excludes Samsar when external inference is disabled', 
   t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
   fs.writeFileSync(preferencesPath, JSON.stringify({
     modelProviderPriority: {
-      'gpt-6-astra': ['samsar', 'openrouter', 'openai'],
+      'gpt-6.2-astra': ['samsar', 'openrouter', 'openai'],
     },
   }));
   process.env.CURRENT_ENV = 'docker';
@@ -390,7 +390,7 @@ test('standalone fallback excludes Samsar when external inference is disabled', 
 
   const attempts = [];
   await runInferenceWithConfiguredAdapters(
-    { model: 'gpt-6-astra' },
+    { model: 'gpt-6.2-astra' },
     async (provider) => {
       attempts.push(provider);
       return 'ok';
@@ -510,7 +510,7 @@ test('an explicit native authorization still falls back when its provider key is
     authorization: 'native',
   }), true);
   assert.equal(shouldUseSamsarExternalInference({
-    model: 'gpt-6-astra',
+    model: 'gpt-6.2-astra',
     authorization: 'native',
   }), true);
 });
@@ -564,16 +564,16 @@ test('Qwen OpenRouter applies Qwen 3.8 Max routing with bounded settings', async
     messages: [{ role: 'user', content: 'hello' }],
   });
   await createOpenRouterChatCompletion({
-    model: 'gpt-6-astra',
+    model: 'gpt-6.2-astra',
     messages: [{ role: 'user', content: 'hello' }],
     reasoning_effort: 'xhigh',
   });
   await createOpenRouterChatCompletion({
-    model: 'gpt-6-astra-xhigh',
+    model: 'gpt-6.2-astra-xhigh',
     messages: [{ role: 'user', content: 'hello' }],
   });
   await createOpenRouterChatCompletion({
-    model: 'gpt-6-astra-xhigh',
+    model: 'gpt-6.2-astra-xhigh',
     effort: 'high',
     messages: [{ role: 'user', content: 'hello' }],
   });
@@ -591,7 +591,7 @@ test('Qwen OpenRouter applies Qwen 3.8 Max routing with bounded settings', async
   assert.equal(payloads[3].max_tokens, 65536);
   assert.equal(payloads[4].max_completion_tokens, 128000);
   assert.equal(payloads[4].reasoning.effort, 'xhigh');
-  assert.equal(payloads[5].model, 'openai/gpt-6-astra');
+  assert.equal(payloads[5].model, 'openai/gpt-6.2-astra');
   assert.equal(payloads[5].reasoning.effort, 'xhigh');
   assert.equal(payloads[6].reasoning.effort, 'high');
   assert.equal(options[0].maxRetries, 0);

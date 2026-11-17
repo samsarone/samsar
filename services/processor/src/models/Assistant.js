@@ -14,7 +14,7 @@ import {
   appendSceneActionsCommandResponse,
   isSceneActionsCommand,
 } from './SceneActions.js';
-import { normalizeInferenceModel } from '../consts/InferenceModels.js';
+import { DEFAULT_USER_INFERENCE_MODEL, normalizeSupportedInferenceModel } from '../consts/InferenceModels.js';
 import { shouldBypassGenerationCredits } from '../utils/EnvironmentUtils.js';
 
 function normalizeAssistantQueryText(query) {
@@ -201,7 +201,7 @@ export async function createAssistantQueryRequest(userId, payload) {
   if (!userData) {
     throw new Error('User not found');
   }
-  const userAssistantModel = normalizeInferenceModel(userData?.selectedAssistantModel);
+  const userAssistantModel = normalizeSupportedInferenceModel(userData.selectedAssistantModel) || DEFAULT_USER_INFERENCE_MODEL;
   if (!shouldBypassGenerationCredits() && (!Number.isFinite(userData.generationCredits) || userData.generationCredits <= 0)) {
     const error = new Error('Insufficient credits');
     error.code = 'INSUFFICIENT_CREDITS';

@@ -10,6 +10,7 @@ import { getHeaders } from '../../utils/web.jsx';
 import { useDeploymentModelAvailability } from '../../hooks/useDeploymentModelAvailability.js';
 import { filterOptionsForDeploymentModelValues } from '../../utils/deploymentProviders.js';
 import { isVideoModelAllowedForDeploymentScope } from '../../utils/videoModelAvailability.mjs';
+import { KLING_IMAGE_V4_MODEL_KEY } from '../../utils/KlingImageModel.mjs';
 import {
   QWEN_IMAGE_3_PRO_MODEL_KEY,
   isImageModelAllowedForDeploymentScope,
@@ -39,6 +40,7 @@ const IMAGE_MODELS = [
     get label() { return uiText("Qwen Image 3.0 Pro"); },
     value: QWEN_IMAGE_3_PRO_MODEL_KEY,
   },
+  { get label() { return uiText("Kling Image 4"); }, value: KLING_IMAGE_V4_MODEL_KEY },
 ];
 
 const IMAGE_LIST_VIDEO_MODELS = [

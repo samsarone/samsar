@@ -218,7 +218,7 @@ describe('VidGenie generation lifecycle', () => {
     ['gemini-4-carbon', null, 'gemini-4-carbon'],
     ['gemini-4-argon', null, 'gemini-4-carbon'],
   ])('retranslation submits the selected %s model as its canonical key and applicable effort', async (model, effort, expectedModel) => {
-    harness.user.selectedInferenceModel = 'gpt-6-astra';
+    harness.user.selectedInferenceModel = 'gpt-6.2-astra';
     harness.session = {
       ...harness.session, isExpressGeneration: true,
       videoLink: 'https://media.example/final.mp4',
@@ -400,7 +400,7 @@ describe('VidGenie image-list requests and JSON editor validation', () => {
 });
 
 it.each([
-  ['gpt-6-astra', 'gpt-6-astra'],
+  ['gpt-6.2-astra', 'gpt-6.2-astra'],
   ['gpt-6.1-sol', 'gpt-6.1-sol'],
   ['claude-opus-5.5', 'claude-opus-5.5'],
   ['claude-fable-5.2', 'claude-fable-5.2'],

@@ -80,6 +80,17 @@ describe('Vidgenie completed session models', () => {
     expect(field.querySelector('input')).toBeDisabled();
   }
 
+  it('keeps Kling Image 4 selected in a new Vidgenie request and submits its canonical model key', async () => {
+    localStorage.setItem('defaultVidGPTImageGenerationModel', 'KLINGIMAGE4');
+    await mount();
+    await openNewSession();
+    expect(screen.getByText(/^Image model$/i).parentElement).toHaveTextContent('Kling Image 4');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Submit', exact: true })); });
+    expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/step\/text_to_video$/), expect.objectContaining({
+      input: expect.objectContaining({ image_model: 'KLINGIMAGE4' }),
+    }), expect.anything());
+  });
+
   it.each(['TEXT_TO_VIDEO', 'IMAGE_LIST_TO_VIDEO'])('shows saved %s models and migrates legacy Fable selections instead of browser defaults', async (expressGenerationType) => {
     localStorage.setItem('defaultVidGPTImageGenerationModel', 'GPTIMAGE2.5');
     localStorage.setItem('defaultVIdGPTVideoGenerationModel', 'RUNWAYML');
@@ -92,7 +103,7 @@ describe('Vidgenie completed session models', () => {
       expressGenerationInferenceEffort: 'xhigh',
       // Explicit generation settings take priority over older session fields.
       imageModel: 'NANOBANANAPRO', videoGenerationModel: 'RUNWAYML',
-      inferenceModel: 'gpt-6-astra', inferenceEffort: 'high',
+      inferenceModel: 'gpt-6.2-astra', inferenceEffort: 'high',
     });
     await mount();
     expandRequest();
@@ -127,7 +138,7 @@ describe('Vidgenie completed session models', () => {
   it('displays the saved inference model when deployment availability excludes it', async () => {
     harness.inferenceAvailability = {
       isStandaloneDeployment: false, isLoading: false, hasConfiguredInferenceModels: true,
-      inferenceModelOptions: [{ label: 'GPT 6 Astra', value: 'gpt-6-astra' }],
+      inferenceModelOptions: [{ label: 'GPT 6.2 Astra', value: 'gpt-6.2-astra' }],
     };
     completeSession({ expressGenerationInferenceModel: 'claude-fable-5.1', expressGenerationInferenceEffort: 'xhigh' });
     await mount();
@@ -212,6 +223,56 @@ function expectNewDraft() {
   expect(screen.getByPlaceholderText('https://cdn.example.com/logo.png')).toHaveValue('https://media.example/new-cta.png');
   expect(screen.queryByRole('link', { name: 'Preview result' })).not.toBeInTheDocument();
 }
+
+describe('Vidgenie failed image recovery', () => {
+  it('reopens the failed project and resumes its existing image stage once', async () => {
+    const savedLayers = [
+      { _id: 'ready-scene', prompt: 'First scene', imageSession: { generationStatus: 'COMPLETED', activeGeneratedImage: 'saved.png' } },
+      { _id: 'failed-scene', prompt: 'Second scene', imageSession: { generationStatus: 'FAILED', generationError: 'Provider rejected this image.' } },
+    ];
+    const savedAudio = [{ _id: 'speech', audio: 'speech.mp3' }, { _id: 'music', audio: 'music.mp3' }];
+    const stages = { prompt_generation: 'COMPLETED', image_generation: 'FAILED', audio_generation: 'COMPLETED', music_generation: 'COMPLETED' };
+    harness.session = { ...harness.session, isExpressGeneration: true, expressGenerationType: 'TEXT_TO_VIDEO', inputPrompt: 'Saved story',
+      expressGenerationFailed: true, expressGenerationPending: false,
+      expressGenerationError: 'Provider rejected this image.', expressGenerationStatus: stages,
+      layers: savedLayers, audioLayers: savedAudio };
+    harness.status = { status: 'FAILED', expressGenerationFailed: true, expressGenerationStatus: stages };
+    const resume = deferred();
+    axios.post.mockReturnValue(resume.promise);
+    await mount();
+    const retry = await screen.findByRole('button', { name: 'Retry image generation' });
+    expect(screen.getByRole('region', { name: 'Generation progress' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Submit', exact: true })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Original request/ }));
+    expect(promptInput()).toHaveValue('Saved story');
+    expect(promptInput()).toBeDisabled();
+    fireEvent.click(retry);
+    expect(retry).toBeDisabled();
+    fireEvent.click(retry);
+    expect(axios.post).toHaveBeenCalledOnce();
+    expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/resume_render$/),
+      { input: { videoSessionId: 'previous' } }, expect.anything());
+    const pendingStages = { ...stages, image_generation: 'PENDING' };
+    harness.status = { status: 'PENDING', expressGenerationFailed: false, expressGenerationStatus: pendingStages };
+    harness.session = { ...harness.session, expressGenerationFailed: false, expressGenerationPending: true,
+      expressGenerationStatus: pendingStages };
+    await act(async () => { resume.resolve({ data: { resumed: true, status: 'PENDING', expressGenerationStatus: pendingStages } }); });
+    expect(screen.queryByRole('button', { name: 'Retry image generation' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
+    expect(harness.session.layers).toBe(savedLayers);
+    expect(harness.session.audioLayers).toBe(savedAudio);
+    expect(axios.post).toHaveBeenCalledOnce();
+  });
+
+  it('does not offer image-stage recovery for a failed prompt stage', async () => {
+    harness.session = { ...harness.session, isExpressGeneration: true, expressGenerationFailed: true,
+      expressGenerationStatus: { prompt_generation: 'FAILED', image_generation: 'FAILED' } };
+    harness.status = { status: 'FAILED', expressGenerationFailed: true };
+    await mount();
+    expect(screen.queryByRole('button', { name: 'Retry image generation' })).not.toBeInTheDocument();
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+});
 
 describe('Vidgenie CTA session isolation', () => {
   it.each(['success', 'failure'])('keeps the new CTA draft when the previous session load finishes with %s', async (outcome) => {
