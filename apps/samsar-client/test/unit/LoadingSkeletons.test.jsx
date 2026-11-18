@@ -7,6 +7,15 @@ import { getSessionLoadingLayout, readSessionLoadingLayout, rememberSessionLoadi
 afterEach(() => vi.restoreAllMocks());
 
 describe('session-specific loading layout hints', () => {
+  it('uses a focused preview skeleton on a create handoff before session metadata is available', () => {
+    const { container } = render(<MemoryRouter initialEntries={['/vidgenie/new-project?view=preview']}><VidgenieSkeletonLoader /></MemoryRouter>);
+    expect(screen.getByRole('status')).toHaveAttribute('data-loading-layout', 'preview');
+    expect(container.querySelector('[data-skeleton-result]')).not.toBeNull();
+    expect(container.querySelector('.vidgenie-preview-frame')).not.toBeNull();
+    expect(container.querySelector('[data-skeleton-request], [data-skeleton-prompt]')).toBeNull();
+    expect(container.querySelector('input, select, textarea')).toBeNull();
+  });
+
   it('separates blank, completed and in-progress projects, including old render previews', () => {
     expect(getSessionLoadingLayout({}).variant).toBe('init');
     expect(getSessionLoadingLayout({ videoLink: '/done.mp4' }).variant).toBe('completed');

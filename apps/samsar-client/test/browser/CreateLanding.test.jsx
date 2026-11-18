@@ -27,9 +27,12 @@ vi.mock('../../src/hooks/useDeploymentModelAvailability.js', () => ({
 vi.mock('../../src/hooks/useInferenceModelAvailability.js', () => ({
   useInferenceModelAvailability: () => ({ isLoading: false }),
 }));
+vi.mock('../../src/components/landing/CreatePublishedGallery.jsx', () => ({ default: () => null }));
+vi.mock('../../src/components/oneshot_editor/OneshotEditorContainer.jsx', () => ({ preloadOneshotEditor: vi.fn().mockResolvedValue(undefined) }));
 
 function CurrentRoute() {
-  return <output aria-label="Current route">{useLocation().pathname}</output>;
+  const location = useLocation();
+  return <output aria-label="Current route">{location.pathname}{location.search}</output>;
 }
 
 function mount(theme) {
@@ -89,7 +92,7 @@ for (const theme of ['light', 'dark']) {
       expect(document.querySelector('[data-app-top-nav]').scrollWidth).toBeLessThanOrEqual(width);
       const promptBounds = prompt.element().getBoundingClientRect();
       const submitBounds = submit.element().getBoundingClientRect();
-      const headingBounds = page.getByRole('heading', { name: 'What do you want to create?', exact: true }).element().getBoundingClientRect();
+      const headingBounds = page.getByRole('heading', { name: 'Create video', exact: true }).element().getBoundingClientRect();
       const navigationBounds = document.querySelector('[data-app-top-nav]').getBoundingClientRect();
       expect(headingBounds.top).toBeGreaterThanOrEqual(navigationBounds.bottom);
       expect(promptBounds.left).toBeGreaterThanOrEqual(0);
@@ -108,7 +111,7 @@ it('submits the defaults from the visible form and opens the video progress rout
   mount('dark');
   await page.getByRole('textbox', { name: 'Describe your video', exact: true }).fill('  A quiet city waking up  ');
   await page.getByRole('button', { name: 'Create video', exact: true }).click();
-  await expect.element(page.getByLabelText('Current route')).toHaveTextContent('/vidgenie/created-video');
+  await expect.element(page.getByLabelText('Current route')).toHaveTextContent('/vidgenie/created-video?view=preview');
   expect(axios.post).toHaveBeenCalledExactlyOnceWith(
     expect.stringContaining('/v2/video/step/text_to_video'),
     { input: {

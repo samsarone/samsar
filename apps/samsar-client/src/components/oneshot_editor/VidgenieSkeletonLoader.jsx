@@ -8,13 +8,24 @@ import { getSessionLoadingLayout, readSessionLoadingLayout } from '../../utils/s
 import { SkeletonBlock, SkeletonFields, SkeletonStatus } from '../common/LoadingSkeleton.jsx';
 import './mobileStyles.css';
 
-export function VidgenieSkeleton({ variant = 'unknown', aspectRatio = '16:9', embedded = false }) {
+export function VidgenieSkeleton({ variant = 'unknown', aspectRatio = '16:9', embedded = false, focused = false }) {
   useUiLanguage();
   const { colorMode } = useColorMode();
   const surface = `border border-line ${colorMode === 'dark' ? 'bg-[#181b24]/96 shadow-[0_20px_56px_rgba(0,0,0,0.32)]' : 'bg-white shadow-sm'}`;
   const completed = variant === 'completed';
   const showForm = variant === 'init' || variant === 'pending';
-  const content = (
+  const content = focused ? (
+    <SkeletonStatus label={uiText('Loading VidGenie')} data-loading-layout="preview" className="mx-auto w-full max-w-3xl py-4 sm:py-8">
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-4 px-1">
+        <div className="min-w-0 flex-1"><SkeletonBlock className="h-8 w-56 max-w-full" /><SkeletonBlock className="mt-3 h-4 w-72 max-w-full" /></div>
+        <SkeletonBlock className="h-11 w-36 rounded-full" />
+      </div>
+      <div data-skeleton-result className="vidgenie-progress-panel rounded-2xl border border-line bg-surface p-4 shadow-sm">
+        <SkeletonBlock className="h-3 w-full rounded-full" />
+        <SkeletonBlock className={`vidgenie-preview-frame ${aspectRatio === '9:16' ? 'vidgenie-preview-frame-portrait' : 'vidgenie-preview-frame-landscape'} mx-auto mt-5 rounded-xl`} style={getVidgeniePreviewFrameStyle(aspectRatio)} />
+      </div>
+    </SkeletonStatus>
+  ) : (
     <SkeletonStatus label={uiText('Loading VidGenie')} data-loading-layout={variant} className={`${VIDGENIE_EDITOR_CLASS} vidgenie-loading`}>
       <div className={`${VIDGENIE_CARD_CLASS} ${surface}`}>
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
@@ -43,7 +54,7 @@ export function VidgenieSkeleton({ variant = 'unknown', aspectRatio = '16:9', em
     </SkeletonStatus>
   );
   if (embedded) return content;
-  return <VidgeniePageShell>{content}</VidgeniePageShell>;
+  return <VidgeniePageShell focused={focused}>{content}</VidgeniePageShell>;
 }
 
 function RouteVidgenieSkeleton(props) {
@@ -53,7 +64,7 @@ function RouteVidgenieSkeleton(props) {
   const guestId = String(guest?._id?.$oid || guest?._id || guest?.id || '');
   const layout = id && guestId === id && guest?.isGuestSession === true
     ? getSessionLoadingLayout(guest) : readSessionLoadingLayout(id);
-  return <VidgenieSkeleton {...layout} {...props} />;
+  return <VidgenieSkeleton {...layout} focused={new URLSearchParams(location.search).get('view') === 'preview'} {...props} />;
 }
 
 export default function VidgenieSkeletonLoader(props) {

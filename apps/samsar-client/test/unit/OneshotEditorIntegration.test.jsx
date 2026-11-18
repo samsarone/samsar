@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, parsePath, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
 import { LocalizationProvider } from '../../src/contexts/LocalizationContext.jsx';
@@ -63,12 +63,12 @@ afterEach(() => { clearAuthData(); });
 
 function CurrentLocation() {
   const location = useLocation();
-  return <output aria-label="Current route">{location.pathname}</output>;
+  return <output aria-label="Current route">{location.pathname}{location.search}{location.hash}</output>;
 }
 
 async function mountEditor({ path = '/vidgenie/project-1', state, initialSessionRequestRef } = {}) {
   let view;
-  await act(async () => { view = render(<MemoryRouter initialEntries={[{ pathname: path, state }]}>
+  await act(async () => { view = render(<MemoryRouter initialEntries={[{ ...parsePath(path), state }]}>
     <LocalizationProvider><CurrentLocation /><Routes>
       <Route path="/vidgenie/:id" element={<OneshotEditor initialSessionRequestRef={initialSessionRequestRef} />} />
       <Route path="*" element={<div>Destination page</div>} />
@@ -84,6 +84,62 @@ async function submitPrompt(prompt = 'A river flowing through an ancient city.')
 }
 
 describe('VidGenie project loading and wizard requests', () => {
+  it('focuses create-origin renders on progress while preserving pause, resume and the full editor route', async () => {
+    harness.session = { ...harness.session, inputPrompt: 'A quiet city waking up', generationType: 'TEXT_TO_VIDEO', expressGenerationPending: true, isExpressGeneration: true };
+    await mountEditor({ path: '/vidgenie/project-1?ref=create&view=preview#render' });
+    expect(screen.getByRole('heading', { name: 'Creating your video...' })).toBeVisible();
+    expect(screen.getByText('A quiet city waking up')).toBeVisible();
+    expect(screen.getByLabelText('Generation progress')).toHaveTextContent('Generating project');
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Assistant panel')).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Enter a succinct prompt for your rendition…')).not.toBeInTheDocument();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Pause render' })));
+    expect(screen.getByRole('heading', { name: 'Render paused' })).toBeVisible();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Resume render' })));
+    expect(screen.getByLabelText('Generation progress')).toHaveTextContent('Generating project');
+    const editorLink = screen.getByRole('link', { name: 'Open in VidGenie' });
+    expect(editorLink).toHaveAttribute('href', '/vidgenie/project-1?ref=create#render');
+    const sessionReads = axios.get.mock.calls.filter(([url]) => url.includes('session_details')).length;
+    await act(async () => fireEvent.click(editorLink));
+    expect(screen.getByLabelText('Current route')).toHaveTextContent('/vidgenie/project-1?ref=create#render');
+    expect(promptInput()).toBeVisible();
+    expect(axios.get.mock.calls.filter(([url]) => url.includes('session_details'))).toHaveLength(sessionReads);
+  });
+
+  it('keeps focused progress mounted across polls and exposes the completed playback and actions', async () => {
+    vi.useFakeTimers();
+    harness.session = { ...harness.session, inputPrompt: 'Create preview', generationType: 'TEXT_TO_VIDEO', expressGenerationPending: true, isExpressGeneration: true };
+    await mountEditor({ path: '/vidgenie/project-1?view=preview' });
+    const progress = screen.getByLabelText('Generation progress');
+    harness.status = { ...harness.status, current_step: 'video_generation' };
+    await act(async () => vi.advanceTimersByTimeAsync(5000));
+    expect(screen.getByLabelText('Generation progress')).toBe(progress);
+    harness.status = { status: 'COMPLETED', videoLink: 'https://media.example/create-result.mp4' };
+    await act(async () => vi.advanceTimersByTimeAsync(5000));
+    expect(screen.getByLabelText('Generation progress')).toBe(progress);
+    expect(screen.getByRole('heading', { name: 'Your video is ready' })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Preview result' })).toHaveAttribute('href', 'https://media.example/create-result.mp4');
+    expect(screen.getByRole('button', { name: 'Download' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'View in Studio' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Pause render' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Create another video' })).toHaveAttribute('href', '/create');
+    const reads = axios.get.mock.calls.length;
+    await act(async () => vi.advanceTimersByTimeAsync(15000));
+    expect(axios.get).toHaveBeenCalledTimes(reads);
+  });
+
+  it('keeps focused image failures recoverable through the existing retry action', async () => {
+    harness.session = { ...harness.session, inputPrompt: 'Saved request', isExpressGeneration: true, expressGenerationFailed: true, expressGenerationError: 'Image provider rejected the request', expressGenerationStatus: { prompt_generation: 'COMPLETED', image_generation: 'FAILED' } };
+    harness.status = { status: 'FAILED', error: 'Image provider rejected the request', expressGenerationStatus: harness.session.expressGenerationStatus };
+    await mountEditor({ path: '/vidgenie/project-1?view=preview' });
+    expect(screen.getByRole('heading', { name: 'Video generation failed' })).toBeVisible();
+    expect(screen.getByRole('alert')).toHaveTextContent('Image provider rejected the request');
+    harness.status = { status: 'PENDING' };
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Retry image generation' })));
+    expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/v2\/resume_render$/), { input: { videoSessionId: 'project-1' } }, expect.any(Object));
+    expect(screen.getByLabelText('Generation progress')).toHaveTextContent('Generating project');
+  });
+
   it('renders a completed project from the route preload without requesting it again', async () => {
     const session = { ...harness.session, inputPrompt: 'Preloaded story', isExpressGeneration: true, videoLink: 'https://media.example/final.mp4' };
     const initialSessionRequestRef = { current: { sessionId: 'project-1', authorization: 'Bearer integration-token', promise: Promise.resolve({ data: session }) } };

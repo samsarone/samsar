@@ -3,13 +3,16 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
 
-const scenario = vi.hoisted(() => ({ user: {}, headers: {}, deployment: {}, inference: {} }));
+const scenario = vi.hoisted(() => ({ user: {}, headers: {}, deployment: {}, inference: {}, standalone: false }));
 vi.mock('axios', () => ({ default: { post: vi.fn() } }));
 vi.mock('../../src/contexts/UserContext.jsx', () => ({ useUser: () => scenario.user }));
 vi.mock('../../src/utils/web.jsx', () => ({ getHeaders: () => scenario.headers }));
 vi.mock('../../src/hooks/useDeploymentModelAvailability.js', () => ({ useDeploymentModelAvailability: () => scenario.deployment }));
 vi.mock('../../src/hooks/useInferenceModelAvailability.js', () => ({ useInferenceModelAvailability: () => scenario.inference }));
 vi.mock('../../src/components/common/OverflowContainer.tsx', () => ({ default: ({ children }) => <div>{children}</div> }));
+vi.mock('../../src/utils/environment.jsx', () => ({ get IS_STANDALONE_DEPLOYMENT() { return scenario.standalone; } }));
+vi.mock('../../src/components/landing/CreatePublishedGallery.jsx', () => ({ default: () => <section aria-label="Published videos" /> }));
+vi.mock('../../src/components/oneshot_editor/OneshotEditorContainer.jsx', () => ({ preloadOneshotEditor: vi.fn().mockResolvedValue(undefined) }));
 import CreateLanding from '../../src/components/landing/CreateLanding.jsx';
 
 function CurrentRoute() {
@@ -29,12 +32,14 @@ beforeEach(() => {
   scenario.headers = { headers: { Authorization: 'Bearer test' } };
   scenario.deployment = { isStandaloneDeployment: false, isLoading: false };
   scenario.inference = { isLoading: false };
+  scenario.standalone = false;
   axios.post.mockReset().mockResolvedValue({ data: { session_id: 'new-video', request_id: 'new-video' } });
 });
 
 describe('simple create landing', () => {
   it('shows one prompt and no generation options, without creating a session on entry', () => {
     mount();
+    expect(screen.getByRole('heading', { name: 'Create video' })).toBeVisible();
     expect(screen.getAllByRole('textbox')).toHaveLength(1);
     expect(screen.queryByRole('combobox')).toBeNull();
     expect(screen.queryByRole('checkbox')).toBeNull();
@@ -43,11 +48,20 @@ describe('simple create landing', () => {
     expect(axios.post).not.toHaveBeenCalled();
   });
 
+  it('shows platform publications only in the production edition', async () => {
+    const view = mount();
+    expect(await screen.findByRole('region', { name: 'Published videos' })).toBeInTheDocument();
+    view.unmount();
+    scenario.standalone = true;
+    mount();
+    expect(screen.queryByRole('region', { name: 'Published videos' })).toBeNull();
+  });
+
   it('creates a fresh automatic video with the new defaults and opens its progress view', async () => {
     mount();
     enterPrompt('  A quiet city waking up  ');
     submit();
-    await waitFor(() => expect(screen.getByLabelText('Current route')).toHaveTextContent('/vidgenie/new-video'));
+    await waitFor(() => expect(screen.getByLabelText('Current route')).toHaveTextContent('/vidgenie/new-video?view=preview'));
     expect(axios.post).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('/v2/video/step/text_to_video'), { input: {
       prompt: 'A quiet city waking up', inference_model: 'claude-opus-5.5', image_model: 'GPTIMAGE2.5',
       video_model: 'KLINGIMGTOVID4', duration: 30, aspect_ratio: '16:9', language: 'auto',
