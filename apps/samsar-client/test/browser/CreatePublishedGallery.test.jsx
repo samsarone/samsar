@@ -47,17 +47,19 @@ function mount(theme) {
 
 beforeEach(() => {
   feedRequests = [];
+  vi.stubEnv('VITE_PROCESSOR_API', '/api');
   setUiLanguage('en');
   axios.get.mockReset(); axios.post.mockReset();
   vi.spyOn(window, 'fetch').mockImplementation((input, options) => {
     if (!String(input).includes('/publication?')) return nativeFetch.call(window, input, options);
     feedRequests.push(String(input));
-    const secondPage = new URL(input).searchParams.has('cursor');
+    const secondPage = new URL(input, window.location.origin).searchParams.has('cursor');
     return Promise.resolve(new Response(JSON.stringify({ items: videos(secondPage ? 13 : 1, secondPage ? 4 : 12), hasMore: !secondPage, nextCursor: secondPage ? null : 'page-two' }), { headers: { 'Content-Type': 'application/json' } }));
   });
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   document.body.classList.remove('theme-dark', 'theme-light');
   document.documentElement.classList.remove('dark');
 });
@@ -69,6 +71,7 @@ for (const theme of ['light', 'dark']) {
       const view = mount(theme);
       const firstCard = page.getByRole('button', { name: 'Play Published video 1', exact: true });
       await expect.element(firstCard).toBeVisible();
+      expect(feedRequests[0]).toBe('/api/publication?limit=12');
       expect(view.container.querySelectorAll('video')).toHaveLength(0);
       expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
       const heading = page.getByRole('heading', { name: 'Made with Samsar', exact: true }).element();

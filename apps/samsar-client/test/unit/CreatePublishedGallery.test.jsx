@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import CreatePublishedGallery from '../../src/components/landing/CreatePublishedGallery.jsx';
+import CreatePublishedGallery, { resolvePublishedMediaUrl } from '../../src/components/landing/CreatePublishedGallery.jsx';
 import { setUiLanguage } from '../../src/utils/localization.js';
 
 const edition = vi.hoisted(() => ({ standalone: false }));
@@ -32,6 +32,16 @@ beforeEach(() => {
 afterEach(() => {
   globalThis.fetch = originalFetch;
   globalThis.IntersectionObserver = originalObserver;
+});
+
+it('resolves public CDN and relative media when the production API base is /api', () => {
+  const origin = 'https://app.samsar.one';
+  expect(resolvePublishedMediaUrl('https://static.samsar.one/published/video.mp4', '/api', origin)).toBe('https://static.samsar.one/published/video.mp4');
+  expect(resolvePublishedMediaUrl('/published/thumbnail.png', '/api', origin)).toBe('https://app.samsar.one/published/thumbnail.png');
+  expect(resolvePublishedMediaUrl('//static.samsar.one/published/thumbnail.png', '/api', origin)).toBe('https://static.samsar.one/published/thumbnail.png');
+  expect(resolvePublishedMediaUrl('https://static.samsar.one/published/video.mp4', '/api', undefined)).toBe('https://static.samsar.one/published/video.mp4');
+  expect(resolvePublishedMediaUrl('javascript:alert(1)', '/api', origin)).toBe('');
+  expect(resolvePublishedMediaUrl('data:video/mp4;base64,test', '/api', origin)).toBe('');
 });
 
 it('does not mount or request the public gallery in standalone editions', () => {

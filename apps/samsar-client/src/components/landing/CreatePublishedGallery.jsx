@@ -11,11 +11,19 @@ const API_SERVER = (import.meta.env.VITE_PROCESSOR_API || 'http://localhost:3002
 const PAGE_SIZE = 12;
 const text = (value) => typeof value === 'string' ? value.trim() : '';
 
-function mediaUrl(value) {
+export function resolvePublishedMediaUrl(value, apiBase = API_SERVER, origin = globalThis.location?.origin) {
   const candidate = text(value);
   if (!candidate) return '';
   try {
-    const url = new URL(candidate, API_SERVER);
+    let url;
+    try {
+      // Public CDN URLs do not depend on whether the API uses an absolute or
+      // same-origin base (production uses /api).
+      url = new URL(candidate);
+    } catch {
+      const locationOrigin = origin && origin !== 'null' ? origin : 'http://localhost:3002';
+      url = new URL(candidate, new URL(apiBase, locationOrigin));
+    }
     return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
   } catch { return ''; }
 }
@@ -32,13 +40,13 @@ function aspectRatio(value) {
 
 function normalizePublication(item) {
   const id = text(item?.id) || text(item?._id);
-  const videoUrl = mediaUrl(item?.videoUrl || item?.video_url);
+  const videoUrl = resolvePublishedMediaUrl(item?.videoUrl || item?.video_url);
   if (!id || !videoUrl || item?.isHidden || item?.isDeleted) return null;
   return {
     id,
     videoUrl,
     title: text(item.title),
-    posterUrl: mediaUrl(item.posterUrl || item.splashImage || item.thumbnailUrl || item.thumbnail),
+    posterUrl: resolvePublishedMediaUrl(item.posterUrl || item.splashImage || item.thumbnailUrl || item.thumbnail),
     aspectRatio: aspectRatio(item.aspectRatio || item.publishedAspectRatio || item.aspect_ratio),
     prompt: text(item.originalPrompt || item.original_prompt),
     // The publication snapshot describes the models that made this video.
