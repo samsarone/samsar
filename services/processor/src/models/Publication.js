@@ -34,6 +34,7 @@ import {
   stageInteractivePublicationUnpublish,
 } from './InteractivePublication.js';
 import { isBranchedVideoSession } from './interactive/InteractivePublicationManifest.js';
+import { resolvePublicationGenerationModelFields } from './publication/GenerationModels.js';
 
 import { updateTagCloudForPublication } from './Content.js';
 
@@ -106,6 +107,8 @@ const buildInteractivePublishedSessionSnapshot = (session = {}) => ({
   publishedSplashImage: session.publishedSplashImage ?? null,
   publishedImageModel: session.publishedImageModel ?? null,
   publishedVideoModel: session.publishedVideoModel ?? null,
+  publishedInferenceModel: session.publishedInferenceModel ?? null,
+  publishedGenerationModels: session.publishedGenerationModels ?? null,
   publishedHasSubtitles: session.publishedHasSubtitles ?? null,
   publishedSessionLanguage: session.publishedSessionLanguage ?? null,
   publishedLanguageString: session.publishedLanguageString ?? null,
@@ -124,6 +127,8 @@ const buildInteractiveUnpublishedSessionUpdate = () => ({
   publishedSplashImage: null,
   publishedImageModel: null,
   publishedVideoModel: null,
+  publishedInferenceModel: null,
+  publishedGenerationModels: null,
   publishedHasSubtitles: null,
   publishedSessionLanguage: null,
   publishedLanguageString: null,
@@ -140,6 +145,10 @@ export async function createPublicationForSessionVideo(
     buildInteractiveSessionUpdate = buildInteractivePublishedSessionUpdate,
     markInteractivePublication = markInteractivePublicationPublished,
     abortInteractivePublication = abortInteractivePublicationPublish,
+    publicationModel = Publication,
+    preparePublicationMedia = preparePublicPublicationMedia,
+    resolveGenerationModels = resolvePublicationGenerationModelFields,
+    updatePublicationTags = updateTagCloudForPublication,
   } = {},
 ) {
 
@@ -299,19 +308,9 @@ export async function createPublicationForSessionVideo(
       ? splashImageCandidate.trim()
       : null;
 
-  const payloadImageModel = normalizeOptionalString(payload.imageModel);
-  const imageModelCandidate = [payloadImageModel, videoSessionData?.imageModel, videoSessionData?.expressGenerationImageModel].find(
-    (value) => typeof value === 'string' && value.trim().length > 0
-  );
-  const sessionImageModel = imageModelCandidate ? imageModelCandidate.trim() : null;
-
-  const payloadVideoModel = normalizeOptionalString(payload.videoModel);
-  const videoModelCandidate = [
-    payloadVideoModel,
-    videoSessionData?.videoGenerationModel,
-    videoSessionData?.expressGenerativeVideoModel,
-  ].find((value) => typeof value === 'string' && value.trim().length > 0);
-  const sessionVideoModel = videoModelCandidate ? videoModelCandidate.trim() : null;
+  const modelFields = await resolveGenerationModels(videoSessionData);
+  const sessionImageModel = modelFields.imageModel;
+  const sessionVideoModel = modelFields.videoModel;
 
   const originalPrompt = resolvePublicationOriginalPrompt(payload, videoSessionData);
   const sessionTranscript = normalizePublicationTranscript(videoSessionData.movieResourceList);
@@ -382,7 +381,7 @@ export async function createPublicationForSessionVideo(
       }
     : videoSessionData;
 
-  const publicMedia = await preparePublicPublicationMedia(mediaSession, {
+  const publicMedia = await preparePublicationMedia(mediaSession, {
     thumbnailReference: payloadThumbnailReference || sessionSplashImage,
   });
   const videoURL = publicMedia.videoUrl;
@@ -394,7 +393,7 @@ export async function createPublicationForSessionVideo(
   const normalizedSlug = normalizeOptionalString(payload.slug);
   const normalizedImageHash = normalizeOptionalString(payload.imageHash);
 
-  let publicationExists = await Publication.findOne({ sessionId: id });
+  let publicationExists = await publicationModel.findOne({ sessionId: id });
   let publicationData;
 
   if (publicationExists) {
@@ -410,6 +409,8 @@ export async function createPublicationForSessionVideo(
     publicationExists.splashImage = resolvedSessionSplashImage;
     publicationExists.imageModel = sessionImageModel;
     publicationExists.videoModel = sessionVideoModel;
+    publicationExists.inferenceModel = modelFields.inferenceModel;
+    publicationExists.generationModels = modelFields.generationModels;
     publicationExists.sessionLanguage = sessionLanguage;
     publicationExists.language = sessionLanguage;
     publicationExists.languageString = languageString;
@@ -429,7 +430,7 @@ export async function createPublicationForSessionVideo(
     publicationData = publicationExists;
   } else {
 
-    publicationData = new Publication({
+    publicationData = new publicationModel({
       sessionId: id,
       videoURL: videoURL,
       createdBy: userId,
@@ -440,6 +441,8 @@ export async function createPublicationForSessionVideo(
       splashImage: resolvedSessionSplashImage,
       imageModel: sessionImageModel,
       videoModel: sessionVideoModel,
+      inferenceModel: modelFields.inferenceModel,
+      generationModels: modelFields.generationModels,
       originalPrompt: originalPrompt,
       sessionTranscript,
       sessionLanguage: sessionLanguage,
@@ -469,6 +472,8 @@ export async function createPublicationForSessionVideo(
     publishedSplashImage: resolvedSessionSplashImage,
     publishedImageModel: sessionImageModel,
     publishedVideoModel: sessionVideoModel,
+    publishedInferenceModel: modelFields.inferenceModel,
+    publishedGenerationModels: modelFields.generationModels,
     publishedHasSubtitles: hasSubtitles,
     publishedSessionLanguage: sessionLanguage,
     publishedLanguageString: languageString,
@@ -493,7 +498,7 @@ export async function createPublicationForSessionVideo(
   }
 
   payload.publicationId = publicationId;
-  updateTagCloudForPublication(payload);
+  updatePublicationTags(payload);
 
   return publicationData;
 
@@ -612,6 +617,8 @@ export async function unpublishSessionVideo(
   videoSessionData.publishedSplashImage = null;
   videoSessionData.publishedImageModel = null;
   videoSessionData.publishedVideoModel = null;
+  videoSessionData.publishedInferenceModel = null;
+  videoSessionData.publishedGenerationModels = null;
   videoSessionData.publishedHasSubtitles = null;
   videoSessionData.publishedSessionLanguage = null;
   videoSessionData.publishedLanguageString = null;

@@ -13,6 +13,9 @@ const generatedImageSchema = new Schema({
 
 }, { timestamps: true });
 
+// Publication attribution resolves selected assets within their source session.
+generatedImageSchema.index({ sessionId: 1 });
+
 // 3. Create a Model.
 const GeneratedImage = model('GeneratedImage', generatedImageSchema);
 

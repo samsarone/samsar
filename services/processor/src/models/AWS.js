@@ -9,6 +9,7 @@ import {
   ListObjectsV2Command,
   DeleteObjectsCommand,
   GetBucketLocationCommand,
+  HeadBucketCommand,
   GetObjectCommand,
 } from '@aws-sdk/client-s3';
 import {
@@ -145,6 +146,9 @@ const getS3ClientForRegion = (region) => {
     ? createBackblazeNativeClientFromEnv(process.env, { region: resolvedRegion })
     : new S3Client({
       region: resolvedRegion,
+      // AWS buckets can live outside the configured default region. Keep
+      // provider endpoints fixed for S3-compatible storage.
+      followRegionRedirects: !resolveS3Endpoint(),
       credentials: {
         accessKeyId,
         secretAccessKey,
@@ -1176,29 +1180,76 @@ export async function getObjectStreamFromS3({ bucketName, key }) {
   return response.Body;
 }
 
-const bucketRegionCache = new Map();
-
-async function getBucketRegion(bucketName) {
-  if (bucketRegionCache.has(bucketName)) {
-    return bucketRegionCache.get(bucketName);
-  }
-
-  const fallbackRegion = resolveBucketRegion();
-  try {
-    const s3 = getS3ClientForRegion(fallbackRegion);
-    const location = await s3.send(new GetBucketLocationCommand({ Bucket: bucketName }));
-    let region = location?.LocationConstraint || 'us-east-1';
-    // Legacy buckets sometimes return an empty string; treat that as us-east-1.
-    if (region === '') {
-      region = 'us-east-1';
-    }
-    bucketRegionCache.set(bucketName, region);
-    return region;
-  } catch (err) {
-    bucketRegionCache.set(bucketName, fallbackRegion);
-    return fallbackRegion;
-  }
+function normalizeBucketRegion(value) {
+  if (value === 'EU') return 'eu-west-1';
+  return typeof value === 'string' && /^[a-z]{2}(?:-[a-z0-9]+)+-\d+$/.test(value)
+    ? value
+    : null;
 }
+
+function bucketRegionFromResponse(response) {
+  return normalizeBucketRegion(response?.BucketRegion) ||
+    normalizeBucketRegion(response?.Region) ||
+    normalizeBucketRegion(response?.$response?.headers?.['x-amz-bucket-region']);
+}
+
+function createBucketRegionResolver({
+  getClient = getS3ClientForRegion,
+  getFallbackRegion = (bucketName) => bucketName === MEDIA_BUCKET_NAME &&
+    !resolveS3Endpoint() && !shouldUseBackblazeNativeApi()
+    ? resolveCdnRegion()
+    : resolveBucketRegion(),
+  getCacheScope = () => `${resolveS3Endpoint()}:${shouldUseBackblazeNativeApi()}`,
+  allowHeadBucket = () => !resolveS3Endpoint() && !shouldUseBackblazeNativeApi(),
+} = {}) {
+  const regions = new Map();
+  const pending = new Map();
+  return async function resolveBucketRegionForName(bucketName) {
+    const fallbackRegion = getFallbackRegion(bucketName);
+    const cacheKey = `${getCacheScope()}:${fallbackRegion}:${bucketName}`;
+    if (regions.has(cacheKey)) return regions.get(cacheKey);
+    if (pending.has(cacheKey)) return pending.get(cacheKey);
+
+    const lookup = (async () => {
+      let region;
+      try {
+        const client = getClient(fallbackRegion);
+        try {
+          const location = await client.send(new GetBucketLocationCommand({ Bucket: bucketName }));
+          // An empty LocationConstraint is the documented us-east-1 response.
+          region = location?.LocationConstraint == null || location.LocationConstraint === ''
+            ? 'us-east-1'
+            : normalizeBucketRegion(location.LocationConstraint);
+        } catch (error) {
+          // AuthorizationHeaderMalformed and redirects carry the actual region
+          // even when GetBucketLocation was signed for the wrong default.
+          region = bucketRegionFromResponse(error);
+          if (!region && allowHeadBucket()) {
+            try {
+              region = bucketRegionFromResponse(await client.send(new HeadBucketCommand({ Bucket: bucketName })));
+            } catch (headError) {
+              // HeadBucket includes the region even without ListBucket access.
+              region = bucketRegionFromResponse(headError);
+            }
+          }
+        }
+      } catch {
+        // Preserve the original operation's configuration/credential error.
+      }
+      if (region) regions.set(cacheKey, region);
+      // A denied or transient lookup must never permanently cache a guess.
+      return region || fallbackRegion;
+    })();
+    pending.set(cacheKey, lookup);
+    try {
+      return await lookup;
+    } finally {
+      pending.delete(cacheKey);
+    }
+  };
+}
+
+const getBucketRegion = createBucketRegionResolver();
 
 export async function deleteObjectsWithPrefix({ bucketName, prefix }) {
   const region = await getBucketRegion(bucketName);
@@ -1236,6 +1287,7 @@ export async function deleteObjectsWithPrefix({ bucketName, prefix }) {
 }
 
 export const __testOnly__ = {
+  createBucketRegionResolver,
   createMediaFilePublisher,
   buildMediaDeliveryUrl,
   getCloudFrontSignedUrlExpirationSeconds,

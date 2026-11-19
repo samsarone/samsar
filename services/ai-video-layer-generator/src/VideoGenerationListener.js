@@ -258,6 +258,7 @@ const MAX_BASE_PROVIDER_PENDING_MS = Math.max(
   5 * 60 * 1000,
   Number(process.env.AI_VIDEO_MAX_BASE_PROVIDER_PENDING_MS) || 30 * 60 * 1000
 );
+const FAL_PROVIDER_TERMINAL_GRACE_MS = 60 * 1000;
 const RUNWAY_PENDING_POLL_INTERVAL_MS = 15 * 1000;
 const ALIBABA_HAPPY_HORSE_PENDING_POLL_INTERVAL_MS = 15 * 1000;
 const SAMSAR_EXTERNAL_PENDING_POLL_INTERVAL_MS = Math.max(
@@ -1545,7 +1546,15 @@ function shouldFailRequestAfterTransientProviderError(
   }
 
   const submittedAtMs = new Date(submittedAt).getTime();
-  return Number.isFinite(submittedAtMs) && Date.now() - submittedAtMs > MAX_BASE_PROVIDER_PENDING_MS;
+  return Number.isFinite(submittedAtMs) && Date.now() - submittedAtMs > getBaseProviderPendingTimeoutMs(request);
+}
+
+export function getBaseProviderPendingTimeoutMs(request = {}) {
+  // Fal may publish its own terminal timeout just after our polling deadline.
+  // Keep reading the original accepted request briefly so its actual failure
+  // reaches bounded generation recovery. This deadline never slides forward.
+  return MAX_BASE_PROVIDER_PENDING_MS +
+    (resolveSubmittedVideoAdapter(request) === DOCKER_VIDEO_PROVIDER.FAL ? FAL_PROVIDER_TERMINAL_GRACE_MS : 0);
 }
 
 async function deferTransientProviderError(request, error, phase) {
@@ -2697,7 +2706,7 @@ export async function pollForAIVideoCompletion(reqPayload) {
   } else if (responseStatus === 'PENDING') {
     const submittedAtMs = new Date(payload.requestSubmitAt || payload.createdAt).getTime();
     if (!LIPSYNC_MODELS.includes(model) && Number.isFinite(submittedAtMs) &&
-        Date.now() - submittedAtMs > MAX_BASE_PROVIDER_PENDING_MS) {
+        Date.now() - submittedAtMs > getBaseProviderPendingTimeoutMs(payload)) {
       // A still-pending upstream job may eventually finish. Stop waiting
       // locally without submitting another billable job or switching adapters.
       await AIVideoLayerGeneration.findByIdAndUpdate(payload._id, {

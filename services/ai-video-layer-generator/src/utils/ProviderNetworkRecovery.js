@@ -5,6 +5,17 @@ const NETWORK_CODES = new Set(['ECONNRESET', 'ECONNABORTED', 'ETIMEDOUT', 'EAI_A
 const FAILURE_CODES = new Set(['PROVIDER_NETWORK_RETRY_EXHAUSTED', 'PROVIDER_SUBMISSION_OUTCOME_UNKNOWN',
   'PROVIDER_MEDIA_DOWNLOAD_FAILED', 'PROVIDER_NETWORK_WAIT_EXPIRED', 'PROVIDER_MEDIA_PREPARATION_FAILED',
   'PROVIDER_POLL_REJECTED']);
+const EXECUTION_ERROR_STATUSES = new Set([500, 502, 503, 504]);
+const EXECUTION_ERROR_TYPES = new Set([
+  'downstream_service_unavailable', 'downstream_service_error', 'generation_timeout',
+]);
+
+function isTerminalProviderExecutionError(providerStatus = {}) {
+  const details = providerStatus.detail;
+  return EXECUTION_ERROR_STATUSES.has(Number(providerStatus.status)) &&
+    Array.isArray(details) && details.length > 0 && details.every(item =>
+      EXECUTION_ERROR_TYPES.has(item?.type) && typeof item?.msg === 'string' && item.msg.trim());
+}
 
 export { providerRequestFetch } from './ProviderNetworkTransport.js';
 
@@ -26,6 +37,12 @@ export function getProviderResultInfrastructureCode(response = {}) {
   if (types.some(type => /file_download|media_download|url_unreachable|download_error/i.test(type))) {
     return 'PROVIDER_MEDIA_DOWNLOAD_FAILED';
   }
+  // These typed failures belong to an execution whose status was COMPLETED,
+  // even when its result uses HTTP 5xx. An ordinary status/gateway 5xx still
+  // leaves the accepted execution's outcome unknown.
+  if (response.providerExecutionFailed === true && isTerminalProviderExecutionError(response.providerStatus)) {
+    return null;
+  }
   if (types.some(type => /gateway|unavailable|network|connection|timeout/i.test(type)) ||
       NETWORK_STATUSES.has(Number(response.providerStatus?.status))) return 'PROVIDER_NETWORK_RETRY_EXHAUSTED';
   return null;
@@ -36,10 +53,12 @@ export function completedProviderResultFailure(error) {
   const details = Array.isArray(body?.detail) ? body.detail.filter(item =>
     typeof item?.type === 'string' && typeof item?.msg === 'string') : [];
   if (!details.length) return null;
-  const providerStatus = { status: error?.status || error?.statusCode || error?.response?.status, ...body };
+  const providerStatus = { ...body, status: error?.response?.status ?? error?.statusCode ?? error?.status };
+  const providerExecutionFailed = isTerminalProviderExecutionError(providerStatus);
   return { responseStatus: 'FAILED', providerStatus,
     providerFailureMessage: details.map(item => item.msg).join('; '),
-    providerFailureCode: getProviderResultInfrastructureCode({ providerStatus }),
+    providerFailureCode: getProviderResultInfrastructureCode({ providerStatus, providerExecutionFailed }),
+    ...(providerExecutionFailed ? { providerExecutionFailed: true } : {}),
   };
 }
 
@@ -56,10 +75,12 @@ export async function readProviderVideoResult(readResult) {
 
 export function getProviderExecutionRejection(error) {
   const status = Number(error?.response?.status ?? error?.statusCode ?? error?.status);
-  if (status !== 422 || error?.providerOperation !== 'result') return null;
+  if (error?.providerOperation !== 'result') return null;
   const body = error?.body || error?.response?.data || error?.data;
   const providerStatus = { ...(body && typeof body === 'object' ? body : { detail: body }), status };
-  if (getProviderResultInfrastructureCode({ providerStatus })) return null;
+  const providerExecutionFailed = isTerminalProviderExecutionError(providerStatus);
+  if (status !== 422 && !providerExecutionFailed) return null;
+  if (getProviderResultInfrastructureCode({ providerStatus, providerExecutionFailed })) return null;
   const failure = completedProviderResultFailure(error);
   const providerFailureMessage = failure?.providerFailureMessage || [
     body?.detail, body?.error?.message, body?.error, body?.message, error?.message,

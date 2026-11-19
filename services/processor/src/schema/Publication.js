@@ -1,4 +1,5 @@
 import mongoose, { Schema, model } from 'mongoose';
+import { generationModelsSchema } from './publication/GenerationModels.js';
 
 
 const commentSchema = new Schema(
@@ -63,6 +64,8 @@ const publicationSchema = new Schema(
     splashImage: { type: String, default: null },
     imageModel: { type: String, default: null },
     videoModel: { type: String, default: null },
+    inferenceModel: { type: String, default: null },
+    generationModels: { type: generationModelsSchema, default: null },
     originalPrompt: { type: String, default: '' },
     sessionTranscript: {
       type: Schema.Types.Mixed,

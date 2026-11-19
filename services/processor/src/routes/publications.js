@@ -246,6 +246,9 @@ const mapPublicationResponse = (
     typeof publication.videoModel === 'string' && publication.videoModel.trim().length > 0
       ? publication.videoModel.trim()
       : null;
+  const inferenceModel = normalizeOptionalString(publication.inferenceModel);
+  const generationModels = publication.generationModels?.toObject?.() ||
+    publication.generationModels || null;
   const sessionLanguage =
     typeof publication.sessionLanguage === 'string' && publication.sessionLanguage.trim().length > 0
       ? publication.sessionLanguage.trim()
@@ -287,6 +290,8 @@ const mapPublicationResponse = (
     aspectRatio,
     imageModel,
     videoModel,
+    inferenceModel,
+    generationModels,
     sessionLanguage,
     language: sessionLanguage,
     languageString,
@@ -481,6 +486,10 @@ const formatPublicationManagementResponse = ({ publication, session, created = f
       image_model: publicationData.imageModel || null,
       videoModel: publicationData.videoModel || null,
       video_model: publicationData.videoModel || null,
+      inferenceModel: summary.inferenceModel || null,
+      inference_model: summary.inferenceModel || null,
+      generationModels: summary.generationModels || null,
+      generation_models: summary.generationModels || null,
       originalPrompt: publicationData.originalPrompt || '',
       original_prompt: publicationData.originalPrompt || '',
       sessionTranscript: normalizePublicationTranscript(publicationData.sessionTranscript),

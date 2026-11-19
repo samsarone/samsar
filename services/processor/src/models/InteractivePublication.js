@@ -18,6 +18,10 @@ import {
 import { resolvePublicationAspectRatio } from './publication/AspectRatio.js';
 import { resolvePublicationOriginalPrompt } from './publication/Transcript.js';
 import {
+  buildPublicationGenerationModelFields,
+  resolvePublicationGenerationModelFields,
+} from './publication/GenerationModels.js';
+import {
   resolveProcessorInteractiveMediaTaskLimit,
 } from '../utils/CpuBudget.js';
 
@@ -152,6 +156,10 @@ export function serializeInteractivePublication(publication) {
     aspectRatio: source.aspectRatio || null,
     inLanguage: source.inLanguage || null,
     hasSubtitles: typeof source.hasSubtitles === 'boolean' ? source.hasSubtitles : null,
+    imageModel: normalizeOptionalString(source.imageModel),
+    videoModel: normalizeOptionalString(source.videoModel),
+    inferenceModel: normalizeOptionalString(source.inferenceModel),
+    generationModels: source.generationModels || null,
     manifest,
   };
 }
@@ -223,14 +231,9 @@ export function buildInteractivePublishedSessionUpdate(
     throw new Error('InteractivePublication is missing its default public video path.');
   }
 
-  const imageModel = normalizeOptionalString(payload.imageModel) ||
-    normalizeOptionalString(payload.image_model) ||
-    normalizeOptionalString(session.imageModel) ||
-    normalizeOptionalString(session.expressGenerationImageModel);
-  const videoModel = normalizeOptionalString(payload.videoModel) ||
-    normalizeOptionalString(payload.video_model) ||
-    normalizeOptionalString(session.videoGenerationModel) ||
-    normalizeOptionalString(session.expressGenerativeVideoModel);
+  const modelFields = serialized.generationModels
+    ? serialized
+    : buildPublicationGenerationModelFields(session);
   const languageString = normalizeOptionalString(payload.languageString) ||
     normalizeOptionalString(payload.language_string) ||
     normalizeOptionalString(session.languageString);
@@ -245,8 +248,10 @@ export function buildInteractivePublishedSessionUpdate(
     publishedAt,
     publishedOriginalPrompt: resolvePublicationOriginalPrompt(payload, session),
     publishedSplashImage: serialized.mainThumbnailUrl,
-    publishedImageModel: imageModel,
-    publishedVideoModel: videoModel,
+    publishedImageModel: modelFields.imageModel,
+    publishedVideoModel: modelFields.videoModel,
+    publishedInferenceModel: modelFields.inferenceModel,
+    publishedGenerationModels: modelFields.generationModels,
     publishedHasSubtitles: serialized.hasSubtitles,
     publishedSessionLanguage: serialized.inLanguage,
     publishedLanguageString: languageString,
@@ -263,6 +268,7 @@ export async function createInteractivePublicationForSessionVideo(
     preparePathMedia = preparePublicInteractivePublicationPathMedia,
     buildBranchingStatus = buildNormalizedBranchingStatus,
     cleanupPathMedia = deletePublicInteractivePublicationMediaForSession,
+    resolveGenerationModels = resolvePublicationGenerationModelFields,
   } = {},
 ) {
   const session = sessionData;
@@ -393,6 +399,7 @@ export async function createInteractivePublicationForSessionVideo(
       aspectRatio,
       inLanguage,
       hasSubtitles: resolveHasSubtitles(session, payload),
+      ...await resolveGenerationModels(session),
       manifest,
       publicRenderableVersion: INTERACTIVE_PUBLICATION_SCHEMA,
       isRenderable: true,

@@ -20,6 +20,9 @@ const generatedAIVideoSchema = new Schema({
 
 }, { timestamps: true });
 
+// Bound publication attribution lookups before matching current media URLs.
+generatedAIVideoSchema.index({ sessionId: 1 });
+
 // 3. Create a Model.
 const GeneratedAIVideo = model('GeneratedAIVideo', generatedAIVideoSchema);
 
