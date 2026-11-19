@@ -212,6 +212,36 @@ test('branched publish upserts and returns only the optimized InteractivePublica
   );
 });
 
+test('interactive publications persist source model snapshots and ignore model hints in the publish request', async () => {
+  const publicationModel = createMemoryModel();
+  const sourceSession = {
+    ...session,
+    expressGenerationImageModel: 'original-image',
+    expressGenerativeVideoModel: 'original-video',
+    expressGenerationInferenceModel: 'original-llm',
+  };
+  const result = await createInteractivePublicationForSessionVideo(
+    '507f191e810c19729de860ea',
+    { imageModel: 'spoofed-image', videoModel: 'spoofed-video', inferenceModel: 'spoofed-llm' },
+    {
+      sessionData: sourceSession,
+      publicationModel,
+      preparePathMedia,
+      buildBranchingStatus: () => completedBranching,
+      cleanupPathMedia: async () => {},
+    },
+  );
+  assert.equal(publicationModel.stored.imageModel, 'original-image');
+  assert.equal(publicationModel.stored.videoModel, 'original-video');
+  assert.equal(publicationModel.stored.inferenceModel, 'original-llm');
+  assert.deepEqual(result.generationModels.inference, ['original-llm']);
+  const update = buildInteractivePublishedSessionUpdate(result, sourceSession, {
+    inferenceModel: 'another-spoof',
+  });
+  assert.equal(update.publishedInferenceModel, 'original-llm');
+  assert.deepEqual(update.publishedGenerationModels, result.generationModels);
+});
+
 test('interactive publication becomes public only when explicitly finalized', async () => {
   const publicationModel = createMemoryModel();
   const created = await createInteractivePublicationForSessionVideo(

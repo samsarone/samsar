@@ -91,6 +91,12 @@ function moderationRejection() {
       categories: ['model_moderated'] }] } });
 }
 
+function downstreamServiceRejection() {
+  return Object.assign(new Error('Gateway Timeout'), { status: 504,
+    body: { detail: [{ loc: ['body'], type: 'downstream_service_unavailable',
+      msg: 'Downstream service unavailable.' }] } });
+}
+
 test('a raw Kling result 422 retains the moderation reason and reaches normal recovery without a fallback image', async t => {
   const { job, session } = baseVideoFixture(t);
   const error = moderationRejection();
@@ -120,6 +126,154 @@ test('a raw Kling result 422 retains the moderation reason and reaches normal re
   assert.equal(job.startImage, 'https://cdn.example.com/original.png');
   assert.ok(job.nextAttemptAfter.getTime() > Date.now());
   assert.equal(session.layers[0].aiVideoGenerationStatus, 'PENDING');
+  assert.equal(session.get('providerNetworkFailure'), undefined);
+});
+
+test('Kling can report its completed downstream failure just after 30 minutes and enter bounded recovery', async t => {
+  const { job, session } = baseVideoFixture(t);
+  const error = downstreamServiceRejection();
+  job.requestSubmitAt = new Date(Date.now() - (30 * 60_000 + 3_000));
+  let completed = false, polls = 0, results = 0;
+  t.mock.method(globalThis, 'fetch', async () => assert.fail('recovery must not make a real provider or inference request'));
+  t.mock.method(fal.queue, 'status', async (_model, options) => {
+    assert.equal(options.requestId, 'accepted-base-video');
+    polls++;
+    return { status: completed ? 'COMPLETED' : 'IN_PROGRESS' };
+  });
+  t.mock.method(fal.queue, 'result', async (_model, options) => {
+    assert.equal(options.requestId, 'accepted-base-video');
+    results++;
+    throw error;
+  });
+
+  await generatePendingAiVideoLayerRequests();
+  assert.equal(job.status, 'PENDING');
+  assert.equal(job.generationId, 'accepted-base-video');
+  assert.equal(job.numRetries, 0);
+  assert.equal(job.get('providerPollingTimedOut'), undefined);
+  assert.equal(results, 0);
+
+  completed = true;
+  job.nextAttemptAfter = null;
+  await generatePendingAiVideoLayerRequests();
+  assert.equal(job.status, 'FAILED');
+  assert.equal(job.retryOnFail, true);
+  assert.equal(job.providerFailureDefinitive, true);
+  assert.equal(job.infrastructureFailure, false);
+  assert.equal(job.infrastructureFailureCode, null);
+  assert.equal(job.transientProviderErrorCount, 0);
+  assert.equal(job.generationId, 'accepted-base-video');
+  assert.equal(job.lastProviderFailureMessage, error.body.detail[0].msg);
+  assert.deepEqual(job.lastProviderFailureDetail, { status: 504, ...error.body });
+  assert.equal(session.get('providerNetworkFailure'), undefined);
+
+  await generatePendingAiVideoLayerRequests();
+  assert.equal(job.status, 'INIT');
+  assert.equal(job.numRetries, 1);
+  assert.equal(job.generationId, null);
+  assert.equal(job.startImage, 'https://cdn.example.com/original.png');
+  assert.equal(job.get('aiVideoPromptOnlySameImageRetry'), true);
+  assert.ok(job.nextAttemptAfter.getTime() > Date.now());
+  assert.equal(polls, 2);
+  assert.equal(results, 1);
+  assert.equal(session.get('providerNetworkFailure'), undefined);
+});
+
+test('Kling still pending beyond the completion grace fails locally without replacing its accepted request', async t => {
+  const { job, session } = baseVideoFixture(t);
+  job.requestSubmitAt = new Date(Date.now() - (31 * 60_000 + 5_000));
+  let polls = 0;
+  t.mock.method(fal.queue, 'status', async (_model, options) => {
+    assert.equal(options.requestId, 'accepted-base-video');
+    polls++;
+    return { status: 'IN_PROGRESS' };
+  });
+  t.mock.method(fal.queue, 'result', async () => assert.fail('pending generation has no completed result'));
+
+  await generatePendingAiVideoLayerRequests();
+  assert.equal(job.status, 'FAILED');
+  assert.equal(job.retryOnFail, false);
+  assert.equal(job.get('providerPollingTimedOut'), true);
+  assert.equal(job.providerFailureDefinitive, false);
+  assert.equal(job.infrastructureFailureCode, 'PROVIDER_NETWORK_WAIT_EXPIRED');
+  assert.equal(job.generationId, 'accepted-base-video');
+  assert.equal(job.submittedAdapter, 'fal');
+  assert.equal(job.numRetries, 0);
+
+  await generatePendingAiVideoLayerRequests();
+  assert.equal(job.infrastructureFailureFinalized, true);
+  assert.equal(session.get('providerNetworkFailure').providerRequestId, 'accepted-base-video');
+  assert.equal(session.get('providerNetworkFailure').code, 'PROVIDER_NETWORK_WAIT_EXPIRED');
+  assert.equal(polls, 1);
+});
+
+for (const operation of ['status', 'result']) {
+  test(`a generic Kling ${operation} HTTP 504 just after 30 minutes retries reads using the same accepted request`, async t => {
+    const { job, session } = baseVideoFixture(t);
+    job.requestSubmitAt = new Date(Date.now() - (30 * 60_000 + 3_000));
+    t.mock.method(fal.queue, 'status', async (_model, options) => {
+      assert.equal(options.requestId, 'accepted-base-video');
+      if (operation === 'status') throw Object.assign(new Error('Gateway unavailable'), { status: 504 });
+      return { status: 'COMPLETED' };
+    });
+    t.mock.method(fal.queue, 'result', async (_model, options) => {
+      assert.equal(operation, 'result');
+      assert.equal(options.requestId, 'accepted-base-video');
+      throw Object.assign(new Error('Gateway unavailable'), { status: 504 });
+    });
+
+    await generatePendingAiVideoLayerRequests();
+    assert.equal(job.status, 'PENDING');
+    assert.equal(job.generationId, 'accepted-base-video');
+    assert.equal(job.submittedAdapter, 'fal');
+    assert.equal(job.numRetries, 0);
+    assert.equal(job.providerFailureDefinitive, false);
+    assert.equal(job.transientProviderErrorCount, 1);
+    assert.equal(job.get('transientProviderErrorExhausted'), false);
+    assert.equal(job.infrastructureFailureCode, undefined);
+    assert.ok(job.nextAttemptAfter.getTime() > Date.now());
+    assert.equal(session.get('providerNetworkFailure'), undefined);
+  });
+}
+
+test('structured Kling status HTTP 504 cannot establish a completed execution failure', async t => {
+  const { job, session } = baseVideoFixture(t);
+  t.mock.method(fal.queue, 'status', async () => { throw downstreamServiceRejection(); });
+  t.mock.method(fal.queue, 'result', async () => assert.fail('failed status lookup cannot read a result'));
+  await generatePendingAiVideoLayerRequests();
+  assert.equal(job.status, 'PENDING');
+  assert.equal(job.generationId, 'accepted-base-video');
+  assert.equal(job.numRetries, 0);
+  assert.equal(job.providerFailureDefinitive, false);
+  assert.equal(job.transientProviderErrorCount, 1);
+  assert.equal(job.infrastructureFailureCode, undefined);
+  assert.equal(session.get('providerNetworkFailure'), undefined);
+});
+
+test('a third completed Kling downstream failure exhausts generation recovery and exposes the provider reason', async t => {
+  const { job, session } = baseVideoFixture(t);
+  const error = downstreamServiceRejection();
+  job.numRetries = 2;
+  let deletes = 0;
+  t.mock.method(globalThis, 'fetch', async () => assert.fail('exhausted generation recovery cannot call a provider or inference model'));
+  t.mock.method(AIVideoLayerGeneration, 'findByIdAndDelete', async id => {
+    assert.equal(String(id), String(job._id));
+    deletes++;
+    return job;
+  });
+  t.mock.method(fal.queue, 'status', async () => ({ status: 'COMPLETED' }));
+  t.mock.method(fal.queue, 'result', async () => { throw error; });
+
+  await generatePendingAiVideoLayerRequests();
+  assert.equal(job.status, 'FAILED');
+  assert.equal(job.providerFailureDefinitive, true);
+  await generatePendingAiVideoLayerRequests();
+  assert.equal(job.numRetries, 2);
+  assert.equal(deletes, 1);
+  assert.equal(session.layers[0].aiVideoGenerationStatus, 'FAILED');
+  assert.equal(session.layers[0].aiVideoGenerationPending, false);
+  assert.match(session.layers[0].aiVideoGenerationError, /failed after 3 attempts/);
+  assert.ok(session.layers[0].aiVideoGenerationError.includes(error.body.detail[0].msg));
   assert.equal(session.get('providerNetworkFailure'), undefined);
 });
 
@@ -192,6 +346,27 @@ for (const flag of ['providerOutputCompleted', 'videoBillingPending']) {
     assert.equal(job.generationId, 'accepted-base-video');
     assert.equal(job.infrastructureFailureCode, undefined);
     assert.equal(job.videoBillingError, 'Unprocessable Entity');
+    assert.ok(job.nextAttemptAfter.getTime() > Date.now());
+    assert.equal(session.get('providerNetworkFailure'), undefined);
+  });
+}
+
+for (const flag of ['providerOutputCompleted', 'videoBillingPending']) {
+  test(`${flag} prevents a structured delivery 504 from starting another generation`, async t => {
+    const { job, session } = baseVideoFixture(t);
+    const error = downstreamServiceRejection();
+    error[flag] = true;
+    t.mock.method(fal.queue, 'status', async () => ({ status: 'COMPLETED' }));
+    t.mock.method(fal.queue, 'result', async () => { throw error; });
+    await generatePendingAiVideoLayerRequests();
+    assert.equal(job.status, 'PENDING');
+    assert.equal(job.numRetries, 0);
+    assert.equal(job.generationId, 'accepted-base-video');
+    assert.equal(job.submittedAdapter, 'fal');
+    assert.equal(job.providerFailureDefinitive, false);
+    assert.equal(job.infrastructureFailureCode, undefined);
+    assert.equal(job.transientProviderErrorPhase, 'output');
+    assert.equal(job.transientProviderErrorCount, 1);
     assert.ok(job.nextAttemptAfter.getTime() > Date.now());
     assert.equal(session.get('providerNetworkFailure'), undefined);
   });

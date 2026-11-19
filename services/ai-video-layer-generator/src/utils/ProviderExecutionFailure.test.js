@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  completedProviderResultFailure,
   getProviderExecutionRejection,
   getProviderResultInfrastructureCode,
   readProviderVideoResult,
@@ -143,6 +144,156 @@ test('result validation details reporting network infrastructure remain outside 
   });
   assert.equal(getProviderExecutionRejection(error), null);
 });
+
+for (const status of [500, 502, 503, 504]) {
+  for (const type of ['downstream_service_unavailable', 'downstream_service_error', 'generation_timeout']) {
+    test(`a completed result HTTP ${status} with ${type} is a definitive execution failure`, () => {
+      const body = {
+        detail: [{
+          type,
+          msg: 'The downstream service failed to complete the video generation request.',
+          loc: ['body'],
+          url: `https://docs.fal.ai/errors#${type}`,
+        }],
+        request_id: 'accepted-video-request',
+      };
+      const error = resultError(status, { name: 'ApiError', body });
+      const rejection = getProviderExecutionRejection(error);
+
+      assert.deepEqual(rejection, {
+        responseStatus: 'FAILED',
+        providerStatus: { ...body, status },
+        providerFailureMessage: body.detail[0].msg,
+        providerFailureCode: null,
+      });
+      assert.equal(error.status, status);
+      assert.deepEqual(error.body, body);
+    });
+  }
+}
+
+test('an Axios terminal downstream result retains its HTTP status and provider details', () => {
+  const body = {
+    detail: [{ type: 'downstream_service_unavailable', msg: 'Video generation timed out after 1803 seconds.' }],
+    request_id: 'accepted-video-request',
+  };
+  const rejection = getProviderExecutionRejection(resultError(undefined, {
+    status: undefined,
+    response: { status: 504, data: body },
+  }));
+
+  assert.equal(rejection.providerFailureMessage, body.detail[0].msg);
+  assert.deepEqual(rejection.providerStatus, { ...body, status: 504 });
+  assert.equal(rejection.providerFailureCode, null);
+});
+
+test('multiple terminal downstream details combine their messages and retain their fields', () => {
+  const body = {
+    detail: [
+      { type: 'downstream_service_unavailable', msg: 'The downstream worker did not finish.', loc: ['body'] },
+      { type: 'downstream_service_error', msg: 'The video execution failed.', execution_id: 'execution-1' },
+    ],
+  };
+  const rejection = getProviderExecutionRejection(resultError(504, { body }));
+
+  assert.equal(rejection.providerFailureMessage, 'The downstream worker did not finish.; The video execution failed.');
+  assert.deepEqual(rejection.providerStatus.detail, body.detail);
+  assert.equal(rejection.providerFailureCode, null);
+});
+
+test('an internally handled completed terminal result retains execution evidence instead of becoming infrastructure', () => {
+  const body = {
+    detail: [{ type: 'generation_timeout', msg: 'The video generation exceeded its execution deadline.' }],
+  };
+  const failure = completedProviderResultFailure(resultError(504, { body }));
+
+  assert.equal(failure.responseStatus, 'FAILED');
+  assert.equal(failure.providerExecutionFailed, true);
+  assert.equal(failure.providerFailureMessage, body.detail[0].msg);
+  assert.equal(failure.providerFailureCode, null);
+  assert.deepEqual(failure.providerStatus, { ...body, status: 504 });
+  assert.equal(getProviderResultInfrastructureCode(failure), null);
+});
+
+test('a structured status 504 still represents infrastructure without completed-execution evidence', () => {
+  const response = {
+    providerStatus: { status: 504, detail: [{
+      type: 'downstream_service_unavailable', msg: 'The downstream service is unavailable.',
+    }] },
+  };
+
+  assert.equal(getProviderResultInfrastructureCode(response), 'PROVIDER_NETWORK_RETRY_EXHAUSTED');
+  assert.equal(getProviderResultInfrastructureCode({ ...response, providerExecutionFailed: false }),
+    'PROVIDER_NETWORK_RETRY_EXHAUSTED');
+});
+
+test('completed-execution evidence does not override unknown, mixed, or media download failures', () => {
+  for (const detail of [
+    [{ type: 'gateway_timeout', msg: 'The gateway timed out.' }],
+    [
+      { type: 'downstream_service_unavailable', msg: 'The downstream service is unavailable.' },
+      { type: 'gateway_timeout', msg: 'The gateway timed out.' },
+    ],
+  ]) {
+    assert.equal(getProviderResultInfrastructureCode({
+      providerExecutionFailed: true, providerStatus: { status: 504, detail },
+    }), 'PROVIDER_NETWORK_RETRY_EXHAUSTED');
+  }
+
+  assert.equal(getProviderResultInfrastructureCode({
+    providerExecutionFailed: true,
+    providerStatus: { status: 504, detail: [
+      { type: 'downstream_service_unavailable', msg: 'The downstream service is unavailable.' },
+      { type: 'file_download_error', msg: 'The input image could not be downloaded.' },
+    ] },
+  }), 'PROVIDER_MEDIA_DOWNLOAD_FAILED');
+});
+
+for (const providerOperation of [undefined, 'submit', 'status', 'poll']) {
+  test(`a structured downstream HTTP 504 during ${providerOperation || 'an unknown operation'} cannot authorize generation recovery`, () => {
+    const error = resultError(504, {
+      providerOperation,
+      body: { detail: [{ type: 'downstream_service_unavailable', msg: 'The downstream service is unavailable.' }] },
+    });
+    assert.equal(getProviderExecutionRejection(error), null);
+  });
+}
+
+for (const [name, body] of [
+  ['no body', undefined],
+  ['plain message', { message: 'The downstream service is unavailable.' }],
+  ['string detail', { detail: 'downstream_service_unavailable' }],
+  ['empty details', { detail: [] }],
+  ['gateway timeout', { detail: [{ type: 'gateway_timeout', msg: 'The gateway timed out.' }] }],
+  ['an unrelated execution error', { detail: [{ type: 'internal_error', msg: 'Video generation failed.' }] }],
+  ['an incomplete downstream detail', { detail: [{ type: 'downstream_service_unavailable' }] }],
+  ['a similar downstream type', { detail: [{ type: 'downstream_service_unavailable_proxy', msg: 'Proxy unavailable.' }] }],
+  ['mixed downstream and unknown details', { detail: [
+    { type: 'downstream_service_unavailable', msg: 'The downstream service is unavailable.' },
+    { type: 'gateway_timeout', msg: 'The status gateway timed out.' },
+  ] }],
+  ['mixed downstream and incomplete details', { detail: [
+    { type: 'downstream_service_error', msg: 'The downstream execution failed.' },
+    { reason: 'Unknown error' },
+  ] }],
+  ['mixed downstream and media download details', { detail: [
+    { type: 'downstream_service_unavailable', msg: 'The downstream service is unavailable.' },
+    { type: 'file_download_error', msg: 'The input image could not be downloaded.' },
+  ] }],
+]) {
+  test(`a result HTTP 504 with ${name} stays outside definitive execution recovery`, () => {
+    assert.equal(getProviderExecutionRejection(resultError(504, { body })), null);
+  });
+}
+
+for (const status of [400, 401, 403, 404, 408, 429, 501, 505]) {
+  test(`a downstream detail cannot turn HTTP ${status} into an allowed terminal execution response`, () => {
+    const error = resultError(status, {
+      body: { detail: [{ type: 'downstream_service_unavailable', msg: 'The downstream service is unavailable.' }] },
+    });
+    assert.equal(getProviderExecutionRejection(error), null);
+  });
+}
 
 for (const status of [400, 401, 403, 404, 408, 429, 500, 503]) {
   test(`result HTTP ${status} does not become an execution rejection`, () => {

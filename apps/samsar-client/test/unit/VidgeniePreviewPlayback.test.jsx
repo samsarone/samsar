@@ -73,8 +73,8 @@ function status(sessionId = 'audio-preview', sceneCount = 8) {
   };
 }
 
-function view(generationStatusDetails) {
-  return <LocalizationProvider><ProgressIndicator isGenerationPending generationStatusDetails={generationStatusDetails} /></LocalizationProvider>;
+function view(generationStatusDetails, focused = false, extraProps = {}) {
+  return <LocalizationProvider><ProgressIndicator focused={focused} isGenerationPending generationStatusDetails={generationStatusDetails} {...extraProps} /></LocalizationProvider>;
 }
 
 function timelineTime() {
@@ -91,6 +91,52 @@ function startAudiblePreview() {
   fireEvent.click(screen.getByRole('button', { name: 'Unmute preview audio' }));
   fireEvent.click(screen.getByRole('button', { name: 'Play preview' }));
 }
+
+it('keeps focused playback controls and mounted media stable through status updates without showing timeline strips', () => {
+  const details = status('focused', 2);
+  details.session.audioLayers[0].url = 'https://media.example/focused/speech-0.mp3?asset_token=first';
+  const { container, rerender } = render(view(details, true));
+  expect(screen.getByText('Live preview')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Play preview' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Unmute preview audio' })).toBeVisible();
+  expect(container.querySelector('.vidgenie-timeline-group')).toBeNull();
+  const audio = container.querySelector('audio');
+  const slider = screen.getByRole('slider', { name: 'Preview timeline' });
+  fireEvent.change(slider, { target: { value: '1' } });
+  const updated = { ...details, session: { ...details.session, audioLayers: details.session.audioLayers.map((layer, index) => index ? layer : { ...layer, url: 'https://media.example/focused/speech-0.mp3?asset_token=renewed' }) } };
+  rerender(view(updated, true));
+  expect(container.querySelector('audio')).toBe(audio);
+  expect(audio).toHaveAttribute('src', 'https://media.example/focused/speech-0.mp3?asset_token=first');
+  expect(screen.getByRole('slider', { name: 'Preview timeline' })).toBe(slider);
+  expect(slider).toHaveValue('1');
+});
+
+it('reserves the focused preview frame while the first generated assets are pending', () => {
+  const { container } = render(view({ status: 'PENDING', session_id: 'preparing', session: { id: 'preparing', layers: [] } }, true));
+  expect(container.querySelector('.vidgenie-preview-frame')).not.toBeNull();
+  expect(screen.getByText('Preparing generation')).toBeVisible();
+});
+
+it('plays destination video, speech and the timeline before post-processing completes', async () => {
+  const fallback = { pendingPreviewVideoLink: 'https://media.example/original.mp4' };
+  const preparing = { status: 'PENDING', session_id: 'post-processing', session: { id: 'post-processing', layers: [] } };
+  const { container, rerender } = render(view(preparing, true, fallback));
+  expect(container.querySelector('video')).toHaveAttribute('src', fallback.pendingPreviewVideoLink);
+
+  const details = { ...videoStatus('post-processing', 'token'), status: 'PENDING' };
+  rerender(view(details, true, fallback));
+  expect(screen.queryByText('Current render preview')).not.toBeInTheDocument();
+  const video = container.querySelector('video');
+  const audio = container.querySelector('audio');
+  expect(video.src).toContain('/post-processing/');
+  setReady(video, 3);
+  setReady(audio, 3);
+  startAudiblePreview();
+  await advance(300);
+  expect(timelineTime()).toBeGreaterThan(0);
+  expect(video.paused).toBe(false);
+  expect(audio.paused).toBe(false);
+});
 
 it('buffers a bounded group of upcoming speech clips before they become active', async () => {
   const { container } = render(view(status('preload')));

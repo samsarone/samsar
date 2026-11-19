@@ -761,6 +761,7 @@ export default function ProgressIndicator(props) {
     onSelectStepImage,
     onRegenerateStepImage,
     enableScrollableLayerTimeline = false,
+    focused = false,
   } = props;
 
   const [hasCalledGetSessionImageLayers, setHasCalledGetSessionImageLayers] = useState(false);
@@ -812,21 +813,27 @@ export default function ProgressIndicator(props) {
     [generationStatusDetails, statusMap],
   );
   const sessionPreview = generationStatusDetails?.session || null;
-  const sessionPreviewIdentity =
+  const sessionPreviewIdentity = normalizeLayerIdentifier(
     sessionPreview?.id ||
+    sessionPreview?._id?.$oid || sessionPreview?._id ||
     sessionPreview?.requestId ||
     generationStatusDetails?.session_id ||
     generationStatusDetails?.request_id ||
-    rawSessionDetails?._id || rawSessionDetails?.id ||
-    null;
+    rawSessionDetails?._id?.$oid || rawSessionDetails?._id || rawSessionDetails?.id
+  );
+  const rawSessionIdentity = normalizeLayerIdentifier(
+    rawSessionDetails?._id?.$oid || rawSessionDetails?._id || rawSessionDetails?.id
+  );
+  const matchingRawSessionDetails = rawSessionIdentity && sessionPreviewIdentity
+    && rawSessionIdentity !== sessionPreviewIdentity ? null : rawSessionDetails;
   const shouldLimitMobileVideoPreload =
     isMobilePreviewDevice &&
     isGenerationPending &&
     !videoLink &&
     MOBILE_SINGLE_VIDEO_LOAD_STAGES.has(currentStageKey);
   const incomingVisualSegments = useMemo(
-    () => buildVisualSegments(sessionPreview, rawSessionDetails),
-    [rawSessionDetails, sessionPreview],
+    () => buildVisualSegments(sessionPreview, matchingRawSessionDetails),
+    [matchingRawSessionDetails, sessionPreview],
   );
   const { segments: visualSegments, refreshSource: refreshVisualSource } =
     useStablePreviewMedia(incomingVisualSegments, sessionPreviewIdentity);
@@ -838,6 +845,9 @@ export default function ProgressIndicator(props) {
     [audioSegments, sessionPreview, visualSegments],
   );
   const hasTimelinePreview = visualSegments.length > 0 || audioSegments.length > 0;
+  // The previous render is a fallback while the destination is being prepared.
+  // Prefer its live layers as soon as polling makes them available.
+  const pendingPreviewActualLink = hasTimelinePreview ? null : normalizeAssetUrl(pendingPreviewVideoLink);
   const hasPreviewAudio = audioSegments.length > 0;
   const isPreviewAudioEffectivelyMuted =
     previewAudioMuted || !previewAudioUnlocked || previewAudioVolume <= 0;
@@ -862,7 +872,7 @@ export default function ProgressIndicator(props) {
     [audioSegments, enableScrollableLayerTimeline, timelineDuration],
   );
   const visualSegmentsToPreload = selectPreviewPreloadSegments(visualSegments, activeVisualSegment?.key, {
-    hidden: Boolean(videoLink || pendingPreviewVideoLink),
+    hidden: Boolean(videoLink || pendingPreviewActualLink),
     limitVideo: shouldLimitMobileVideoPreload,
   });
   const preloadSignature = visualSegmentsToPreload.map((segment) => `${segment.type}:${segment.url}`).join('|');
@@ -1123,7 +1133,7 @@ export default function ProgressIndicator(props) {
   }, [activeVisualRenderKey, activeVisualSegment?.type]);
 
   useEffect(() => {
-    if (!hasTimelinePreview || !isPreviewPlaying || videoLink || pendingPreviewVideoLink) return undefined;
+    if (!hasTimelinePreview || !isPreviewPlaying || videoLink || pendingPreviewActualLink) return undefined;
     let lastTick = performance.now();
     const intervalId = window.setInterval(() => {
       const now = performance.now();
@@ -1145,16 +1155,16 @@ export default function ProgressIndicator(props) {
     }, PREVIEW_CLOCK_INTERVAL_MS);
     return () => window.clearInterval(intervalId);
     // Polls, ready events and buffering update the snapshot without resetting time.
-  }, [hasTimelinePreview, isPreviewPlaying, pendingPreviewVideoLink, videoLink]);
+  }, [hasTimelinePreview, isPreviewPlaying, pendingPreviewActualLink, videoLink]);
 
   useEffect(() => {
-    const canPlayPreviewMedia = isPreviewPlaying && !videoLink && !pendingPreviewVideoLink && isPreviewMediaReady;
+    const canPlayPreviewMedia = isPreviewPlaying && !videoLink && !pendingPreviewActualLink && isPreviewMediaReady;
     syncActiveAudioElements(previewTime, canPlayPreviewMedia);
-  }, [isPreviewMediaReady, isPreviewPlaying, pendingPreviewVideoLink, previewTime, syncActiveAudioElements, videoLink]);
+  }, [isPreviewMediaReady, isPreviewPlaying, pendingPreviewActualLink, previewTime, syncActiveAudioElements, videoLink]);
 
   useEffect(() => {
-    syncActiveVideoElement(previewTime, isPreviewPlaying && !videoLink && !pendingPreviewVideoLink && isPreviewMediaReady);
-  }, [isPreviewMediaReady, isPreviewPlaying, pendingPreviewVideoLink, previewTime, syncActiveVideoElement, videoLink]);
+    syncActiveVideoElement(previewTime, isPreviewPlaying && !videoLink && !pendingPreviewActualLink && isPreviewMediaReady);
+  }, [isPreviewMediaReady, isPreviewPlaying, pendingPreviewActualLink, previewTime, syncActiveVideoElement, videoLink]);
 
   const handleAudioReadyChange = useCallback(() => {
     setAudioReadyVersion((version) => version + 1);
@@ -1245,10 +1255,11 @@ export default function ProgressIndicator(props) {
 
 
   const videoActualLink = normalizeAssetUrl(videoLink);
-  const pendingPreviewActualLink = normalizeAssetUrl(pendingPreviewVideoLink);
 
   const panelShell =
-    `text-fg border ${colorMode === 'dark' ? 'bg-[#181b24] border-[#3a4050] shadow-[0_10px_28px_rgba(0,0,0,0.35)]' : 'bg-white/95 border-[#d7deef] shadow-sm'}`;
+    focused
+      ? 'text-fg border border-line bg-surface shadow-sm'
+      : `text-fg border ${colorMode === 'dark' ? 'bg-[#181b24] border-[#3a4050] shadow-[0_10px_28px_rgba(0,0,0,0.35)]' : 'bg-white/95 border-[#d7deef] shadow-sm'}`;
   const progressTrack = colorMode === 'dark' ? 'bg-[#3a4050]' : 'bg-slate-200';
   const mutedText = "text-fg-muted";
   const timelineTrack = colorMode === 'dark' ? 'bg-[#151720]' : 'bg-slate-100';
@@ -1264,7 +1275,7 @@ export default function ProgressIndicator(props) {
   return (
     <div className={`app-panel vidgenie-progress-panel ${panelShell} rounded-xl p-3 pt-3 transition-shadow duration-200 sm:rounded-2xl sm:p-4`}>
       {errorMessage && (
-        <div className={`${errorPanel} p-3 rounded-xl mb-3`}>
+        <div role="alert" className={`${errorPanel} p-3 rounded-xl mb-3`}>
           {errorMessage.error}
           <div>
             <button
@@ -1296,6 +1307,12 @@ export default function ProgressIndicator(props) {
           <SkeletonBlock className="mt-3 h-4 w-44 max-w-full" />
         </SkeletonStatus>
       ) : null}
+
+      {focused && !hasTimelinePreview && !videoActualLink && !pendingPreviewActualLink && !errorMessage?.error && (
+        <div className={`vidgenie-preview-frame ${isPortraitPreview ? 'vidgenie-preview-frame-portrait' : 'vidgenie-preview-frame-landscape'} mx-auto mt-5 flex items-center justify-center rounded-xl ${timelineTrack}`} style={previewFrameStyle}>
+          <div className="flex items-center gap-2 text-sm text-fg-muted"><FaSpinner aria-hidden="true" className="animate-spin" />{uiText('Preparing generation')}</div>
+        </div>
+      )}
 
       {isGenerationWaitingForApproval && canProcessNextStep && onProcessNextStep && (
         <div className={`mt-4 rounded-xl border p-3 ${waitingPanel}`}>
@@ -1330,7 +1347,7 @@ export default function ProgressIndicator(props) {
         <div className="vidgenie-preview-section mt-5">
           <div className="vidgenie-preview-header mb-3 text-left">
             <div className="text-sm font-semibold">{uiText("Current render preview")}</div>
-            <div className={`mt-0.5 break-words text-xs ${mutedText}`}>{uiText("Your post-processing changes are still rendering. This preview remains on the previous version until the new video is ready.")}</div>
+            <div className={`mt-0.5 break-words text-xs ${mutedText}`}>{uiText("Showing the previous render while your updated preview is being prepared.")}</div>
           </div>
           <div
             className={`vidgenie-preview-frame ${isPortraitPreview ? 'vidgenie-preview-frame-portrait' : 'vidgenie-preview-frame-landscape'} mx-auto overflow-hidden rounded-xl ${timelineTrack} ring-1 ${colorMode === 'dark' ? 'ring-white/10' : 'ring-slate-200'}`}
@@ -1354,10 +1371,10 @@ export default function ProgressIndicator(props) {
         <div className="vidgenie-preview-section mt-5">
           <div className="vidgenie-preview-header mb-3 flex flex-wrap items-center justify-between gap-2 text-left">
             <div className="min-w-0">
-              <div className="text-sm font-semibold">{uiText("Timeline preview")}</div>
-              <div className={`mt-0.5 break-words text-xs ${mutedText}`}>
+              <div className="text-sm font-semibold">{focused ? uiText('Live preview') : uiText("Timeline preview")}</div>
+              {!focused && <div className={`mt-0.5 break-words text-xs ${mutedText}`}>
                 {sessionPreview?.previewStage ? getStageLabel(sessionPreview.previewStage, t) : currentStep}
-              </div>
+              </div>}
             </div>
             <div className={`text-xs tabular-nums ${mutedText}`}>
               {formatTime(previewTime)} / {formatTime(timelineDuration)}
@@ -1477,7 +1494,7 @@ export default function ProgressIndicator(props) {
             )}
           </div>
 
-          <div className="vidgenie-timeline-group mt-3 space-y-2">
+          {!focused && <div className="vidgenie-timeline-group mt-3 space-y-2">
             {visualSegments.length > 0 && (
               <div>
                 <div className={`mb-1 text-caption font-semibold uppercase tracking-wide ${mutedText}`}>{uiText("Visuals")}</div>
@@ -1542,7 +1559,7 @@ export default function ProgressIndicator(props) {
                 </div>
               </div>
             )}
-          </div>
+          </div>}
 
           <div className="hidden">
             {audioSegments.map((segment) => (

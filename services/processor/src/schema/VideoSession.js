@@ -1,4 +1,5 @@
 import { Schema, model } from 'mongoose';
+import { generationModelsSchema } from './publication/GenerationModels.js';
 
 
 
@@ -476,6 +477,8 @@ const videoSessionSchema = new Schema({
   publishedSplashImage: { type: String, default: null },
   publishedImageModel: { type: String, default: null },
   publishedVideoModel: { type: String, default: null },
+  publishedInferenceModel: { type: String, default: null },
+  publishedGenerationModels: { type: generationModelsSchema, default: null },
   publishedPublicationId: { type: String, default: null },
   publishedHasSubtitles: { type: Boolean, default: null },
   publishedSessionLanguage: { type: String, default: null },

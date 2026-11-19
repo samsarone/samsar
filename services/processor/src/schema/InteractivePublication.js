@@ -1,4 +1,5 @@
 import { Schema, model } from 'mongoose';
+import { generationModelsSchema } from './publication/GenerationModels.js';
 
 export const INTERACTIVE_PUBLICATION_SCHEMA = 'interactive_publication.v1';
 export const INTERACTIVE_VIDEO_MANIFEST_SCHEMA = 'interactive_video_manifest.v1';
@@ -155,6 +156,10 @@ const interactivePublicationSchema = new Schema(
     aspectRatio: { type: String, default: null },
     inLanguage: { type: String, default: null },
     hasSubtitles: { type: Boolean, default: null },
+    imageModel: { type: String, default: null },
+    videoModel: { type: String, default: null },
+    inferenceModel: { type: String, default: null },
+    generationModels: { type: generationModelsSchema, default: null },
     manifest: { type: manifestSchema, required: true },
     publicRenderableVersion: {
       type: String,

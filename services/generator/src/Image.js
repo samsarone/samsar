@@ -749,20 +749,25 @@ function isBranchedVideoSession(sessionData = {}) {
 
 function getTerminalFilterFailurePolicy(videoTone, payload = {}, sessionData = {}) {
   const isBranchedSession = isBranchedVideoSession(sessionData);
-  const hasRepeatedScoreOnlyFailures = hasReachedScoreOnlyFilterRelaxation(payload);
+  // Provider failures and rejected images consume the same generation budget.
+  // Once either retry limit is exhausted, an earlier provider rejection must
+  // not veto recovery from a later scored image. Keep live thresholds separate.
+  const allowTerminalRecovery = hasReachedScoreOnlyFilterRelaxation(payload) ||
+    getImageGenerationRetryCount(payload) >= MAX_IMAGE_GENERATION_RETRIES ||
+    normalizeRetryCount(payload?.filterRetryCount) + 1 >= MAX_IMAGE_GENERATION_FILTER_RETRIES;
   let fallbackScoreCutoff = getScoreThresholdCutoff(videoTone, payload);
   if (isBranchedSession) {
     fallbackScoreCutoff = BRANCHED_IMAGE_FILTER_FALLBACK_SCORE_CUTOFF;
-  } else if (hasRepeatedScoreOnlyFailures) {
+  } else if (allowTerminalRecovery) {
     // Reuse a lower-scoring saved image only at terminal fallback after retries.
     fallbackScoreCutoff = Math.min(fallbackScoreCutoff, SCORE_ONLY_FILTER_FALLBACK_SCORE_CUTOFF);
   }
   return {
     fallbackScoreCutoff,
-    // The branched prune path preserves topology and retimes only paths that
-    // reference the failed asset. Singular sessions retain their existing
-    // score-only prune policy.
-    allowExpressLayerPrune: isBranchedSession || hasRepeatedScoreOnlyFailures,
+    // Only the scored-image failure path uses this prune permission. No-image
+    // failures still require getTerminalGenerationPruneOptions, which protects
+    // infrastructure failures and accepted or uncertain provider submissions.
+    allowExpressLayerPrune: isBranchedSession || allowTerminalRecovery,
   };
 }
 
@@ -5415,6 +5420,7 @@ export const __testOnly__ = {
   buildImageThemeScoringContextForPayload,
   buildImageThemeScoringContextDetailsForPayload,
   getBestFilterPass,
+  processBestFilterPassIfAvailable,
   buildActiveImageCandidate,
   normalizeOptionalScore,
   isSafetyRejectionMessage,

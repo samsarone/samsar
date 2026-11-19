@@ -1,4 +1,9 @@
 {
+  "Showing the previous render while your updated preview is being prepared.": {
+    "en": "Showing the previous render while your updated preview is being prepared.",
+    "th": "กำลังแสดงวิดีโอที่เรนเดอร์ไว้ก่อนหน้า ระหว่างเตรียมตัวอย่างวิดีโอที่อัปเดตแล้ว",
+    "ja": "更新後のプレビューを準備している間、前回のレンダリング結果を表示しています。"
+  },
   "Express edits": {
     "en": "Express edits",
     "th": "แก้ไขวิดีโอ Express",
@@ -12008,5 +12013,80 @@
     "en": "Kling Image 4",
     "th": "Kling Image 4",
     "ja": "Kling Image 4"
+  },
+  "Your video is ready": {
+    "en": "Your video is ready",
+    "th": "วิดีโอของคุณพร้อมแล้ว",
+    "ja": "動画が完成しました"
+  },
+  "Render paused": {
+    "en": "Render paused",
+    "th": "หยุดการเรนเดอร์ชั่วคราวแล้ว",
+    "ja": "レンダリングを一時停止しました"
+  },
+  "Video generation failed": {
+    "en": "Video generation failed",
+    "th": "การสร้างวิดีโอล้มเหลว",
+    "ja": "動画の生成に失敗しました"
+  },
+  "Open in VidGenie": {
+    "en": "Open in VidGenie",
+    "th": "เปิดใน VidGenie",
+    "ja": "VidGenieで開く"
+  },
+  "Create another video": {
+    "en": "Create another video",
+    "th": "สร้างวิดีโออีกเรื่อง",
+    "ja": "別の動画を作成"
+  },
+  "Live preview": {
+    "en": "Live preview",
+    "th": "ตัวอย่างแบบเรียลไทม์",
+    "ja": "ライブプレビュー"
+  },
+  "Made with Samsar": {
+    "en": "Made with Samsar",
+    "th": "สร้างด้วย Samsar",
+    "ja": "Samsarで作成"
+  },
+  "Loading videos...": {
+    "en": "Loading videos...",
+    "th": "กำลังโหลดวิดีโอ...",
+    "ja": "動画を読み込んでいます..."
+  },
+  "Unable to load videos.": {
+    "en": "Unable to load videos.",
+    "th": "ไม่สามารถโหลดวิดีโอได้",
+    "ja": "動画を読み込めませんでした。"
+  },
+  "No published videos yet.": {
+    "en": "No published videos yet.",
+    "th": "ยังไม่มีวิดีโอที่เผยแพร่",
+    "ja": "公開された動画はまだありません。"
+  },
+  "Load more": {
+    "en": "Load more",
+    "th": "โหลดเพิ่มเติม",
+    "ja": "さらに読み込む"
+  },
+  "Play {title}": {
+    "en": "Play {title}",
+    "th": "เล่น {title}",
+    "ja": "{title}を再生"
+  },
+  "Prompt unavailable": {
+    "en": "Prompt unavailable",
+    "th": "ไม่มีพรอมต์",
+    "ja": "プロンプトを取得できません"
+  },
+  "Model settings": {
+    "en": "Model settings",
+    "th": "การตั้งค่าโมเดล",
+    "ja": "モデル設定"
+  },
+  "Not recorded": {
+    "en": "Not recorded",
+    "th": "ไม่ได้บันทึกไว้",
+    "ja": "記録なし"
   }
 }

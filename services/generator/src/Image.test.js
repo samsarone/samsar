@@ -359,17 +359,18 @@ test('grounded scoring starts at 65 and relaxes to 50 only after multiple score-
   );
 });
 
-test('image generation failures do not enable score-only layer pruning', () => {
+test('exhausted mixed retries retain terminal fallback and scene pruning', () => {
   const policy = __testOnly__.getTerminalFilterFailurePolicy('grounded', {
     failureRetryCount: 1,
-    filterRetryCount: 2,
-  });
+    filterRetryCount: 3,
+    generationRetryCount: 3,
+  }, { narrativeType: 'singular' });
 
-  assert.equal(policy.fallbackScoreCutoff, 50);
+  assert.equal(policy.fallbackScoreCutoff, 42);
   assert.equal(__testOnly__.getImageFilterScoreCutoff('grounded', {
     failureRetryCount: 2,
   }), 41);
-  assert.equal(policy.allowExpressLayerPrune, false);
+  assert.equal(policy.allowExpressLayerPrune, true);
   assert.equal(
     __testOnly__.hasReachedScoreOnlyFilterRelaxation({
       failureRetryCount: 1,
@@ -377,6 +378,39 @@ test('image generation failures do not enable score-only layer pruning', () => {
     }),
     false,
   );
+});
+
+test('terminal recovery follows the shared retry budget without granting extra generations', () => {
+  for (const counters of [
+    { failureRetryCount: 1, filterRetryCount: 2, generationRetryCount: 2 },
+    { failureRetryCount: 1, filterRetryCount: 3, generationRetryCount: 3 },
+    { failureRetryCount: 1, filterRetryCount: 2 }, // Older row without the shared counter.
+    { failureRetryCount: 2, filterRetryCount: 1, generationRetryCount: 3 },
+  ]) {
+    const exhausted = __testOnly__.getImageGenerationRetryPlan(counters) === null;
+    const policy = __testOnly__.getTerminalFilterFailurePolicy('grounded', counters,
+      { narrativeType: 'singular' });
+    assert.equal(policy.allowExpressLayerPrune, exhausted);
+    assert.equal(policy.fallbackScoreCutoff,
+      Math.min(__testOnly__.getScoreThresholdCutoff('grounded', counters), exhausted ? 42 : Infinity));
+    if (exhausted && counters.failureRetryCount === 1) {
+      assert.equal(__testOnly__.getBestFilterPass([
+        { score: 34, src: 'first.png' },
+        { score: 48, src: 'second.png' },
+        { score: 28, src: 'third.png' },
+      ], policy.fallbackScoreCutoff).score, 48);
+    }
+  }
+});
+
+test('exhausted filter retries permit recovery even when an older shared counter is lower', () => {
+  const payload = { failureRetryCount: 1, filterRetryCount: 3, generationRetryCount: 2 };
+  assert.notEqual(__testOnly__.getImageGenerationRetryPlan(payload), null);
+  assert.deepEqual(__testOnly__.getTerminalFilterFailurePolicy('grounded', payload,
+    { narrativeType: 'singular' }), {
+    fallbackScoreCutoff: 42,
+    allowExpressLayerPrune: true,
+  });
 });
 
 test('terminal score-only fallback rescues the best singular candidate below the normal cutoff', () => {

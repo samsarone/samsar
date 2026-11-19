@@ -32,6 +32,7 @@ export default function OneshotEditorContainer({ initialSessionRequestRef } = {}
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const isFocusedPreview = new URLSearchParams(location.search).get('view') === 'preview';
 
   const { user, userFetching, userInitiated } = useUser();
   const [routeError, setRouteError] = useState('');
@@ -143,5 +144,5 @@ export default function OneshotEditorContainer({ initialSessionRequestRef } = {}
     );
   }
 
-  return <VidgeniePageShell>{content}</VidgeniePageShell>;
+  return <VidgeniePageShell focused={isFocusedPreview}>{content}</VidgeniePageShell>;
 }

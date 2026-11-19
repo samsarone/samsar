@@ -24,7 +24,7 @@ import {
   useCallback,
 } from 'react';
 import TextareaAutosize from 'react-textarea-autosize';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Tooltip } from 'react-tooltip';
 import { resolveVidgenieLoadedProjectView } from './vidgenieProjectViewState.mjs';
 import { canRetryVidgenieImageStage } from './vidgenieImageRetry.mjs';
@@ -2370,6 +2370,10 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const isFocusedPreview = new URLSearchParams(location.search).get('view') === 'preview';
+  const editorSearchParams = new URLSearchParams(location.search);
+  editorSearchParams.delete('view');
+  const fullEditorPath = `${location.pathname}${editorSearchParams.size ? `?${editorSearchParams}` : ''}${location.hash || ''}`;
   const { openAlertDialog, closeAlertDialog } = useAlertDialog();
   const showLoginDialog = useCallback(() => {
     const redirectTo = user?._id
@@ -6156,6 +6160,73 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
       );
     }
     return <VidgenieSkeletonLoader embedded />;
+  }
+
+  if (isFocusedPreview) {
+    const hasFailed = Boolean(errorMessage?.error && !isGenerationPending && !isPaused && !videoLink);
+    const heading = videoLink
+      ? uiText('Your video is ready')
+      : isPaused
+        ? uiText('Render paused')
+        : hasFailed
+          ? uiText('Video generation failed')
+          : uiText('Creating your video...');
+    const actionClass = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-5 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50';
+    return (
+      <main className="mx-auto w-full max-w-3xl py-4 sm:py-8" aria-label={uiText('Live preview')}>
+        <header className="mb-5 flex flex-wrap items-start justify-between gap-4 px-1">
+          <div className="min-w-0 flex-1 basis-56">
+            <h1 className="text-2xl font-medium tracking-tight text-fg sm:text-3xl" aria-live="polite">{heading}</h1>
+            {promptText && <p className="mt-2 line-clamp-2 break-words text-sm leading-6 text-fg-muted">{promptText}</p>}
+          </div>
+          <Link to={fullEditorPath} state={location.state} className={`${actionClass} border border-line text-fg hover:bg-surface-raised`}>{uiText('Open in VidGenie')}</Link>
+        </header>
+        <ProgressIndicator
+          focused
+          isGenerationPending={isGenerationPending}
+          isGenerationPaused={isPaused}
+          isGenerationWaitingForApproval={isGenerationWaitingForApproval}
+          isProcessingNextStep={isProcessingNextStep}
+          expressGenerationStatus={expressGenerationStatus}
+          generationStatusDetails={generationStatusDetails}
+          videoLink={videoLink}
+          pendingPreviewVideoLink={postProcessingPreviewVideoLink}
+          errorMessage={errorMessage}
+          rawSessionDetails={sessionDetails}
+          canProcessNextStep={activeRequestStepModeRef.current === GENERATION_STEP_MODE_TWO_STEP}
+          canReviewStepImages={activeRequestStepModeRef.current === GENERATION_STEP_MODE_TWO_STEP && (generationMode === 'T2V' || generationStatusDetails?.session?.generationType === 'TEXT_TO_VIDEO')}
+          viewInStudio={viewInStudio}
+          onProcessNextStep={handleProcessNextStep}
+          onSelectStepImage={handleSelectStepImage}
+          onRegenerateStepImage={handleRegenerateStepImage}
+        />
+        <footer className="mt-5 flex flex-wrap items-center justify-between gap-3 px-1">
+          <div className="flex flex-wrap gap-2">
+            {(isGenerationPending || isPaused) && !isGuestPreview && (
+              <button type="button" onClick={isPaused ? handleResumeRender : handlePauseRender} disabled={isRenderPauseResumePending} className={`${actionClass} border border-line text-fg hover:bg-surface-raised`}>
+                {isRenderPauseResumePending ? <FaSpinner aria-hidden="true" className="animate-spin" /> : isPaused ? <FaPlay aria-hidden="true" /> : <FaPause aria-hidden="true" />}
+                {isPaused ? uiText('Resume render') : uiText('Pause render')}
+              </button>
+            )}
+            {hasFailed && canRetryFailedImages && !isGuestPreview && (
+              <button type="button" onClick={handleResumeRender} disabled={isRenderPauseResumePending} className={`${actionClass} bg-accent text-on-accent hover:opacity-90`}>
+                {isRenderPauseResumePending ? <FaSpinner aria-hidden="true" className="animate-spin" /> : <FaRedo aria-hidden="true" />}{uiText('Retry image generation')}
+              </button>
+            )}
+            {videoLink && !isGenerationPending && (
+              <>
+                <button type="button" onClick={handleDownloadVideo} disabled={isGuestPreview || isDownloadingVideo} className={`${actionClass} bg-accent text-on-accent hover:opacity-90`}>
+                  {isDownloadingVideo ? <FaSpinner aria-hidden="true" className="animate-spin" /> : null}{isDownloadingVideo ? uiText('Downloading') : t('common.download')}
+                </button>
+                <button type="button" onClick={viewInStudio} disabled={isGuestPreview} className={`${actionClass} border border-line text-fg hover:bg-surface-raised`}>{uiText('View in Studio')}</button>
+              </>
+            )}
+          </div>
+          <Link to="/create" className={`${actionClass} text-fg-muted hover:bg-surface-raised hover:text-fg`}>{uiText('Create another video')}</Link>
+        </footer>
+        <ToastContainer position="bottom-center" autoClose={5000} hideProgressBar />
+      </main>
+    );
   }
 
   // ─────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, render } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { LocalizationProvider } from '../../src/contexts/LocalizationContext.jsx';
 import ProgressIndicator from '../../src/components/oneshot_editor/ProgressIndicator.jsx';
@@ -33,11 +33,37 @@ it('completed results do not preload hidden scene clips or fetch blobs', async (
   expect(container.querySelectorAll('video')).toHaveLength(1);
   expect(container.querySelector('video')).toHaveAttribute('preload', 'metadata');
 });
-it('pending post-processing previews also avoid loading the hidden timeline', async () => {
-  render(view({ isGenerationPending: true, pendingPreviewVideoLink: 'https://media.example/previous.mp4', generationStatusDetails: status() }));
+it('uses the previous render while a post-processing session has no playable layers', async () => {
+  const preparingStatus = { status: 'PENDING', session_id: 'post-processing', session: { id: 'post-processing', layers: [] } };
+  const props = { isGenerationPending: true, pendingPreviewVideoLink: 'https://media.example/previous.mp4' };
+  const { container, rerender } = render(view({ ...props, generationStatusDetails: preparingStatus }));
   await act(async () => {});
   expect(loads).toHaveLength(0);
   expect(fetchSpy).not.toHaveBeenCalled();
+  expect(screen.getByText('Current render preview')).toBeVisible();
+  expect(container.querySelector('video')).toHaveAttribute('src', props.pendingPreviewVideoLink);
+
+  // The destination's own assets should become visible while final rendering
+  // remains pending, even though the old-render fallback is still provided.
+  rerender(view({ ...props, generationStatusDetails: { ...status('post-processing'), status: 'PENDING' } }));
+  await act(async () => {});
+  expect(screen.queryByText('Current render preview')).not.toBeInTheDocument();
+  expect(screen.getByText('Timeline preview')).toBeVisible();
+  expect(container.querySelector('video')).toHaveAttribute('src', 'https://media.example/post-processing/clip-0.mp4');
+  expect(loads).toHaveLength(2);
+  expect(fetchSpy).not.toHaveBeenCalled();
+});
+it('does not mistake source-session layers for a prepared destination timeline', async () => {
+  const rawSessionDetails = { _id: 'original', layers: [{ _id: 'source-scene', duration: 4,
+    aiVideoRemoteLink: 'https://media.example/original/scene.mp4' }] };
+  const preparingStatus = { status: 'PENDING', session_id: 'destination', session: { id: 'destination', layers: [] } };
+  const { container } = render(view({ isGenerationPending: true, rawSessionDetails,
+    pendingPreviewVideoLink: 'https://media.example/previous.mp4', generationStatusDetails: preparingStatus }));
+  await act(async () => {});
+  expect(screen.getByText('Current render preview')).toBeVisible();
+  expect(screen.queryByText('Timeline preview')).not.toBeInTheDocument();
+  expect(container.querySelector('video')).toHaveAttribute('src', 'https://media.example/previous.mp4');
+  expect(loads).toHaveLength(0);
 });
 it('loads only nearby clips, keeps stable polls from restarting downloads, and cancels on unmount', async () => {
   const props = { isGenerationPending: true, generationStatusDetails: status('pending') };
