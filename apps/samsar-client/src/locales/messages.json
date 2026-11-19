@@ -1,4 +1,9 @@
 {
+  "Showing the previous render while your updated preview is being prepared.": {
+    "en": "Showing the previous render while your updated preview is being prepared.",
+    "th": "กำลังแสดงวิดีโอที่เรนเดอร์ไว้ก่อนหน้า ระหว่างเตรียมตัวอย่างวิดีโอที่อัปเดตแล้ว",
+    "ja": "更新後のプレビューを準備している間、前回のレンダリング結果を表示しています。"
+  },
   "Express edits": {
     "en": "Express edits",
     "th": "แก้ไขวิดีโอ Express",
