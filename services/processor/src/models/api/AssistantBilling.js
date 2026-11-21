@@ -74,6 +74,7 @@ const TOKEN_PRICING_USD_PER_MILLION = Object.freeze({
   },
   // Google Cloud global Standard pricing through November 30, 2026.
   'gemini-4-carbon': { input: 2, cachedInput: 0.1, output: 10 },
+  'gemini-4-neon': { input: 3, cachedInput: 0.15, output: 15 },
   'gemini-4-argon': { input: 2, cachedInput: 0.1, output: 10 }, // Historical receipts.
   'qwen3.8-max': { input: 2, cachedInput: 0.25, output: 6, cacheWrite: 2.5 },
   'kimi-k3': {
@@ -332,6 +333,9 @@ function resolvePricingModel(model) {
 
   if (providerModel.startsWith('gemini-4-carbon')) {
     return 'gemini-4-carbon';
+  }
+  if (providerModel === 'gemini-4-neon' || providerModel.startsWith('gemini-4-neon-')) {
+    return 'gemini-4-neon';
   }
 
   if (providerModel.startsWith('gemini-3.1')) {

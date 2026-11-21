@@ -82,6 +82,7 @@ const narrativeRequestSchema = new Schema({
       'gpt-6.1-sol',
       'gpt-6.1-sol-xhigh',
       'gemini-4-carbon',
+      'gemini-4-neon',
       'gemini-4-argon', // Legacy persisted requests; new requests normalize to Carbon.
       'QWEN3.8',
       'kimi-k3',

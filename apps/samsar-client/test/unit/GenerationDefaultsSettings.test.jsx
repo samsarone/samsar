@@ -56,3 +56,18 @@ it('retains browser preferences when the settings save fails', async () => {
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Update', exact: true })));
   expect(localStorage.getItem('defaultVIdGPTVideoGenerationModel')).toBe('KLINGIMGTOVID4');
 });
+
+it('saves Neon as the selected Gemini model and restores it without changing other defaults', async () => {
+  profile.user = { ...profile.user, selectedInferenceModel: 'gemini-4-carbon', agentImageModel: 'SEEDREAM', agentVideoModel: 'RUNWAYML' };
+  const view = mountSettings();
+  expect(screen.getByRole('combobox', { name: 'Text model' })).toHaveValue('Gemini');
+  fireEvent.change(screen.getByRole('combobox', { name: 'Gemini model' }), { target: { value: 'gemini-4-neon' } });
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Update', exact: true })));
+  expect(profile.update).toHaveBeenCalledWith(expect.objectContaining({
+    selectedInferenceModel: 'gemini-4-neon', agentImageModel: 'SEEDREAM', agentVideoModel: 'RUNWAYML',
+  }));
+  view.unmount();
+  profile.user = { ...profile.user, selectedInferenceModel: 'gemini-4-neon' };
+  mountSettings();
+  expect(screen.getByRole('combobox', { name: 'Gemini model' })).toHaveValue('gemini-4-neon');
+});

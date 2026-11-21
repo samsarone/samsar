@@ -31,6 +31,7 @@ test('narrative requests keep standalone mixed artifacts and durable polling fie
     'gpt-6.1-sol',
     'gpt-6.1-sol-xhigh',
     'gemini-4-carbon',
+    'gemini-4-neon',
     'gemini-4-argon',
     'QWEN3.8',
     'kimi-k3',

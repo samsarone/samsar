@@ -9,7 +9,9 @@ const mocks = vi.hoisted(() => ({
   user: { _id: 'owner' },
   options: [{ value: 'gpt-6.2-astra', label: 'GPT 6.2 Astra High' },
     { value: 'gpt-6.2-astra-xhigh', label: 'GPT 6.2 Astra XHigh' },
-    { value: 'claude-opus-5.5', label: 'Claude Opus 5.5' }],
+    { value: 'claude-opus-5.5', label: 'Claude Opus 5.5' },
+    { value: 'gemini-4-carbon', label: 'Gemini 4 Carbon High' },
+    { value: 'gemini-4-neon', label: 'Gemini 4 Neon High' }],
 }));
 
 vi.mock('axios', () => ({ default: { post: vi.fn() } }));
@@ -47,6 +49,10 @@ export function Conversation({ id = 'session-a', initialMessages = history, pend
     onSessionCleared={guard.invalidate} submitAssistantQuery={vi.fn()} {...props} />;
 }
 
+export function setSavedAssistantModel(model) {
+  mocks.user = { ...mocks.user, selectedAssistantModel: model };
+}
+
 function open() { fireEvent.click(screen.getByRole('button', { name: 'Assistant', exact: true })); }
 function requestClear() { fireEvent.click(screen.getByRole('button', { name: 'Clear session', exact: true })); }
 function confirmClear() { fireEvent.click(screen.getByRole('button', { name: 'Clear messages', exact: true })); }
@@ -74,6 +80,29 @@ it('preserves an explicit assistant model and effort independently of saved infe
   expect(within(picker.closest('header')).getByText('GPT 6.2 Astra XHigh')).toBeInTheDocument();
   expect(axios.post).not.toHaveBeenCalled();
   expect(mocks.user.selectedInferenceModel).toBe('gemini-4-carbon');
+});
+
+it.each([
+  ['gemini-4-carbon', 'Carbon', 'Neon', 'gemini-4-neon'],
+  ['gemini-4-neon', 'Neon', 'Carbon', 'gemini-4-carbon'],
+])('restores %s in the popup and persists a Gemini variant change independently of inference', async (model, label, nextLabel, nextModel) => {
+  mocks.user = { _id: 'owner', selectedInferenceModel: 'claude-opus-5.5-xhigh', selectedAssistantModel: model };
+  render(<Conversation />);
+  open();
+  const picker = screen.getByRole('combobox', { name: 'Gemini model', exact: true });
+  const header = picker.closest('header');
+  expect(within(header).getByText(label)).toBeInTheDocument();
+  expect(within(header).getAllByRole('combobox')).toHaveLength(2);
+  expect(axios.post).not.toHaveBeenCalled();
+  fireEvent.keyDown(picker, { key: 'ArrowDown' });
+  fireEvent.click(screen.getByRole('option', { name: nextLabel }));
+  await waitFor(() => expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/users/update'),
+    { selectedAssistantModel: nextModel }, { headers: { Authorization: 'test-auth' } }));
+  expect(within(header).getByText(nextLabel)).toBeInTheDocument();
+  expect(mocks.user.selectedInferenceModel).toBe('claude-opus-5.5-xhigh');
+  for (const control of within(header).getAllByRole('combobox')) {
+    expect(control.getBoundingClientRect().right).toBeLessThanOrEqual(window.innerWidth);
+  }
 });
 
 it('uses the selected model as the header picker and retains an accessible clear action', async () => {

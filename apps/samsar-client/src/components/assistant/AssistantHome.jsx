@@ -15,7 +15,7 @@ import { FaCopy } from 'react-icons/fa';
 import { useColorMode } from '../../contexts/ColorMode.jsx';
 import { useUser } from "../../contexts/UserContext.jsx";
 import CommonButton from '../common/CommonButton.tsx';
-import ModelAdapterSelect from "../common/ModelAdapterSelect.jsx";
+import GeminiModelSelect from "../common/GeminiModelSelect.jsx";
 import { ASSISTANT_MODEL_TYPES } from "../../constants/Types.ts";
 import { getHeaders } from "../../utils/web.jsx";
 import { useDeploymentModelAvailability } from "../../hooks/useDeploymentModelAvailability.js";
@@ -547,7 +547,7 @@ export default function AssistantHome(props) {
             <header className="shrink-0 border-b border-line px-4 py-2.5">
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0 flex-1" title={assistantModel?.label}>
-                  <ModelAdapterSelect
+                  <GeminiModelSelect
                     aria-label={uiText("Assistant model")}
                     options={assistantModelOptions}
                     value={assistantModel}

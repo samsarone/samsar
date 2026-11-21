@@ -413,6 +413,7 @@ export const ASSISTANT_MODEL_TYPES = [
     get label() { return uiText("Gemini 4 Carbon High"); },
     value: 'gemini-4-carbon',
   },
+  { label: 'Gemini 4 Neon High', value: 'gemini-4-neon' },
   {
     get label() { return uiText("Qwen 3.8 Max"); },
     value: 'QWEN3.8',
@@ -446,6 +447,7 @@ export const INFERENCE_MODEL_TYPES = [
     value: 'gemini-4-carbon',
     isBranchedInferenceModel: false,
   },
+  { label: 'Gemini 4 Neon High', value: 'gemini-4-neon', isBranchedInferenceModel: false },
   {
     get label() { return uiText("Qwen 3.8 Max"); },
     value: 'QWEN3.8',

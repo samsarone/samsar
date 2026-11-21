@@ -299,6 +299,7 @@ test('standalone Samsar advertises inference and Seedance video models', () => {
     'claude-opus-5.5',
     'claude-fable-5.2',
     'gemini-4-carbon',
+    'gemini-4-neon',
     'QWEN3.8',
     'KIMIK3',
     'HAPPYHORSEI2V',
@@ -338,7 +339,7 @@ test('OpenRouter runtime credentials advertise all inference models without medi
 
   const result = mergeRuntimeInferenceDeploymentAvailability({});
   assert.deepEqual(result.providers, ['openrouter']);
-  assert.deepEqual(result.models, ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2', 'gemini-4-carbon', 'QWEN3.8']);
+  assert.deepEqual(result.models, ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2', 'gemini-4-carbon', 'gemini-4-neon', 'QWEN3.8']);
   assert.deepEqual(result.actions, ['chat', 'assistant']);
   assert.deepEqual(result.modelProviders, {
     'gpt-6.2-astra': 'openrouter',
@@ -346,6 +347,7 @@ test('OpenRouter runtime credentials advertise all inference models without medi
     'claude-opus-5.5': 'openrouter',
     'claude-fable-5.2': 'openrouter',
     'gemini-4-carbon': 'openrouter',
+    'gemini-4-neon': 'openrouter',
     'QWEN3.8': 'openrouter',
   });
 });
@@ -367,6 +369,7 @@ test('standalone raw provider credentials expose declared branched media capabil
   });
   assert.deepEqual(google.models, [
     'gemini-4-carbon',
+    'gemini-4-neon',
     'VEO3.1I2V',
     'VEO3.1I2VFAST',
   ]);

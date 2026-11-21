@@ -20,7 +20,7 @@ it('offers one row per assistant model and preserves effort when changing models
   render(<ModelForm />);
   expect(screen.getByTestId('selected')).toHaveTextContent('gpt-6.2-astra');
   expect(screen.getAllByRole('combobox')).toHaveLength(2);
-  expect(screen.getAllByRole('option')).toHaveLength(INFERENCE_MODEL_TYPES.length);
+  expect(screen.getByRole('option', { name: 'Gemini', exact: true })).toBeInTheDocument();
   expect(screen.getByRole('option', { name: 'Claude Opus 5.5', exact: true })).toBeInTheDocument();
   expect(screen.getByRole('option', { name: 'Claude Fable 5.2', exact: true })).toHaveValue('claude-fable-5.2');
   expect(screen.queryByRole('option', { name: 'Claude Fable 5.1', exact: true })).not.toBeInTheDocument();
@@ -47,10 +47,12 @@ it('does not offer models removed by deployment availability', () => {
 it('hides effort for models without an effort choice and keeps their valid model key', () => {
   render(<ModelForm />);
   setXHigh();
-  expect(screen.getByRole('option', { name: 'Gemini 4 Carbon High', exact: true })).toHaveValue('gemini-4-carbon');
   expect(screen.queryByRole('option', { name: /Argon/ })).not.toBeInTheDocument();
-  fireEvent.change(screen.getByRole('combobox', { name: 'Assistant model' }), { target: { value: 'gemini-4-carbon' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Assistant model' }), { target: { value: 'Gemini' } });
   expect(screen.getByTestId('selected').textContent).toBe('gemini-4-carbon');
+  expect(screen.getByRole('combobox', { name: 'Gemini model' })).toHaveValue('gemini-4-carbon');
+  fireEvent.change(screen.getByRole('combobox', { name: 'Gemini model' }), { target: { value: 'gemini-4-neon' } });
+  expect(screen.getByTestId('selected').textContent).toBe('gemini-4-neon');
   expect(screen.queryByRole('combobox', { name: 'Reasoning effort' })).not.toBeInTheDocument();
   fireEvent.change(screen.getByRole('combobox', { name: 'Assistant model' }), { target: { value: 'claude-fable-5.2' } });
   expect(screen.getByTestId('selected').textContent).toBe('claude-fable-5.2');
@@ -69,4 +71,20 @@ it('retains separate family and model selection for pipeline inference', () => {
   fireEvent.change(screen.getByRole('combobox', { name: 'Claude model' }), { target: { value: 'claude-fable-5.2' } });
   expect(screen.getByTestId('selected').textContent).toBe('claude-fable-5.2');
   expect(screen.queryByRole('combobox', { name: 'Reasoning effort' })).not.toBeInTheDocument();
+});
+
+it('groups Gemini model variants and keeps Gemini effort separate from GPT and Claude', () => {
+  render(<ModelForm options={INFERENCE_MODEL_TYPES} groupByFamily />);
+  fireEvent.change(screen.getByRole('combobox', { name: 'Model family' }), { target: { value: 'Gemini' } });
+  expect(screen.getByRole('combobox', { name: 'Gemini model' })).toHaveValue('gemini-4-carbon');
+  fireEvent.change(screen.getByRole('combobox', { name: 'Gemini model' }), { target: { value: 'gemini-4-neon' } });
+  expect(screen.getByTestId('selected').textContent).toBe('gemini-4-neon');
+  expect(screen.queryByRole('combobox', { name: 'Reasoning effort' })).not.toBeInTheDocument();
+});
+
+it('only offers Gemini variants that the deployment allows', () => {
+  render(<ModelForm options={ASSISTANT_MODEL_TYPES.filter((option) => option.value === 'gemini-4-neon')} />);
+  expect(screen.getByRole('combobox', { name: 'Assistant model' })).toHaveValue('Gemini');
+  expect(screen.getByRole('combobox', { name: 'Gemini model' })).toHaveValue('gemini-4-neon');
+  expect(screen.queryByRole('option', { name: 'Gemini 4 Carbon High' })).not.toBeInTheDocument();
 });

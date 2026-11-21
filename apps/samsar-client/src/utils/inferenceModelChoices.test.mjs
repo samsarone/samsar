@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeDeploymentInferenceModelValue, inferGPT56SolEffortFromModelValue, resolveAllowedInferenceModelOption, filterOptionsForDeploymentInferenceModels } from './deploymentInferencePolicy.mjs';
-import { supportsInferenceEffort } from './inferenceModelChoices.mjs';
+import { getInferenceModelFamily, normalizeGeminiModelChoice, supportsInferenceEffort } from './inferenceModelChoices.mjs';
 
 for (const model of ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
   test(`${model} retains its identity, saved effort, and deployment filtering`, () => {
@@ -15,7 +15,27 @@ for (const model of ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-
 }
 test('unrelated providers do not acquire a GPT/Claude effort selector', () => {
   assert.equal(supportsInferenceEffort('gemini-4-carbon'), false);
+  assert.equal(supportsInferenceEffort('gemini-4-neon'), false);
   assert.equal(supportsInferenceEffort('QWEN3.8'), false);
+});
+
+test('Gemini Carbon and Neon retain distinct models within one family', () => {
+  for (const [input, model] of [
+    ['gemini-4-carbon', 'gemini-4-carbon'],
+    ['gemini-4-argon', 'gemini-4-carbon'],
+    ['Gemini 4 Carbon High', 'gemini-4-carbon'],
+    ['gemini-4-neon', 'gemini-4-neon'],
+    ['google/gemini-4-neon', 'gemini-4-neon'],
+    ['Google Gemini 4 Neon', 'gemini-4-neon'],
+    ['Gemini 4 Neon High', 'gemini-4-neon'],
+  ]) {
+    assert.equal(normalizeGeminiModelChoice(input), model);
+    assert.equal(normalizeDeploymentInferenceModelValue(input), model);
+    assert.equal(getInferenceModelFamily(input), 'Gemini');
+  }
+  assert.equal(normalizeGeminiModelChoice('gemini-4-neon-xhigh'), null);
+  assert.equal(getInferenceModelFamily('claude-opus-5.5'), 'Claude');
+  assert.equal(getInferenceModelFamily('gpt-6.2-astra'), 'GPT');
 });
 
 test('saved Astra and Sol legacy choices migrate to Astra 6.2 with their effort', () => {

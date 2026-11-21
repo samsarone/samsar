@@ -89,7 +89,7 @@ test('standalone exposes Qwen only with an explicit model and validated Alibaba 
 test('provider fallbacks expose their configured inference models', () => {
   assert.deepEqual(
     extractDeploymentInferenceModelValues({ deployment: { providers: ['samsar'] } }),
-    ['gpt-6.2-astra', 'claude-opus-5.5', 'claude-fable-5.2', 'gpt-6.1-sol', 'gemini-4-carbon', 'QWEN3.8', 'kimi-k3'],
+    ['gpt-6.2-astra', 'claude-opus-5.5', 'claude-fable-5.2', 'gpt-6.1-sol', 'gemini-4-carbon', 'gemini-4-neon', 'QWEN3.8', 'kimi-k3'],
   );
   assert.equal(
     labelOptionsForDeploymentInferenceProviders(MODEL_OPTIONS, {
@@ -99,7 +99,7 @@ test('provider fallbacks expose their configured inference models', () => {
   );
   assert.deepEqual(
     extractDeploymentInferenceModelValues({ deployment: { providers: ['openai', 'googleCloud'] } }),
-    ['gpt-6.2-astra', 'gpt-6.1-sol', 'gemini-4-carbon'],
+    ['gpt-6.2-astra', 'gpt-6.1-sol', 'gemini-4-carbon', 'gemini-4-neon'],
   );
   assert.deepEqual(
     extractDeploymentInferenceModelValues({ deployment: { providers: ['alibabaCloud'] } }),
@@ -191,6 +191,7 @@ test('OpenRouter alone exposes every inference model with validated Qwen provena
     'gpt-6.2-astra',
     'gemini-4-carbon',
     'QWEN3.8',
+    'gemini-4-neon',
     'claude-opus-5.5',
     'claude-fable-5.2',
     'gpt-6.1-sol',
@@ -288,4 +289,16 @@ test('saved Argon choices resolve to Carbon without falling back to GPT', () => 
   for (const model of ['gemini-4-argon', 'Gemini 4 Argon', 'google/gemini-4-argon', 'gemini4argon']) {
     assert.equal(normalizeDeploymentInferenceModelValue(model), 'gemini-4-carbon');
   }
+});
+
+test('Gemini deployment filtering preserves separate Carbon and Neon choices and providers', () => {
+  const options = [
+    { value: 'gemini-4-carbon', label: 'Carbon' },
+    { value: 'gemini-4-neon', label: 'Neon' },
+  ];
+  assert.deepEqual(filterOptionsForDeploymentInferenceModels(options, ['gemini-4-neon']), [options[1]]);
+  assert.deepEqual(filterOptionsForDeploymentInferenceModels(options, ['gemini-4-carbon']), [options[0]]);
+  assert.equal(resolveAllowedInferenceModelOption('google/gemini-4-neon', options).value, 'gemini-4-neon');
+  assert.deepEqual(extractDeploymentInferenceModelValues({ deployment: { providers: ['googleCloud'] } }),
+    ['gemini-4-carbon', 'gemini-4-neon']);
 });

@@ -63,6 +63,7 @@ export default function ModelAdapterSelect({
   if (!isStandaloneDeployment && hostedControl === "native") {
     return (
       <select
+        id={selectProps.id}
         aria-label={selectProps['aria-label']}
         value={selectedOption?.value || ""}
         onChange={(event) => {

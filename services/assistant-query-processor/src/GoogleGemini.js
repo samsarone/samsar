@@ -21,8 +21,8 @@ function normalizeString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
 }
 
-function isGeminiCarbonProviderModel(value) {
-  return /^gemini-4-carbon(?:[.-]|$)/i.test(normalizeString(value));
+function isGemini4ReasoningProviderModel(value) {
+  return /^gemini-4-(?:carbon|neon)(?:[.-]|$)/i.test(normalizeString(value));
 }
 
 function getGeminiTimeoutMs(options = {}) {
@@ -313,10 +313,10 @@ function getMaxOutputTokens(options = {}) {
 
 function buildGenerationConfig(options = {}, model = '') {
   const generationConfig = {};
-  const isCarbonModel = isGeminiCarbonProviderModel(model);
-  const supportsThinkingLevel = isCarbonModel || normalizeString(model).startsWith('gemini-3');
+  const isGemini4Model = isGemini4ReasoningProviderModel(model);
+  const supportsThinkingLevel = isGemini4Model || normalizeString(model).startsWith('gemini-3');
 
-  if (!isCarbonModel && options.temperature !== undefined) {
+  if (!isGemini4Model && options.temperature !== undefined) {
     const temperature = Number(options.temperature);
     if (Number.isFinite(temperature)) {
       generationConfig.temperature = temperature;
@@ -324,7 +324,7 @@ function buildGenerationConfig(options = {}, model = '') {
   }
 
   const topPValue = options.top_p ?? options.topP;
-  if (!isCarbonModel && topPValue !== undefined) {
+  if (!isGemini4Model && topPValue !== undefined) {
     const topP = Number(topPValue);
     if (Number.isFinite(topP)) {
       generationConfig.topP = topP;
@@ -339,9 +339,9 @@ function buildGenerationConfig(options = {}, model = '') {
       : normalizedMaxTokens;
   }
 
-  if (isCarbonModel && generationConfig.maxOutputTokens) {
-    // Non-streaming REST calls cannot continue beyond Carbon's single-request cap.
-    generationConfig.maxOutputTokens = Math.min(generationConfig.maxOutputTokens, 32768);
+  if (isGemini4Model && generationConfig.maxOutputTokens) {
+    const outputLimit = /^gemini-4-neon(?:[.-]|$)/i.test(model) ? 65536 : 32768;
+    generationConfig.maxOutputTokens = Math.min(generationConfig.maxOutputTokens, outputLimit);
   }
 
   if (supportsThinkingLevel) {
@@ -457,7 +457,7 @@ export async function sendAssistantGeminiCompletionRequest(
         signal,
         readLocalMediaBuffer: dependencyOverrides.readLocalMediaBuffer,
       });
-      if (isGeminiCarbonProviderModel(model)) {
+      if (isGemini4ReasoningProviderModel(model)) {
         while (contents.at(-1)?.role === 'model') contents.pop();
       }
       if (!contents.length) {

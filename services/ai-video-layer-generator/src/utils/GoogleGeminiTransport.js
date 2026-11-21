@@ -5,6 +5,7 @@ function normalizeString(value) {
 function normalizeGeminiModel(value) {
   const normalized = normalizeString(value).toLowerCase().replace(/^google\//, '');
   const alias = normalized.replace(/[^a-z0-9]/g, '').replace(/^google/, '');
+  if (/^gemini4neon(?:high)?$/.test(alias)) return 'gemini-4-neon';
   if (/^gemini4(?:(?:carbon|argon))?(?:high)?$/.test(alias) ||
       /^gemini-4-argon(?:-[0-9]{8})?$/.test(normalized)) {
     return 'gemini-4-carbon';
@@ -22,7 +23,7 @@ export function resolveGoogleGeminiTransport(chatRequestOrModel, env = process.e
   const edition = [env.SAMSAR_DEPLOYMENT_EDITION, env.SAMSAR_EDITION, env.CURRENT_ENV]
     .map(value => normalizeString(value).toLowerCase()).find(Boolean);
   if (edition === 'production' &&
-      /^gemini-4-carbon(?:[.-]|$)/i.test(model) &&
+      /^gemini-4-(?:carbon|neon)(?:[.-]|$)/i.test(model) &&
       !/(?:^|[-.])cyber(?:[-.]|$)/i.test(model)) {
     const apiKey = normalizeString(env?.GOOGLE_GEMINI_API_KEY) || normalizeString(env?.GEMINI_API_KEY);
     if (apiKey) return { kind: 'developer', model, apiKey };

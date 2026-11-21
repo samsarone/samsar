@@ -452,7 +452,7 @@ async function dispatchAssistantMessageRequest(request, provider = '') {
 
   if (isGeminiInferenceModel(modelName)) {
     if (request.response_format) throw new Error('Structured speaker selection is not supported by the native Gemini adapter.');
-    const response = await createGoogleGeminiChatCompletion(messageList);
+    const response = await createGoogleGeminiChatCompletion(messageList, modelName);
     return {
       response,
       message: response,

@@ -14,7 +14,7 @@ export function resolveGoogleGeminiTransport(chatRequestOrModel, env = process.e
     : chatRequestOrModel;
   const model = normalizeGeminiProviderModel(requestedModel).replace(/^google\//i, '');
   if (getDeploymentEdition(env) === 'production' &&
-      /^gemini-4-carbon(?:[.-]|$)/i.test(model) &&
+      /^gemini-4-(?:carbon|neon)(?:[.-]|$)/i.test(model) &&
       !/(?:^|[-.])cyber(?:[-.]|$)/i.test(model)) {
     const apiKey = normalizeString(env?.GOOGLE_GEMINI_API_KEY) || normalizeString(env?.GEMINI_API_KEY);
     if (apiKey) return { kind: 'developer', model, apiKey };

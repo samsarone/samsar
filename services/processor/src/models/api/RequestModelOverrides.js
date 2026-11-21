@@ -2,6 +2,7 @@ import { normalizeReasoningModel, supportsInferenceEffort, withInferenceEffort }
 import {
   DEFAULT_INFERENCE_MODEL,
   GEMINI_4_CARBON_INFERENCE_MODEL,
+  GEMINI_4_NEON_INFERENCE_MODEL,
   GPT_56_SOL_XHIGH_INFERENCE_MODEL,
   INFERENCE_REASONING_EFFORTS,
   KIMI_K3_INFERENCE_MODEL,
@@ -110,6 +111,10 @@ const INFERENCE_MODEL_ALIASES = Object.freeze({
   GEMINI4ARGON: GEMINI_4_CARBON_INFERENCE_MODEL,
   GOOGLEGEMINI4CARBON: GEMINI_4_CARBON_INFERENCE_MODEL,
   GOOGLEGEMINI4ARGON: GEMINI_4_CARBON_INFERENCE_MODEL,
+  GEMINI4NEON: GEMINI_4_NEON_INFERENCE_MODEL,
+  GEMINI4NEONHIGH: GEMINI_4_NEON_INFERENCE_MODEL,
+  GOOGLEGEMINI4NEON: GEMINI_4_NEON_INFERENCE_MODEL,
+  GOOGLEGEMINI4NEONHIGH: GEMINI_4_NEON_INFERENCE_MODEL,
   CLAUDEOPUS55: 'claude-opus-5.5',
   ANTHROPICCLAUDEOPUS55: 'claude-opus-5.5',
   QWEN38: QWEN_38_INFERENCE_MODEL,
@@ -243,7 +248,7 @@ export function normalizeInferenceModelFromPayload(payload = {}) {
   if (!normalizedModel) {
     throw makeValidationError(
       'inference_model must be one of: gpt-6.2-astra, gpt-6.1-sol, claude-opus-5.5, ' +
-      'claude-fable-5.2, gemini-4-carbon, QWEN3.8, kimi-k3. ' +
+      'claude-fable-5.2, gemini-4-carbon, gemini-4-neon, QWEN3.8, kimi-k3. ' +
       'GPT and Claude models accept high and xhigh effort.'
     );
   }

@@ -16,8 +16,8 @@ function normalizeString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
 }
 
-function isGeminiCarbonProviderModel(value) {
-  return /^gemini-4-carbon(?:[.-]|$)/i.test(normalizeString(value));
+function isGemini4ReasoningProviderModel(value) {
+  return /^gemini-4-(?:carbon|neon)(?:[.-]|$)/i.test(normalizeString(value));
 }
 
 function resolveGeminiLocation() {
@@ -256,7 +256,7 @@ export async function createGoogleGeminiChatCompletion(messages, inferenceModel,
   }
 
   const { systemInstruction, contents } = await buildGeminiContents(messages, options);
-  if (isGeminiCarbonProviderModel(model)) {
+  if (isGemini4ReasoningProviderModel(model)) {
     while (contents.at(-1)?.role === 'model') contents.pop();
   }
   if (!contents.length) {

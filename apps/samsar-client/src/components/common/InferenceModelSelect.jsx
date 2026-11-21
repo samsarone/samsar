@@ -1,6 +1,7 @@
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { translateText as uiText } from '../../utils/localization.js';
 import ModelAdapterSelect from './ModelAdapterSelect.jsx';
+import GeminiModelSelect from './GeminiModelSelect.jsx';
 import InferenceEffortSelect from './InferenceEffortSelect.jsx';
 import { INFERENCE_MODEL_TYPES } from '../../constants/Types.ts';
 import { getInferenceModelFamily } from '../../utils/inferenceModelChoices.mjs';
@@ -13,13 +14,17 @@ export default function InferenceModelSelect({ options = [], value, onChange, gr
   for (const option of options) {
     const family = getInferenceModelFamily(option.value);
     if (!families.some((item) => item.value === family)) {
-      families.push({ value: family, label: ['GPT', 'Claude'].includes(family) ? family : option.label });
+      families.push({
+        value: family,
+        label: ['GPT', 'Claude', 'Gemini'].includes(family) ? family : option.label,
+        ...(family === 'Gemini' ? { adapterModelKey: selectedFamily === 'Gemini' ? value.value : option.value } : {}),
+      });
     }
   }
   const variants = groupByFamily
     ? options.filter((option) => getInferenceModelFamily(option.value) === selectedFamily)
     : options;
-  const hasVariants = ['GPT', 'Claude'].includes(selectedFamily);
+  const hasVariants = ['GPT', 'Claude', 'Gemini'].includes(selectedFamily);
   const hasEmbeddedEffort = variants.some((option) => option.value.endsWith('-xhigh'));
   const effort = value?.value?.endsWith('-xhigh') ? 'xhigh' : 'high';
   const baseValue = value?.value?.replace(/-xhigh$/, '');
@@ -40,7 +45,7 @@ export default function InferenceModelSelect({ options = [], value, onChange, gr
     return (
       <div className="flex min-w-0 flex-wrap gap-2">
         <div className="min-w-0 flex-[1_1_12rem]">
-          <ModelAdapterSelect
+          <GeminiModelSelect
             {...props}
             aria-label={uiText("Assistant model")}
             options={modelVariants}
