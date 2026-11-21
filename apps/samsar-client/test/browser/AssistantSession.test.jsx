@@ -1,6 +1,6 @@
 import '../../src/index.css';
 import '../../src/App.css';
-import { Conversation } from '../shared/assistantSession.jsx';
+import { Conversation, setSavedAssistantModel } from '../shared/assistantSession.jsx';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { page } from 'vitest/browser';
 import { expect, it } from 'vitest';
@@ -43,6 +43,29 @@ it.each([[390, 700], [1280, 800]])('keeps controls visible and history scrollabl
   const menu = screen.getByRole('listbox').getBoundingClientRect();
   expect(menu.left).toBeGreaterThanOrEqual(0);
   expect(menu.right).toBeLessThanOrEqual(width);
+  expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+});
+
+it.each([[390, 700], [1280, 800]])('keeps both Gemini selectors and their menus within the popup at %sx%s', async (width, height) => {
+  await page.viewport(width, height);
+  setSavedAssistantModel('gemini-4-neon');
+  render(<Conversation />);
+  fireEvent.click(screen.getByRole('button', { name: 'Assistant', exact: true }));
+  const controls = [
+    screen.getByRole('combobox', { name: 'Assistant model', exact: true }),
+    screen.getByRole('combobox', { name: 'Gemini model', exact: true }),
+  ];
+  for (const picker of controls) {
+    const bounds = picker.closest('[class*="-container"]').getBoundingClientRect();
+    expect(bounds.width).toBeGreaterThan(0);
+    expect(bounds.left).toBeGreaterThanOrEqual(0);
+    expect(bounds.right).toBeLessThanOrEqual(width);
+    fireEvent.keyDown(picker, { key: 'ArrowDown' });
+    const menu = screen.getByRole('listbox').getBoundingClientRect();
+    expect(menu.left).toBeGreaterThanOrEqual(0);
+    expect(menu.right).toBeLessThanOrEqual(width);
+    fireEvent.keyDown(picker, { key: 'Escape' });
+  }
   expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
 });
 

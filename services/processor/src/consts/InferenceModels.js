@@ -20,6 +20,7 @@ export const INFERENCE_MODEL_KEYS = Object.freeze({
   GPT_56_SOL: INFERENCE_MODELS.Inference,
   GPT_56_SOL_XHIGH: INFERENCE_MODELS.BranchedInferenceExtraHigh,
   GEMINI_4_CARBON: 'gemini-4-carbon',
+  GEMINI_4_NEON: 'gemini-4-neon',
   QWEN_38: 'QWEN3.8',
   KIMI_K3: 'kimi-k3',
   CLAUDE_OPUS_55: 'claude-opus-5.5',
@@ -31,6 +32,7 @@ export const INFERENCE_PROVIDER_MODEL_KEYS = Object.freeze({
   [INFERENCE_MODEL_KEYS.GPT_56_SOL]: INFERENCE_MODELS.Inference,
   [INFERENCE_MODEL_KEYS.GPT_56_SOL_XHIGH]: INFERENCE_MODELS.Inference,
   [INFERENCE_MODEL_KEYS.GEMINI_4_CARBON]: 'gemini-4-carbon',
+  [INFERENCE_MODEL_KEYS.GEMINI_4_NEON]: 'gemini-4-neon',
   [INFERENCE_MODEL_KEYS.QWEN_38]: 'qwen3.8-max',
   [INFERENCE_MODEL_KEYS.KIMI_K3]: 'kimi-k3',
   [INFERENCE_MODEL_KEYS.CLAUDE_OPUS_55]: 'claude-opus-5-5',
@@ -62,6 +64,7 @@ export function getPublicationMetadataInferenceSettings(value) {
 }
 
 export const GEMINI_4_CARBON_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.GEMINI_4_CARBON;
+export const GEMINI_4_NEON_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.GEMINI_4_NEON;
 export const DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL =
   INFERENCE_PROVIDER_MODEL_KEYS[GEMINI_4_CARBON_INFERENCE_MODEL];
 export const QWEN_38_INFERENCE_MODEL = INFERENCE_MODEL_KEYS.QWEN_38;
@@ -77,6 +80,7 @@ export const SUPPORTED_INFERENCE_MODEL_VALUES = Object.freeze([
   DEFAULT_INFERENCE_MODEL,
   GPT_56_SOL_XHIGH_INFERENCE_MODEL,
   GEMINI_4_CARBON_INFERENCE_MODEL,
+  GEMINI_4_NEON_INFERENCE_MODEL,
   QWEN_38_INFERENCE_MODEL,
   KIMI_K3_INFERENCE_MODEL,
   CLAUDE_OPUS_55_INFERENCE_MODEL,
@@ -110,6 +114,13 @@ export const INFERENCE_MODEL_OPTIONS = Object.freeze([
     value: GEMINI_4_CARBON_INFERENCE_MODEL,
     providerModel: DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL,
     availabilityModel: GEMINI_4_CARBON_INFERENCE_MODEL,
+    isBranchedInferenceModel: false,
+  }),
+  Object.freeze({
+    label: 'Gemini 4 Neon High',
+    value: GEMINI_4_NEON_INFERENCE_MODEL,
+    providerModel: INFERENCE_PROVIDER_MODEL_KEYS[GEMINI_4_NEON_INFERENCE_MODEL],
+    availabilityModel: GEMINI_4_NEON_INFERENCE_MODEL,
     isBranchedInferenceModel: false,
   }),
   Object.freeze({
@@ -240,6 +251,12 @@ function isGeminiCarbonAlias(value) {
     GEMINI_4_CARBON_ALIAS_TOKENS.has(normalizeAliasToken(value).replace(/HIGH$/, ''));
 }
 
+function isGeminiNeonAlias(value) {
+  return ['GEMINI4NEON', 'GOOGLEGEMINI4NEON'].includes(
+    normalizeAliasToken(value).replace(/HIGH$/, ''),
+  );
+}
+
 function isQwen38Alias(value) {
   const normalized = normalizeString(value).toLowerCase();
   return QWEN_38_ALIASES.has(normalized) ||
@@ -281,6 +298,10 @@ export function normalizeSupportedInferenceModel(value) {
 
   if (isGeminiCarbonAlias(value)) {
     return GEMINI_4_CARBON_INFERENCE_MODEL;
+  }
+
+  if (isGeminiNeonAlias(value)) {
+    return GEMINI_4_NEON_INFERENCE_MODEL;
   }
 
   if (isQwen38Alias(value)) {
@@ -351,11 +372,19 @@ export function getDefaultUserInferenceModel() {
 
 export function isGeminiInferenceModel(value) {
   const normalized = normalizeString(value).toLowerCase();
-  return normalized.startsWith('gemini-') || isGeminiCarbonAlias(value);
+  return normalized.startsWith('gemini-') || isGeminiCarbonAlias(value) || isGeminiNeonAlias(value);
 }
 
 export function isGeminiCarbonProviderModel(value) {
   return /^gemini-4-carbon(?:[.-]|$)/i.test(normalizeString(value));
+}
+
+export function isGeminiNeonProviderModel(value) {
+  return /^gemini-4-neon(?:[.-]|$)/i.test(normalizeString(value));
+}
+
+export function isGemini4ProviderModel(value) {
+  return isGeminiCarbonProviderModel(value) || isGeminiNeonProviderModel(value);
 }
 
 export function isQwenInferenceModel(value) {
@@ -372,6 +401,7 @@ export function normalizeGeminiProviderModel(value) {
   if (!normalized) {
     return '';
   }
+  if (isGeminiNeonAlias(value)) return GEMINI_4_NEON_INFERENCE_MODEL;
   return isGeminiCarbonAlias(value) ? DEFAULT_GEMINI_4_CARBON_VERTEX_MODEL : normalized;
 }
 
@@ -386,6 +416,10 @@ export function getProviderModelForInferenceModel(
   }
   if (isGeminiInferenceModel(value)) {
     const normalized = normalizeGeminiProviderModel(value);
+    if (isGeminiNeonAlias(value)) {
+      return normalizeGeminiProviderModel(env?.GOOGLE_GEMINI_4_NEON_MODEL) ||
+        INFERENCE_PROVIDER_MODEL_KEYS[GEMINI_4_NEON_INFERENCE_MODEL];
+    }
     if (normalized.startsWith('gemini-') && !GEMINI_4_CARBON_ALIASES.has(normalized)) {
       return normalized;
     }

@@ -6,6 +6,8 @@ import { buildGoogleGeminiDeveloperUrl, resolveGoogleGeminiTransport } from './G
 import {
   getProviderModelForInferenceModel,
   isGeminiCarbonProviderModel,
+  isGeminiNeonProviderModel,
+  isGemini4ProviderModel,
 } from '../consts/InferenceModels.js';
 import { readLocalMediaBufferIfAvailable } from '../utils/LocalMediaAsset.js';
 
@@ -358,14 +360,14 @@ function resolveGeminiThinkingLevel(chatRequest = {}) {
 function buildGenerationConfig(chatRequest = {}, model = '') {
   const generationConfig = {};
   const jsonSchema = extractJsonSchema(chatRequest.response_format);
-  const isCarbonModel = isGeminiCarbonProviderModel(model);
-  const supportsThinkingLevel = isCarbonModel || normalizeString(model).startsWith('gemini-3');
+  const isGemini4Model = isGemini4ProviderModel(model);
+  const supportsThinkingLevel = isGemini4Model || normalizeString(model).startsWith('gemini-3');
 
-  if (!isCarbonModel && chatRequest.temperature !== undefined) {
+  if (!isGemini4Model && chatRequest.temperature !== undefined) {
     generationConfig.temperature = Number(chatRequest.temperature);
   }
 
-  if (!isCarbonModel && chatRequest.top_p !== undefined) {
+  if (!isGemini4Model && chatRequest.top_p !== undefined) {
     generationConfig.topP = Number(chatRequest.top_p);
   }
 
@@ -382,9 +384,12 @@ function buildGenerationConfig(chatRequest = {}, model = '') {
     generationConfig.responseSchema = normalizeJsonSchemaForGemini(jsonSchema);
   }
 
-  if (isCarbonModel && generationConfig.maxOutputTokens) {
+  if (isGeminiCarbonProviderModel(model) && generationConfig.maxOutputTokens) {
     // Non-streaming REST calls cannot continue beyond Carbon's single-request cap.
     generationConfig.maxOutputTokens = Math.min(generationConfig.maxOutputTokens, 32768);
+  }
+  if (isGeminiNeonProviderModel(model) && generationConfig.maxOutputTokens) {
+    generationConfig.maxOutputTokens = Math.min(generationConfig.maxOutputTokens, 65536);
   }
 
   if (supportsThinkingLevel) {
@@ -512,7 +517,7 @@ export async function createGoogleGeminiChatCompletion(chatRequest = {}, depende
     },
   );
 
-  if (isGeminiCarbonProviderModel(model)) {
+  if (isGemini4ProviderModel(model)) {
     while (contents.at(-1)?.role === 'model') contents.pop();
   }
   if (!contents.length) {

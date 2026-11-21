@@ -399,6 +399,19 @@ export const ASSISTANT_MODEL_PRICES = [
         price: rates[index] * 100 * 1.2,
       }));
     },
+  },
+  {
+    key: "gemini-4-neon",
+    billing: "token_usage",
+    get prices() {
+      // Published provider USD / 1M tokens, converted at 100 credits/USD + 20%.
+      const rates = [3, 0.15, 15];
+      return ['input_tokens', 'cached_input_tokens', 'output_tokens'].map((operationType, index) => ({
+        operationType,
+        tokens: 1_000_000,
+        price: rates[index] * 100 * 1.2,
+      }));
+    },
   }
 
 ]

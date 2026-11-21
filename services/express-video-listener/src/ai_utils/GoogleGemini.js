@@ -16,6 +16,7 @@ export const KIMI_K3_INFERENCE_MODEL = 'kimi-k3';
 export const CLAUDE_OPUS_55_INFERENCE_MODEL = 'claude-opus-5.5';
 const DEFAULT_INFERENCE_MODEL = GPT_56_SOL_INFERENCE_MODEL;
 const GEMINI_4_CARBON_INFERENCE_MODEL = 'gemini-4-carbon';
+const GEMINI_4_NEON_INFERENCE_MODEL = 'gemini-4-neon';
 const DEFAULT_GEMINI_MODEL = 'gemini-4-carbon';
 const DEFAULT_GEMINI_LOCATION = 'global';
 const DEFAULT_IMAGE_MIME_TYPE = 'image/png';
@@ -71,8 +72,8 @@ function normalizeString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
 }
 
-function isGeminiCarbonProviderModel(value) {
-  return /^gemini-4-carbon(?:[.-]|$)/i.test(normalizeString(value));
+function isGemini4ReasoningProviderModel(value) {
+  return /^gemini-4-(?:carbon|neon)(?:[.-]|$)/i.test(normalizeString(value));
 }
 
 function normalizeAliasToken(value) {
@@ -137,6 +138,8 @@ async function getAccessToken() {
 }
 
 export function normalizeInferenceModel(value) {
+  const neonToken = normalizeAliasToken(value).replace(/HIGH$/, '');
+  if (['GEMINI4NEON', 'GOOGLEGEMINI4NEON'].includes(neonToken)) return GEMINI_4_NEON_INFERENCE_MODEL;
   const geminiToken = normalizeAliasToken(value).replace(/HIGH$/, '');
   if (['GEMINI4', 'GEMINI4CARBON', 'GEMINI4ARGON', 'GOOGLEGEMINI4', 'GOOGLEGEMINI4CARBON', 'GOOGLEGEMINI4ARGON'].includes(geminiToken)) return GEMINI_4_CARBON_INFERENCE_MODEL;
   const reasoningModel = normalizeReasoningModel(value);
@@ -196,7 +199,7 @@ export function getDefaultInferenceModel() {
 
 export function isGeminiInferenceModel(value) {
   const normalized = normalizeString(value).toLowerCase();
-  return normalized.startsWith('gemini-') || normalizeInferenceModel(normalized) === GEMINI_4_CARBON_INFERENCE_MODEL;
+  return normalizeInferenceModel(value) === GEMINI_4_NEON_INFERENCE_MODEL || normalized.startsWith('gemini-') || normalizeInferenceModel(normalized) === GEMINI_4_CARBON_INFERENCE_MODEL;
 }
 
 export function isQwenInferenceModel(value) {
@@ -205,6 +208,7 @@ export function isQwenInferenceModel(value) {
 
 function normalizeGeminiProviderModel(value) {
   const normalized = normalizeString(value).toLowerCase();
+  if (normalizeInferenceModel(value) === GEMINI_4_NEON_INFERENCE_MODEL) return GEMINI_4_NEON_INFERENCE_MODEL;
   if (/^(?:google\/)?gemini-4-argon(?:-[0-9]{8})?$/.test(normalized)) return 'gemini-4-carbon';
   if (!normalized) return '';
   return GEMINI_4_CARBON_PROVIDER_ALIASES.has(normalized) ? DEFAULT_GEMINI_MODEL : normalized;
@@ -381,14 +385,14 @@ function resolveGeminiThinkingLevel(chatRequest = {}) {
 
 function buildGenerationConfig(chatRequest = {}, model = '') {
   const generationConfig = {};
-  const isCarbonModel = isGeminiCarbonProviderModel(model);
-  const supportsThinkingLevel = isCarbonModel || normalizeString(model).startsWith('gemini-3');
+  const isGemini4Model = isGemini4ReasoningProviderModel(model);
+  const supportsThinkingLevel = isGemini4Model || normalizeString(model).startsWith('gemini-3');
 
-  if (!isCarbonModel && chatRequest.temperature !== undefined) {
+  if (!isGemini4Model && chatRequest.temperature !== undefined) {
     generationConfig.temperature = Number(chatRequest.temperature);
   }
 
-  if (!isCarbonModel && chatRequest.top_p !== undefined) {
+  if (!isGemini4Model && chatRequest.top_p !== undefined) {
     generationConfig.topP = Number(chatRequest.top_p);
   }
 
@@ -400,14 +404,14 @@ function buildGenerationConfig(chatRequest = {}, model = '') {
       : normalizedMaxTokens;
   }
 
-  if (isCarbonModel && generationConfig.maxOutputTokens) {
-    // Non-streaming REST calls cannot continue beyond Carbon's single-request cap.
-    generationConfig.maxOutputTokens = Math.min(generationConfig.maxOutputTokens, 32768);
+  if (isGemini4Model && generationConfig.maxOutputTokens) {
+    const outputLimit = /^gemini-4-neon(?:[.-]|$)/i.test(model) ? 65536 : 32768;
+    generationConfig.maxOutputTokens = Math.min(generationConfig.maxOutputTokens, outputLimit);
   }
 
   if (supportsThinkingLevel) {
     generationConfig.thinkingConfig = {
-      thinkingLevel: isCarbonModel ? resolveGeminiThinkingLevel(chatRequest) : GEMINI_3_THINKING_LEVEL,
+      thinkingLevel: isGemini4Model ? resolveGeminiThinkingLevel(chatRequest) : GEMINI_3_THINKING_LEVEL,
     };
   }
 
@@ -459,7 +463,7 @@ export async function createGoogleGeminiChatCompletion(chatRequest = {}) {
   }
 
   const { systemInstruction, contents } = await buildGeminiContents(request.messages);
-  if (isGeminiCarbonProviderModel(model)) {
+  if (isGemini4ReasoningProviderModel(model)) {
     while (contents.at(-1)?.role === 'model') contents.pop();
   }
   if (!contents.length) throw new Error('Google Gemini inference requires at least one user message.');

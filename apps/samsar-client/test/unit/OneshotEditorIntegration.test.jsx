@@ -214,6 +214,15 @@ describe('VidGenie project loading and wizard requests', () => {
     expect(localStorage.getItem('vidgenieRequestStepMode:request-1')).toBeTruthy();
   });
 
+  it.each(['gemini-4-carbon', 'gemini-4-neon'])('submits %s from the saved account choice without adding GPT/Claude effort', async (model) => {
+    harness.user.selectedInferenceModel = model;
+    await mountEditor();
+    await submitPrompt('A Gemini-planned river story.');
+    const payload = axios.post.mock.calls[0][1].input;
+    expect(payload).toMatchObject({ inference_model: model, inferenceModel: model, session_id: 'project-1' });
+    expect(payload).not.toHaveProperty('effort');
+  });
+
   it('waits for profile hydration before persisting model defaults and uses saved account choices', async () => {
     harness.user = null;
     harness.userFetching = true;
@@ -272,6 +281,7 @@ describe('VidGenie generation lifecycle', () => {
     ['claude-fable-5.1', 'xhigh', 'claude-fable-5.2'],
     ['gpt-6.1-sol', 'high', 'gpt-6.1-sol'],
     ['gemini-4-carbon', null, 'gemini-4-carbon'],
+    ['gemini-4-neon', null, 'gemini-4-neon'],
     ['gemini-4-argon', null, 'gemini-4-carbon'],
   ])('retranslation submits the selected %s model as its canonical key and applicable effort', async (model, effort, expectedModel) => {
     harness.user.selectedInferenceModel = 'gpt-6.2-astra';
@@ -417,6 +427,13 @@ describe('VidGenie image-list requests and JSON editor validation', () => {
     return editor;
   }
   const validJson = () => ({ prompt: 'A natural river.', image_model: 'GPTIMAGE2.5', video_model: 'RUNWAYML', duration: 30 });
+
+  it('accepts Neon in JSON mode and retains the explicitly supplied model', async () => {
+    await openJson({ ...validJson(), inference_model: 'gemini-4-neon' });
+    expect(screen.getByRole('button', { name: 'Submit', exact: true })).toBeEnabled();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Submit', exact: true })));
+    expect(axios.post.mock.calls[0][1]).toMatchObject({ inference_model: 'gemini-4-neon', session_id: 'project-1' });
+  });
 
   it.each([
     ['empty prompt', { prompt: '' }, 'JSON input.prompt is required for text_to_video.'],

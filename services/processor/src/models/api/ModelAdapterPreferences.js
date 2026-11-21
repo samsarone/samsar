@@ -25,6 +25,7 @@ export const MODEL_ADAPTER_STAGE_DEFINITIONS = Object.freeze([
       'claude-fable-5.2',
       'gpt-6.1-sol',
       'gemini-4-carbon',
+      'gemini-4-neon',
       'KIMIK3',
       'QWEN3.8',
     ]),
@@ -66,6 +67,7 @@ const MODEL_LABELS = Object.freeze({
   'claude-fable-5.2': 'Claude Fable 5.2',
   'gpt-6.1-sol': 'GPT 6.1 Sol',
   'gemini-4-carbon': 'Gemini 4 Carbon',
+  'gemini-4-neon': 'Gemini 4 Neon',
   KIMIK3: 'Kimi K3',
   'QWEN3.8': 'Qwen 3.8 Max',
   'GPTIMAGE2.5': 'GPTImage 2.6',
@@ -151,6 +153,7 @@ export function normalizeModelAdapterModelKey(value) {
   if (typeof value === 'string' && value.toUpperCase().startsWith('KLING')) return normalizeKlingModelKey(value);
   if (normalizeReasoningModel(value)) return getReasoningModelBase(value);
   const token = normalizeModelToken(normalizeStoredGPTImageModelKey(value));
+  if (['GEMINI4NEON', 'GOOGLEGEMINI4NEON'].includes(token)) return 'gemini-4-neon';
   if (['GEMINI4', 'GEMINI4CARBON', 'GEMINI4ARGON', 'GOOGLEGEMINI4', 'GOOGLEGEMINI4CARBON', 'GOOGLEGEMINI4ARGON'].includes(token)) return 'gemini-4-carbon';
   if (['GPT6ASTRA', 'GPT6', 'GPT56SOL', 'GPT56'].includes(token)) return 'gpt-6.2-astra';
   if (KIMI_MODEL_TOKENS.has(token)) {

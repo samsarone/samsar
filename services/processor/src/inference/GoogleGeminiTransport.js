@@ -1,5 +1,5 @@
 import {
-  isGeminiCarbonProviderModel,
+  isGemini4ProviderModel,
   normalizeGeminiProviderModel,
 } from '../consts/InferenceModels.js';
 
@@ -16,7 +16,7 @@ export function resolveGoogleGeminiTransport(chatRequestOrModel, env = process.e
   const model = normalizeGeminiProviderModel(requestedModel).replace(/^google\//i, '');
   const edition = [env?.SAMSAR_DEPLOYMENT_EDITION, env?.SAMSAR_EDITION, env?.CURRENT_ENV]
     .map(value => normalizeString(value).toLowerCase()).find(Boolean);
-  if (edition === 'production' && isGeminiCarbonProviderModel(model) &&
+  if (edition === 'production' && isGemini4ProviderModel(model) &&
       !/(?:^|[-.])cyber(?:[-.]|$)/i.test(model)) {
     const apiKey = normalizeString(env?.GOOGLE_GEMINI_API_KEY) || normalizeString(env?.GEMINI_API_KEY);
     if (apiKey) return { kind: 'developer', model, apiKey };

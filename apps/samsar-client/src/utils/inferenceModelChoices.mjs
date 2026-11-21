@@ -22,7 +22,17 @@ export function supportsInferenceEffort(value) {
   return Boolean(parseReasoningModelChoice(value));
 }
 
+export function normalizeGeminiModelChoice(value) {
+  let token = String(value || '').trim().replace(/^google[\s/]+/i, '')
+    .replace(/[^a-z0-9]/gi, '').toLowerCase();
+  if (token.endsWith('high') && !token.endsWith('xhigh')) token = token.slice(0, -4);
+  if (token === 'gemini4neon') return 'gemini-4-neon';
+  if (['gemini4', 'gemini4carbon', 'gemini4argon'].includes(token)) return 'gemini-4-carbon';
+  return null;
+}
+
 export function getInferenceModelFamily(value) {
+  if (normalizeGeminiModelChoice(value)) return 'Gemini';
   const model = parseReasoningModelChoice(value)?.model;
   return model?.startsWith('gpt-') ? 'GPT' : model?.startsWith('claude-') ? 'Claude' : value;
 }

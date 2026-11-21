@@ -37,6 +37,7 @@ import { useDeploymentModelAvailability } from '../../hooks/useDeploymentModelAv
 import { isImageModelAllowedForDeploymentScope } from '../../utils/imageModelAvailability.mjs';
 import { isVideoModelAllowedForDeploymentScope } from '../../utils/videoModelAvailability.mjs';
 import { resolveGenerationModelDefaults } from '../../utils/generationDefaults.mjs';
+import GeminiModelSelect from '../common/GeminiModelSelect.jsx';
 
 const BACKING_TRACK_MODEL_OPTIONS = [
   { value: "ELEVENLABS_MUSIC", get label() { return uiText("ElevenLabs"); } },
@@ -785,7 +786,25 @@ export default function SettingsPanelContent(props) {
                   const hasSelectedOption = field.options.some((option) => option.value === generationModels[field.key]);
                   return <div key={field.key}>
                     <label htmlFor={`settings-${field.key}`} className={`block text-sm mb-1 ${secondaryTextColor}`}>{field.label}</label>
-                    <select
+                    {field.key === 'inferenceModel' ? (
+                      <GeminiModelSelect
+                        id={`settings-${field.key}`}
+                        aria-label={field.label}
+                        hostedControl="native"
+                        nativeClassName={formInputClasses}
+                        options={hasSelectedOption ? field.options : [
+                          { value: generationModels[field.key], label: generationModels[field.key] },
+                          ...field.options,
+                        ]}
+                        value={field.options.find((option) => option.value === generationModels[field.key]) || {
+                          value: generationModels[field.key], label: generationModels[field.key],
+                        }}
+                        isDisabled={field.isLoading || field.options.length === 0}
+                        onChange={(option) => {
+                          if (option?.value) setGenerationModels((current) => ({ ...current, inferenceModel: option.value }));
+                        }}
+                      />
+                    ) : <select
                       id={`settings-${field.key}`}
                       value={generationModels[field.key]}
                       disabled={field.isLoading || field.options.length === 0}
@@ -794,7 +813,7 @@ export default function SettingsPanelContent(props) {
                     >
                       {!hasSelectedOption && <option value={generationModels[field.key]}>{generationModels[field.key]}</option>}
                       {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </select>
+                    </select>}
                   </div>;
                 })}
               </div>

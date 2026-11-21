@@ -7,6 +7,7 @@ export const GPT_56_SOL_REASONING_EFFORT = 'high';
 export const GPT_56_SOL_XHIGH_REASONING_EFFORT = 'xhigh';
 const DEFAULT_INFERENCE_MODEL = GPT_56_SOL_INFERENCE_MODEL;
 const GEMINI_4_CARBON_INFERENCE_MODEL = 'gemini-4-carbon';
+const GEMINI_4_NEON_INFERENCE_MODEL = 'gemini-4-neon';
 export const QWEN_38_INFERENCE_MODEL = 'QWEN3.8';
 export const QWEN_38_MAX_MODEL = 'qwen3.8-max';
 export const KIMI_K3_INFERENCE_MODEL = 'kimi-k3';
@@ -61,8 +62,8 @@ function normalizeString(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : '';
 }
 
-function isGeminiCarbonProviderModel(value) {
-  return /^gemini-4-carbon(?:[.-]|$)/i.test(normalizeString(value));
+function isGemini4ReasoningProviderModel(value) {
+  return /^gemini-4-(?:carbon|neon)(?:[.-]|$)/i.test(normalizeString(value));
 }
 
 function normalizeAliasToken(value) {
@@ -151,6 +152,8 @@ async function getAccessToken() {
 }
 
 export function normalizeInferenceModel(value) {
+  const neonToken = normalizeAliasToken(value).replace(/HIGH$/, '');
+  if (['GEMINI4NEON', 'GOOGLEGEMINI4NEON'].includes(neonToken)) return GEMINI_4_NEON_INFERENCE_MODEL;
   const geminiToken = normalizeAliasToken(value).replace(/HIGH$/, '');
   if (['GEMINI4', 'GEMINI4CARBON', 'GEMINI4ARGON', 'GOOGLEGEMINI4', 'GOOGLEGEMINI4CARBON', 'GOOGLEGEMINI4ARGON'].includes(geminiToken)) return GEMINI_4_CARBON_INFERENCE_MODEL;
   const reasoningModel = normalizeReasoningModel(value);
@@ -185,17 +188,21 @@ export function normalizeInferenceModel(value) {
 
 export function isGeminiInferenceModel(value) {
   const normalized = normalizeString(value).toLowerCase();
-  return normalized.startsWith('gemini-') || normalizeInferenceModel(normalized) === GEMINI_4_CARBON_INFERENCE_MODEL;
+  return normalizeInferenceModel(value) === GEMINI_4_NEON_INFERENCE_MODEL || normalized.startsWith('gemini-') || normalizeInferenceModel(normalized) === GEMINI_4_CARBON_INFERENCE_MODEL;
 }
 
 function normalizeGeminiProviderModel(value) {
   const normalized = normalizeString(value).toLowerCase();
+  if (normalizeInferenceModel(value) === GEMINI_4_NEON_INFERENCE_MODEL) return GEMINI_4_NEON_INFERENCE_MODEL;
   if (/^(?:google\/)?gemini-4-argon(?:-[0-9]{8})?$/.test(normalized)) return 'gemini-4-carbon';
   if (!normalized) return '';
   return GEMINI_4_CARBON_PROVIDER_ALIASES.has(normalized) ? DEFAULT_GEMINI_MODEL : normalized;
 }
 
-export function resolveGeminiModel() {
+export function resolveGeminiModel(inferenceModel) {
+  if (normalizeInferenceModel(inferenceModel) === GEMINI_4_NEON_INFERENCE_MODEL) {
+    return GEMINI_4_NEON_INFERENCE_MODEL;
+  }
   return (
     normalizeGeminiProviderModel(process.env.GOOGLE_GEMINI_4_CARBON_MODEL) ||
     normalizeGeminiProviderModel(process.env.GOOGLE_GEMINI_4_ARGON_MODEL) ||
@@ -284,9 +291,9 @@ function buildGenerationConfig(model = '') {
   };
 }
 
-export async function createGoogleGeminiChatCompletion(messageList) {
+export async function createGoogleGeminiChatCompletion(messageList, inferenceModel) {
   const location = resolveGeminiLocation();
-  const transport = resolveGoogleGeminiTransport(resolveGeminiModel());
+  const transport = resolveGoogleGeminiTransport(resolveGeminiModel(inferenceModel));
   const { model } = transport;
   const credentials = transport.kind === 'developer' ? null : getConfiguredCredentials();
   const projectId = transport.kind === 'developer'
@@ -297,7 +304,7 @@ export async function createGoogleGeminiChatCompletion(messageList) {
   }
 
   const { systemInstruction, contents } = buildGeminiContents(messageList);
-  if (isGeminiCarbonProviderModel(model)) {
+  if (isGemini4ReasoningProviderModel(model)) {
     while (contents.at(-1)?.role === 'model') contents.pop();
   }
   if (!contents.length) {
@@ -343,6 +350,7 @@ export async function createGoogleGeminiChatCompletion(messageList) {
   }
 
   return {
+    model,
     role: 'assistant',
     content: extractGeminiOutputText(payload),
     ...(transport.kind === 'developer' ? { samsarBilling: { adapter: 'google', region: 'global', api: 'developer' } } : {}),

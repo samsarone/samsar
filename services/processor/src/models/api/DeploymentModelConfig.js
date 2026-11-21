@@ -1,5 +1,6 @@
 import { normalizeStoredGPTImageModelKey } from '../../consts/GPTImageModelKeys.js';
 import fs from 'fs';
+import { resolveGoogleGeminiTransport } from '../../inference/GoogleGeminiTransport.js';
 import path from 'path';
 import {
   isContainerRuntime,
@@ -97,6 +98,7 @@ function hasRuntimeGenBlazeRoute(modelMappings, model, modality, operation = 'ch
   // must use the exact current route accepted by the gateway.
   const requiredModelKey = {
     'GEMINI-4-CARBON': 'gemini-4-carbon',
+    'GEMINI-4-NEON': 'gemini-4-neon',
     'GPT-6.2-ASTRA': 'gpt-6.2-astra',
   }[normalizedModel];
   const modelKey = requiredModelKey
@@ -297,6 +299,7 @@ function appendUnique(target, values) {
 }
 
 function hasGoogleInferenceCredential() {
+  if (resolveGoogleGeminiTransport('gemini-4-carbon').kind === 'developer') return true;
   if (hasEnvCredential(
     'GOOGLE_APPLICATION_CREDENTIALS_JSON_B64',
     'GOOGLE_APPLICATION_CREDENTIALS_JSON',
@@ -323,6 +326,7 @@ function mergeRuntimeInferenceProviderSelections(availability) {
     'claude-fable-5.2': ['anthropic', 'openrouter', 'samsar'],
     'gpt-6.1-sol': ['openai', 'openrouter', 'samsar'],
     'gemini-4-carbon': ['googleCloud', 'gmicloud', 'samsar', 'openrouter'],
+    'gemini-4-neon': ['googleCloud', 'gmicloud', 'samsar', 'openrouter'],
     'QWEN3.8': ['alibabaCloud', 'gmicloud', 'samsar', 'openrouter'],
     KIMIK3: ['kimi', 'samsar'],
   };
@@ -473,6 +477,7 @@ function applyStandaloneModelAdapterPreferences(availability = {}) {
 function normalizeRuntimeInferenceModelKey(value) {
   const model = normalizeDeploymentModel(value);
   if (model === 'GEMINI-4-CARBON') return 'gemini-4-carbon';
+  if (model === 'GEMINI-4-NEON') return 'gemini-4-neon';
   if (model === 'CLAUDE-FABLE-5.2') return 'claude-fable-5.2';
   return model === 'QWEN3.8' ? 'QWEN3.8' : normalizeStoredGPTImageModelKey(value);
 }
@@ -636,7 +641,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
 
   if (hasGoogleInferenceCredential()) {
     appendUnique(merged.providers, ['googleCloud']);
-    appendUnique(merged.models, ['gemini-4-carbon']);
+    appendUnique(merged.models, ['gemini-4-carbon', 'gemini-4-neon']);
     appendUnique(merged.actions, ['chat', 'assistant']);
     if (exposeStandaloneProviderCapabilities) {
       appendUnique(merged.models, ['VEO3.1I2V', 'VEO3.1I2VFAST']);
@@ -661,7 +666,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
 
   if (hasEnvCredential('SAMSAR_API_KEY')) {
     appendUnique(merged.providers, ['samsar']);
-    appendUnique(merged.models, ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2', 'gemini-4-carbon', 'QWEN3.8', 'KIMIK3', 'HAPPYHORSEI2V', 'WAN2.7PRO', 'KLINGIMAGE4']);
+    appendUnique(merged.models, ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2', 'gemini-4-carbon', 'gemini-4-neon', 'QWEN3.8', 'KIMIK3', 'HAPPYHORSEI2V', 'WAN2.7PRO', 'KLINGIMAGE4']);
     appendUnique(merged.actions, ['chat', 'assistant', 'image', 'video']);
     if (exposeStandaloneProviderCapabilities) {
       appendUnique(merged.models, ['GPTIMAGE2.5', 'VEO3.1I2V']);
@@ -671,6 +676,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
   const runtimeGenBlazeInferenceModels = [
     'gpt-6.2-astra',
     'gemini-4-carbon',
+    'gemini-4-neon',
     'QWEN3.8',
   ].filter((model) => hasRuntimeGenBlazeInferenceModel(gmiCloudModelMappings, model));
   if (runtimeGenBlazeInferenceModels.length > 0) {
@@ -681,7 +687,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
 
   if (hasEnvCredential('OPENROUTER_API_KEY')) {
     appendUnique(merged.providers, ['openrouter']);
-    appendUnique(merged.models, ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2', 'gemini-4-carbon', 'QWEN3.8']);
+    appendUnique(merged.models, ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2', 'gemini-4-carbon', 'gemini-4-neon', 'QWEN3.8']);
     appendUnique(merged.actions, ['chat', 'assistant']);
   }
 
@@ -736,6 +742,7 @@ export function mergeRuntimeInferenceDeploymentAvailability(value = {}) {
     normalizeDeploymentModel('claude-fable-5.2'),
     normalizeDeploymentModel('gpt-6.1-sol'),
     normalizeDeploymentModel('gemini-4-carbon'),
+    normalizeDeploymentModel('gemini-4-neon'),
     normalizeDeploymentModel('QWEN3.8'),
     normalizeDeploymentModel('KIMIK3'),
   ]);

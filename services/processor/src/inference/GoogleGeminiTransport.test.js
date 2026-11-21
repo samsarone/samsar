@@ -29,12 +29,13 @@ function withEnvironment(t, overrides = {}) {
   });
 }
 
-test('Developer API key selection is limited to explicit production regular Carbon', () => {
+test('Developer API key selection is limited to explicit production regular Carbon and Neon', () => {
   for (const env of [
     { SAMSAR_DEPLOYMENT_EDITION: 'production', CURRENT_ENV: 'docker' },
     { SAMSAR_EDITION: 'production' }, { CURRENT_ENV: 'production' },
   ]) {
-    for (const model of ['gemini-4-carbon', 'google/gemini-4-carbon', 'Gemini 4 Carbon High', 'gemini-4-carbon-20261110']) {
+    for (const model of ['gemini-4-carbon', 'google/gemini-4-carbon', 'Gemini 4 Carbon High', 'gemini-4-carbon-20261110',
+      'gemini-4-neon', 'google/gemini-4-neon', 'Gemini 4 Neon High', 'gemini-4-neon-20261118']) {
       assert.equal(resolveGoogleGeminiTransport(model, { ...env, GOOGLE_GEMINI_API_KEY: TEST_KEY }).kind, 'developer');
     }
   }
