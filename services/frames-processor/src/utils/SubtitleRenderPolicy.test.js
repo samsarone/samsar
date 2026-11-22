@@ -71,6 +71,102 @@ test('detected speech language wins over TTS and session fallbacks', () => {
   assert.equal(context.isTranslated, true);
 });
 
+function explicitEnglishCaptionSession(audio = {}) {
+  return {
+    enableSubtitles: true,
+    sessionLanguage: 'ja',
+    subtitleLanguage: 'en',
+    subtitleLanguageExplicit: true,
+    subtitleTranslationRequired: true,
+    audioLayers: [{
+      _id: 'audio-1', speechLanguage: 'ja', subtitleLanguage: 'en',
+      subtitleTranslationRequired: true, subtitleText: 'Good morning.',
+      subtitleAlignmentMap: [{ sourceText: 'おはよう。', translatedText: 'Good morning.' }],
+      ...audio,
+    }],
+  };
+}
+
+function japaneseCaptionItem(overrides = {}) {
+  return {
+    type: 'text', subType: 'subtitle', text: 'おはよう。', audioLayerId: 'audio-1',
+    words: [{ word: 'おはよう。', frameOffset: 0, frameDuration: 24 }],
+    config: { frameOffset: 0, frameDuration: 24, fontFamily: 'Noto Sans JP' },
+    ...overrides,
+  };
+}
+
+test('explicit English session subtitles override stale Japanese item and layer targets', () => {
+  const context = getSubtitleTranslationContext(explicitEnglishCaptionSession({
+    subtitleLanguage: 'ja', subtitleTranslationRequired: false,
+  }), japaneseCaptionItem({ subtitleLanguage: 'ja' }));
+
+  assert.equal(context.audioLanguage, 'ja');
+  assert.equal(context.subtitleLanguage, 'en');
+  assert.equal(context.isTranslated, true);
+});
+
+test('stale Japanese mapped items are rebuilt from verified English subtitle metadata', () => {
+  const sourceItem = japaneseCaptionItem({
+    subtitleLanguage: 'ja', subtitleRenderMode: 'mapped', subtitleAlignmentMapped: true,
+    subtitleText: 'おはよう。',
+    subtitleAlignmentMap: [{ sourceText: 'おはよう。', translatedText: 'おはよう。' }],
+  });
+  const [item] = prepareLayerSubtitlesForRendering({
+    imageSession: { activeItemList: [sourceItem] },
+  }, explicitEnglishCaptionSession()).imageSession.activeItemList;
+
+  assert.equal(item.text, 'Good morning.');
+  assert.equal(item.subtitleLanguage, 'en');
+  assert.equal(item.audioLanguage, 'ja');
+  assert.ok(item.words.every(({ word }) => !/[ぁ-ゟァ-ヿ]/u.test(word)));
+  assert.equal(sourceItem.text, 'おはよう。');
+  assert.equal(sourceItem.subtitleLanguage, 'ja');
+});
+
+test('an explicit English request does not render a source-language fallback without English payload', () => {
+  for (const staticCaption of [false, true]) {
+    const sourceItem = japaneseCaptionItem({
+      subtitleLanguage: 'ja',
+      ...(staticCaption ? { subtitleRenderMode: 'static', isStaticSubtitle: true } : {}),
+    });
+    const image = { type: 'image', id: 'background' };
+    const prepared = prepareLayerSubtitlesForRendering({
+      imageSession: { activeItemList: [image, sourceItem] },
+    }, explicitEnglishCaptionSession({
+      subtitleLanguage: 'ja', subtitleTranslationRequired: false,
+      subtitleText: 'おはよう。',
+      subtitleAlignmentMap: [{ sourceText: 'おはよう。', translatedText: 'おはよう。' }],
+    }));
+
+    assert.deepEqual(prepared.imageSession.activeItemList, [image]);
+  }
+});
+
+test('unlabelled source captions do not replace an explicit English target when translation is absent', () => {
+  const prepared = prepareLayerSubtitlesForRendering({
+    imageSession: { activeItemList: [japaneseCaptionItem()] },
+  }, explicitEnglishCaptionSession({ subtitleText: '', subtitleAlignmentMap: [] }));
+
+  assert.deepEqual(prepared.imageSession.activeItemList, []);
+});
+
+test('a genuinely English speech layer remains English in a Japanese mixed-language session', () => {
+  const sourceItem = japaneseCaptionItem({
+    text: 'Good morning.',
+    words: [{ word: 'Good morning.', frameOffset: 0, frameDuration: 24 }],
+  });
+  const session = explicitEnglishCaptionSession({
+    speechLanguage: 'en', subtitleTranslationRequired: false,
+  });
+  const [item] = prepareLayerSubtitlesForRendering({
+    imageSession: { activeItemList: [sourceItem] },
+  }, session).imageSession.activeItemList;
+
+  assert.equal(item.text, 'Good morning.');
+  assert.equal(getSubtitleTranslationContext(session, item).audioLanguage, 'en');
+});
+
 test('translated subtitle items are forced static with a target-language safe font', () => {
   const layer = {
     imageSession: {

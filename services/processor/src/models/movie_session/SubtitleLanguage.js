@@ -68,6 +68,16 @@ function hasTranslatedSubtitleText(audioLayer = {}) {
 }
 
 function resolveLayerSpeechLanguage(audioLayer = {}, sessionSpeechLanguage = AUTO_LANGUAGE) {
+  const layerSpeechLanguage = normalizeDetectedSpeechLanguage(
+    audioLayer.speechLanguage || audioLayer.languageCode,
+  );
+  const sessionLanguage = normalizeDetectedSpeechLanguage(sessionSpeechLanguage);
+  if (layerSpeechLanguage && sessionLanguage && layerSpeechLanguage !== sessionLanguage) {
+    // Legacy retranslation could update the speech text and session language
+    // while retaining the original layer language. Genuine multilingual layers
+    // can also differ, so detect the text instead of trusting either label.
+    return null;
+  }
   return normalizeDetectedSpeechLanguage(
     audioLayer.speechLanguage || audioLayer.languageCode || sessionSpeechLanguage,
   );
@@ -276,7 +286,7 @@ export async function backfillTranslatedSubtitleMetadataForRerun(audioLayers = [
       knownSpeechLanguage && knownSpeechLanguage !== subtitleLanguage,
     );
 
-    if (!declaredTranslationRequired && !knownTranslationRequired) {
+    if (!declaredTranslationRequired && !knownTranslationRequired && knownSpeechLanguage) {
       continue;
     }
     if (knownSpeechLanguage && knownSpeechLanguage === subtitleLanguage) {
@@ -298,6 +308,7 @@ export async function backfillTranslatedSubtitleMetadataForRerun(audioLayers = [
       audioLayer.subtitleText,
     );
     const metadataNeedsInference =
+      !knownSpeechLanguage ||
       !hasTranslatedSubtitleText(audioLayer) ||
       !currentAlignmentCoverage.isComplete ||
       (speakerCharacterName && !hasLocalizedSubtitleSpeakerName(audioLayer));
@@ -346,13 +357,18 @@ export async function backfillTranslatedSubtitleMetadataForRerun(audioLayers = [
     const detectedSpeechLanguage = !knownSpeechLanguage
       ? normalizeDetectedSpeechLanguage(resolution?.sourceLanguage)
       : knownSpeechLanguage;
-    const translationRequired = !knownSpeechLanguage
-      ? resolution?.translationRequired === true
-      : knownTranslationRequired;
+    const translationRequired = Boolean(
+      detectedSpeechLanguage && detectedSpeechLanguage !== subtitleLanguage,
+    );
 
     if (!detectedSpeechLanguage) {
       throw new Error('Subtitle rerun backfill returned an invalid speech language.');
     }
+    const languageRepairFields = detectedSpeechLanguage !== normalizeDetectedSpeechLanguage(
+      audioLayer.speechLanguage || audioLayer.languageCode,
+    )
+      ? { transcriptAlignment: null }
+      : {};
 
     if (!translationRequired) {
       plannedUpdates.push({
@@ -366,6 +382,7 @@ export async function backfillTranslatedSubtitleMetadataForRerun(audioLayers = [
           subtitleSpeakerCharacterName: null,
           addTranscriptionsRequired: true,
           subtitleWordAnimation: getTranslatedSubtitleWordAnimation(audioLayer),
+          ...languageRepairFields,
         },
       });
       continue;
@@ -409,6 +426,7 @@ export async function backfillTranslatedSubtitleMetadataForRerun(audioLayers = [
           : null,
         addTranscriptionsRequired: true,
         subtitleWordAnimation: getTranslatedSubtitleWordAnimation(audioLayer),
+        ...languageRepairFields,
       },
     });
   }
