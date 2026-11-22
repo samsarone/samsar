@@ -14,7 +14,8 @@ import {
 import { authenticateWithAuthToken, authenticateWithLoginToken, createLoginTokenForUser } from '../models/api/UserAPI.js';
 import { formatExternalUserClientProfile } from '../models/external/User.js';
 
-import { generateAuthToken, verifyUserAuthentication } from '../models/Auth.js';
+import { generateAuthToken, verifyAuthToken, verifyUserAuthentication } from '../models/Auth.js';
+import { getUserCreateDefaults, updateUserCreateDefaults } from '../models/CreateDefaults.js';
 import {
   loginUserByEmail, registerUserByEmail, sendForgotPasswordEmail,
   resetUserPassword, updateUserPassword
@@ -156,6 +157,29 @@ router.get('/profile', async (req, res) => {
     res.status(500).send({ error: e.message });
   }
 });
+
+async function createDefaultsHandler(req, res) {
+  setNoStoreAuthHeaders(res);
+  let userId;
+  try {
+    const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+    userId = token && verifyAuthToken(token)?._id;
+    if (!userId) throw new Error('Missing user');
+  } catch {
+    return res.status(401).send({ error: 'Unauthorized', message: 'Unauthorized' });
+  }
+  try {
+    const createDefaults = req.method === 'PUT'
+      ? await updateUserCreateDefaults(userId, req.body?.createDefaults)
+      : await getUserCreateDefaults(userId);
+    return res.send({ createDefaults });
+  } catch (error) {
+    return res.status(error?.status || 500).send({ error: error.message, message: error.message });
+  }
+}
+
+router.get('/create_defaults', createDefaultsHandler);
+router.put('/create_defaults', createDefaultsHandler);
 
 router.get('/google_login', async (req, res) => {
   setNoStoreAuthHeaders(res);

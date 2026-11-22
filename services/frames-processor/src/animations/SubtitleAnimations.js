@@ -3,9 +3,11 @@
 import { wrapText } from '../utils/TextUtils.js';
 import { getFramesPerSecondFromValue } from '../utils/FpsUtils.js';
 import { getSubtitleEndFrameExclusive } from '../utils/FrameTimingUtils.js';
+import { getSubtitleFontsForLanguage } from '../consts/SubtitleFonts.js';
 import {
   isMappedTranslatedSubtitleItem,
   isStaticSubtitleItem,
+  normalizeComparableSubtitleLanguage,
 } from '../utils/SubtitleRenderPolicy.js';
 
 const textWordCustomAnimations = [
@@ -19,10 +21,16 @@ const textWordCustomAnimations = [
 
 const DEFAULT_FONT_FALLBACKS = ['Poppins', 'Montserrat', 'Arial', 'sans-serif'];
 const THAI_FONT_FALLBACKS = ['Sarabun', ...DEFAULT_FONT_FALLBACKS];
-const GENERIC_LATIN_FONTS = ['poppins', 'montserrat', 'arial', 'sans-serif'];
+const GENERIC_LATIN_FONTS = ['poppins', 'montserrat', 'arial', 'inter', 'rampart one', 'noto sans', 'sans-serif'];
 const fontStackLog = new Set();
 const thaiFontWarnings = new Set();
 const THAI_RANGE_REGEX = /[\u0E00-\u0E7F]/;
+const JAPANESE_RANGE_REGEX = /[\p{Script=Hiragana}\p{Script=Katakana}]/u;
+const HAN_RANGE_REGEX = /\p{Script=Han}/u;
+const HANGUL_RANGE_REGEX = /\p{Script=Hangul}/u;
+const GRAPHEME_SEGMENTER = typeof Intl.Segmenter === 'function'
+  ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+  : null;
 const MAX_SUBTITLE_LINES_PER_PAGE = 2;
 const SUBTITLE_EDGE_FADE_FRAMES = 3;
 const HIGHLIGHT_EDGE_FADE_FRAMES = 2;
@@ -78,16 +86,38 @@ function buildFontString(fontSize, fontEmphasis, fontFamily) {
   return `${getFontStyle(fontEmphasis)}${fontSize}px ${fontFamily}`;
 }
 
-function buildFontStack(fontFamily, itemLabel = 'text', sampleText = '') {
+function buildFontStack(fontFamily, itemLabel = 'text', sampleText = '', languageCode = '') {
   const hasThaiText = THAI_RANGE_REGEX.test(sampleText || '');
   const normalizedFont = fontFamily && typeof fontFamily === 'string' ? fontFamily.trim() : '';
+  const language = normalizeComparableSubtitleLanguage(languageCode);
+  // Persisted captions can retain the source video's Latin font, including
+  // captions in the same language as their audio. Resolve CJK glyph coverage
+  // here as well as in the translated-caption preparation path.
+  let cjkLanguage = '';
+  if (['ja', 'ko', 'zh'].includes(language)) {
+    cjkLanguage = language === 'zh' ? languageCode.replace(/_/g, '-') : language;
+  } else if (JAPANESE_RANGE_REGEX.test(sampleText)) {
+    cjkLanguage = 'ja';
+  } else if (HANGUL_RANGE_REGEX.test(sampleText)) {
+    cjkLanguage = 'ko';
+  } else if (HAN_RANGE_REGEX.test(sampleText)) {
+    cjkLanguage = 'ja';
+  }
+  const cjkFallbacks = cjkLanguage
+    ? getSubtitleFontsForLanguage(cjkLanguage).filter((font) => font !== 'sans-serif')
+    : [];
+  const preferCjkDefaults = cjkFallbacks.length > 0 && (
+    !normalizedFont || GENERIC_LATIN_FONTS.includes(normalizedFont.toLowerCase())
+  );
   const preferThaiDefaults =
     hasThaiText &&
     (!normalizedFont || GENERIC_LATIN_FONTS.includes(normalizedFont.toLowerCase()));
 
   const stack = [];
 
-  if (preferThaiDefaults) {
+  if (preferCjkDefaults) {
+    stack.push(cjkFallbacks[0]);
+  } else if (preferThaiDefaults) {
     stack.push(THAI_FONT_FALLBACKS[0]);
   } else if (normalizedFont && normalizedFont.length > 0) {
     stack.push(normalizedFont);
@@ -95,7 +125,7 @@ function buildFontStack(fontFamily, itemLabel = 'text', sampleText = '') {
     stack.push('Noto Sans');
   }
 
-  stack.push(...(hasThaiText ? THAI_FONT_FALLBACKS : DEFAULT_FONT_FALLBACKS));
+  stack.push(...cjkFallbacks, ...(hasThaiText ? THAI_FONT_FALLBACKS : DEFAULT_FONT_FALLBACKS));
 
   const deduped = [...new Set(stack)];
   const fontListString = toFontListString(deduped);
@@ -480,9 +510,11 @@ function applyTypewriterEffect(ctx, item, t, elapsedTime, durationOffset = 0, fr
 
   setupTextContext(ctx, config, item);
 
-  const totalCharacters = text.length;
-  const currentCharacters = Math.floor(totalCharacters * t);
-  const displayText = text.substring(0, currentCharacters);
+  const graphemes = GRAPHEME_SEGMENTER
+    ? Array.from(GRAPHEME_SEGMENTER.segment(text), (entry) => entry.segment)
+    : Array.from(text);
+  const currentCharacters = Math.floor(graphemes.length * t);
+  const displayText = graphemes.slice(0, currentCharacters).join('');
 
   // Typewriter: no word highlight, just partial text
   renderExactText(
@@ -550,7 +582,12 @@ function setupTextContext(ctx, config, item) {
   const fontSample = [item?.text, item?.speaker]
     .filter((value) => typeof value === 'string' && value.trim())
     .join(' ');
-  const resolvedFontFamily = buildFontStack(fontFamily, item?.subType || 'text', fontSample);
+  const resolvedFontFamily = buildFontStack(
+    fontFamily,
+    item?.subType || 'text',
+    fontSample,
+    item?.subtitleLanguage || item?.subtitle_language || item?.audioLanguage,
+  );
 
   ctx.textBaseline = 'middle';
   ctx.font = buildFontString(fontSize, fontEmphasis, resolvedFontFamily);

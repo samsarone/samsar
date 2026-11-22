@@ -12,6 +12,7 @@ import { getHeaders } from '../../src/utils/web.jsx';
 
 const boundary = vi.hoisted(() => ({
   canvas: null,
+  canvasSnapshots: [],
   stage: null,
   user: { _id: 'user-1', generationCredits: 1000, isPremiumUser: true, preferredLanguage: 'en' },
   getUserAPI: vi.fn(),
@@ -27,6 +28,7 @@ vi.mock('../../src/components/video/editor/VideoCanvasContainer.jsx', async () =
   const { forwardRef, useImperativeHandle } = await import('react');
   return { default: forwardRef((props, ref) => {
     boundary.canvas = props;
+    boundary.canvasSnapshots.push({ aspectRatio: props.aspectRatio, promptAspectRatio: props.promptAspectRatio });
     useImperativeHandle(ref, () => ({ getStage: () => boundary.stage }));
     return <section aria-label='Studio canvas'><output data-testid='canvas-items'>{JSON.stringify(props.activeItemList)}</output></section>;
   }) };
@@ -64,6 +66,7 @@ const BrowserImage = globalThis.Image;
 afterEach(() => { vi.stubGlobal('Image', BrowserImage); });
 beforeEach(() => {
   boundary.canvas = null;
+  boundary.canvasSnapshots = [];
   boundary.stage = null;
   boundary.getUserAPI.mockReset();
   getHeaders.mockReturnValue({ headers: { Authorization: 'Bearer test-session' } });
@@ -295,6 +298,14 @@ describe('image studio integration', () => {
       prompt: 'A mountain railway', aspectRatio, resolution: '720p',
       videoSessionId: 'image-project', layerId: 'layer-1', model: 'KLINGIMAGE4',
     });
+  });
+
+  it.each(['16:9', '9:16'])('hydrates the %s generation ratio before the first canvas render', async (aspectRatio) => {
+    loadedProject = project({ aspectRatio });
+    mount();
+    await loaded();
+
+    expect(boundary.canvasSnapshots[0]).toEqual({ aspectRatio, promptAspectRatio: aspectRatio });
   });
 
   it('clears generation pending state and surfaces a rejected submission', async () => {

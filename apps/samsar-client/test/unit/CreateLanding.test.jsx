@@ -37,11 +37,14 @@ beforeEach(() => {
 });
 
 describe('simple create landing', () => {
-  it('shows one prompt and no generation options, without creating a session on entry', () => {
+  it('shows a prompt, visible render estimate and duration controls without creating a session', () => {
     mount();
     expect(screen.getByRole('heading', { name: 'Create video' })).toBeVisible();
     expect(screen.getAllByRole('textbox')).toHaveLength(1);
-    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.getByRole('combobox', { name: 'Duration' })).toHaveValue('30');
+    expect(screen.getByRole('combobox', { name: 'Aspect ratio' })).toHaveValue('16:9');
+    expect(screen.getByRole('status', { name: 'Render estimate' })).toHaveTextContent('1,080 credits');
+    expect(screen.getByRole('link', { name: 'Defaults' })).toHaveAttribute('href', '/account/settings/defaults');
     expect(screen.queryByRole('checkbox')).toBeNull();
     expect(screen.getByRole('textbox')).toHaveAttribute('maxlength', '4000');
     expect(screen.getByRole('button', { name: 'Create video' })).toBeDisabled();
@@ -123,4 +126,96 @@ describe('simple create landing', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Your default models are unavailable.');
     expect(axios.post).not.toHaveBeenCalled();
   });
+});
+
+
+it('uses persisted Create defaults and forwards a duration override with the chosen models', async () => {
+  scenario.user.user = { _id: 'user', selectedInferenceModel: 'claude-opus-5.5', createDefaults: {
+    inferenceModel: 'gpt-6.2-astra', inferenceEffort: 'xhigh', imageModel: 'SEEDREAM',
+    videoModel: 'SEEDANCE2.5I2V', duration: 60, aspectRatio: '9:16', enableSubtitles: true,
+  } };
+  mount();
+  expect(screen.getByRole('combobox', { name: 'Duration' })).toHaveValue('60');
+  expect(screen.getByRole('combobox', { name: 'Aspect ratio' })).toHaveValue('9:16');
+  expect(screen.getByRole('status', { name: 'Render estimate' })).toHaveTextContent('3,600 credits');
+  fireEvent.change(screen.getByRole('combobox', { name: 'Duration' }), { target: { value: '90' } });
+  expect(screen.getByRole('status', { name: 'Render estimate' })).toHaveTextContent('5,400 credits');
+  enterPrompt(); submit();
+  await waitFor(() => expect(axios.post).toHaveBeenCalled());
+  expect(axios.post.mock.calls[0][1].input).toMatchObject({ inference_model: 'gpt-6.2-astra', effort: 'xhigh', image_model: 'SEEDREAM', video_model: 'SEEDANCE2.5I2V', duration: 90, aspect_ratio: '9:16', enable_subtitles: true });
+  expect(scenario.user.user.createDefaults.duration).toBe(60);
+});
+
+it('shows provider billing instead of an invented credit estimate in standalone deployments', () => {
+  scenario.deployment = { isStandaloneDeployment: true, isLoading: false };
+  mount();
+  expect(screen.getByRole('status', { name: 'Render estimate' })).toHaveTextContent('API charge');
+  expect(screen.getByRole('status', { name: 'Render estimate' })).not.toHaveTextContent('1,080');
+});
+
+it('hydrates saved defaults with the profile and resets overrides when the account changes', () => {
+  const view = mount();
+  scenario.user.user = { _id: 'user', createDefaults: { duration: 60, aspectRatio: '9:16' } };
+  view.rerender(<MemoryRouter><CreateLanding /><CurrentRoute /></MemoryRouter>);
+  expect(screen.getByRole('combobox', { name: 'Duration' })).toHaveValue('60');
+  fireEvent.change(screen.getByRole('combobox', { name: 'Duration' }), { target: { value: '90' } });
+  scenario.user.user = { _id: 'other', createDefaults: { duration: 10 } };
+  view.rerender(<MemoryRouter><CreateLanding /><CurrentRoute /></MemoryRouter>);
+  expect(screen.getByRole('combobox', { name: 'Duration' })).toHaveValue('10');
+});
+
+it('hides inspiration in focus mode and restores it with Escape', async () => {
+  mount();
+  expect(await screen.findByRole('region', { name: 'Published videos' })).toBeVisible();
+  enterPrompt();
+  fireEvent.click(screen.getByRole('button', { name: 'Focus mode' }));
+  expect(screen.queryByRole('region', { name: 'Published videos' })).toBeNull();
+  expect(screen.getByRole('textbox')).toHaveValue('A quiet city waking up');
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(await screen.findByRole('region', { name: 'Published videos' })).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+  expect(screen.getByRole('textbox')).toHaveValue('');
+  expect(sessionStorage.getItem('samsarCreatePrompt')).toBe('');
+});
+
+it('blocks aspect ratios unsupported by the selected models before starting a render', async () => {
+  scenario.user.user = { _id: 'user', createDefaults: { videoModel: 'RUNWAYML', aspectRatio: '1:1' } };
+  mount();
+  expect(screen.getByRole('option', { name: 'Square · 1:1' })).toBeDisabled();
+  enterPrompt(); submit();
+  expect(screen.getByRole('alert')).toHaveTextContent('Choose an aspect ratio supported by both the image and video model.');
+  expect(axios.post).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByRole('combobox', { name: 'Aspect ratio' }), { target: { value: '9:16' } });
+  submit();
+  await waitFor(() => expect(axios.post).toHaveBeenCalledOnce());
+  expect(axios.post.mock.calls[0][1].input.aspect_ratio).toBe('9:16');
+});
+
+it('omits hosted inspiration when deployment availability reports standalone', () => {
+  scenario.deployment = { isStandaloneDeployment: true, isLoading: false };
+  mount();
+  expect(screen.queryByRole('region', { name: 'Published videos' })).toBeNull();
+  expect(screen.getByRole('textbox', { name: 'Describe your video' })).toBeVisible();
+});
+
+it('explains saved defaults and links to account defaults without changing render overrides', async () => {
+  scenario.user.user = { _id: 'user', createDefaults: { duration: 60, aspectRatio: '9:16', enableSubtitles: true } };
+  mount();
+  fireEvent.change(screen.getByRole('combobox', { name: 'Duration' }), { target: { value: '90' } });
+  expect(screen.getByRole('combobox', { name: 'Duration' })).toHaveAttribute('title', 'Saved default: 60 seconds. Changes here apply only to this video.');
+  expect(screen.getByRole('combobox', { name: 'Aspect ratio' })).toHaveAttribute('title', 'Saved default: 9:16. Changes here apply only to this video.');
+  const model = screen.getByRole('link', { name: 'Claude Opus 5.5' });
+  expect(model).toHaveAttribute('href', '/account/settings/defaults');
+  expect(model).toHaveAttribute('title', 'Text model: Claude Opus 5.5. Change in Defaults.');
+  expect(screen.queryByRole('dialog', { name: 'Create defaults' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'About Create defaults' }));
+  const guidance = await screen.findByRole('dialog', { name: 'Create defaults' });
+  expect(guidance).toHaveTextContent('Saved defaults: 60s · 9:16');
+  expect(guidance).toHaveTextContent('Subtitles: On');
+  expect(guidance).toHaveTextContent('Duration and aspect ratio changes here apply only to this video.');
+  expect(screen.getByRole('link', { name: 'Change defaults' })).toHaveAttribute('href', '/account/settings/defaults');
+  expect(screen.getByRole('combobox', { name: 'Duration' })).toHaveValue('90');
+  fireEvent.click(screen.getByRole('link', { name: 'Change defaults' }));
+  expect(screen.getByLabelText('Current route')).toHaveTextContent('/account/settings/defaults');
+  expect(axios.post).not.toHaveBeenCalled();
 });

@@ -77,6 +77,91 @@ function createTextContext(canvas = { width: 1024, height: 1024 }) {
   return { context, calls };
 }
 
+test('legacy Japanese captions and speaker labels use a Japanese-safe font stack', () => {
+  const { context, calls } = createTextContext();
+  const item = {
+    type: 'text',
+    subType: 'subtitle',
+    text: '日本語の字幕を表示します',
+    speaker: '田中',
+    showSpeaker: true,
+    isStaticSubtitle: true,
+    config: { fontFamily: 'Poppins', fontSize: 48, y: 900 },
+  };
+
+  applyTextSubtitleAnimations(context, item, 500, 0, 24);
+
+  assert.ok(calls.fillText.some((call) => call.text === item.text));
+  assert.ok(calls.fillText.some((call) => call.text.includes(item.speaker)));
+  assert.ok(calls.fillText.every((call) => /^\d+px "Noto Sans JP"/.test(call.font)));
+  assert.ok(calls.fillText.every((call) => call.font.includes('"M PLUS Rounded 1c"')));
+});
+
+test('kanji-only captions respect Japanese metadata while Chinese metadata keeps its own font', () => {
+  for (const [subtitleLanguage, expectedFamily] of [
+    ['JP', 'Noto Sans JP'],
+    ['jpn', 'Noto Sans JP'],
+    ['ja_JP', 'Noto Sans JP'],
+    ['zh-CN', 'Noto Sans SC'],
+    ['zh-TW', 'Noto Sans TC'],
+  ]) {
+    const { context, calls } = createTextContext();
+    applyTextSubtitleAnimations(context, {
+      type: 'text',
+      subType: 'subtitle',
+      text: '東京',
+      subtitleLanguage,
+      isStaticSubtitle: true,
+      config: { fontFamily: 'Rampart One', fontSize: 48, y: 900 },
+    }, 500, 0, 24);
+
+    assert.equal(calls.fillText[0].text, '東京');
+    assert.ok(calls.fillText[0].font.startsWith(`48px "${expectedFamily}"`));
+  }
+});
+
+test('Japanese captions preserve a chosen Japanese font and retain glyph fallbacks', () => {
+  const { context, calls } = createTextContext();
+  applyTextSubtitleAnimations(context, {
+    type: 'text',
+    subType: 'subtitle',
+    text: '読みやすい字幕',
+    isStaticSubtitle: true,
+    config: { fontFamily: 'M PLUS Rounded 1c', fontSize: 48, y: 900 },
+  }, 500, 0, 24);
+
+  assert.ok(calls.fillText[0].font.startsWith('48px "M PLUS Rounded 1c"'));
+  assert.ok(calls.fillText[0].font.includes('"Noto Sans JP"'));
+});
+
+test('Korean captions containing Hanja prefer the Korean font without language metadata', () => {
+  const { context, calls } = createTextContext();
+  applyTextSubtitleAnimations(context, {
+    type: 'text',
+    subType: 'subtitle',
+    text: '한국어 漢字 자막',
+    isStaticSubtitle: true,
+    config: { fontFamily: 'Poppins', fontSize: 48, y: 900 },
+  }, 500, 0, 24);
+
+  assert.ok(calls.fillText[0].font.startsWith('48px "Noto Sans KR"'));
+});
+
+test('typewriter subtitles reveal whole supplementary kanji and combining kana', () => {
+  for (const [elapsedTime, expectedText] of [[375, '𠮷'], [500, '𠮷か\u3099']]) {
+    const { context, calls } = createTextContext();
+    applyTextSubtitleAnimations(context, {
+      type: 'text',
+      subType: 'subtitle',
+      text: '𠮷か\u3099東京',
+      config: { fontFamily: 'Poppins', fontSize: 48, y: 900 },
+      animations: [{ type: 'typewriter', startFrame: 0, endFrame: 24 }],
+    }, elapsedTime, 0, 24);
+
+    assert.deepEqual(calls.fillText.map((call) => call.text), [expectedText]);
+  }
+});
+
 test('static subtitles render full text without typewriter or word-highlight animation', () => {
   const { context, calls } = createTextContext();
   const item = {

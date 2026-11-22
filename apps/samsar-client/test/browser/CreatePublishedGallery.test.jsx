@@ -80,6 +80,8 @@ for (const theme of ['light', 'dark']) {
       const bounds = portrait.getBoundingClientRect();
       expect(bounds.width / bounds.height).toBeCloseTo(9 / 16, 2);
       expect([...view.container.querySelectorAll('img')].every((img) => img.getAttribute('loading') === 'lazy')).toBe(true);
+      firstCard.element().scrollIntoView({ block: 'center' });
+      await waitFor(() => expect(firstCard.element().getBoundingClientRect().top).toBeLessThan(height));
       await page.screenshot({ path: `test-results/create-mosaic-${theme}-${width}.png` });
       await firstCard.click();
       const dialog = page.getByRole('dialog');
@@ -105,7 +107,7 @@ for (const theme of ['light', 'dark']) {
   }
 }
 
-it('loads the next page on scroll without moving already displayed mosaic cards', async () => {
+it('navigates mosaic pages and loads the next cursor without moving existing cards', async () => {
   await page.viewport(1280, 800);
   mount('light');
   const firstCard = page.getByRole('button', { name: 'Play Published video 1', exact: true });
@@ -113,13 +115,49 @@ it('loads the next page on scroll without moving already displayed mosaic cards'
   expect(feedRequests).toHaveLength(1);
   const original = firstCard.element();
   const originalColumn = original.parentElement;
-  const originalPosition = original.getBoundingClientRect().top + window.scrollY;
-  page.getByRole('button', { name: 'Load more', exact: true }).element().scrollIntoView();
+  const originalPosition = original.offsetTop;
+  const carousel = page.getByRole('group', { name: 'Published videos', exact: true }).element();
+  expect(carousel.scrollWidth).toBeGreaterThan(carousel.clientWidth);
+  const next = page.getByRole('button', { name: 'Next videos', exact: true });
+  next.element().scrollIntoView({ block: 'center' });
+  await next.click();
+  await waitFor(() => expect(carousel.scrollLeft).toBeGreaterThan(carousel.clientWidth / 2));
   await expect.element(page.getByRole('button', { name: 'Play Published video 13', exact: true })).toBeInTheDocument();
   expect(feedRequests).toHaveLength(2);
   expect(feedRequests[1]).toContain('cursor=page-two');
   expect(firstCard.element()).toBe(original);
   expect(firstCard.element().parentElement).toBe(originalColumn);
-  expect(firstCard.element().getBoundingClientRect().top + window.scrollY).toBeCloseTo(originalPosition, 0);
+  expect(firstCard.element().offsetTop).toBe(originalPosition);
   expect(document.querySelectorAll('video')).toHaveLength(0);
+  carousel.focus();
+  await userEvent.keyboard('{Home}');
+  await waitFor(() => expect(carousel.scrollLeft).toBeLessThan(2));
+  await expect.element(page.getByRole('button', { name: 'Previous videos', exact: true })).toBeDisabled();
 });
+
+
+for (const scenario of ['empty', 'hidden-only', 'missing endpoint', 'network failure', 'malformed']) {
+  it(`keeps the composer usable and omits the gallery for an initial ${scenario} feed`, async () => {
+    await page.viewport(375, 812);
+    window.fetch.mockImplementation((input, options) => {
+      if (!String(input).includes('/publication?')) return nativeFetch.call(window, input, options);
+      feedRequests.push(String(input));
+      if (scenario === 'network failure') return Promise.reject(new TypeError('Offline'));
+      if (scenario === 'missing endpoint') return Promise.resolve(new Response('', { status: 404 }));
+      const items = scenario === 'hidden-only' ? videos(1, 2).map((item) => ({ ...item, isHidden: true })) : scenario === 'malformed' ? 'invalid' : [];
+      return Promise.resolve(new Response(JSON.stringify({ items, hasMore: false }), { headers: { 'Content-Type': 'application/json' } }));
+    });
+    const view = mount('dark');
+    const prompt = page.getByRole('textbox', { name: 'Describe your video', exact: true });
+    await prompt.fill('A story to create without gallery content');
+    await waitFor(() => expect(feedRequests).toHaveLength(1));
+    await expect.element(page.getByRole('button', { name: 'Create video', exact: true })).toBeEnabled();
+    await expect.element(page.getByRole('heading', { name: 'Made with Samsar', exact: true })).not.toBeInTheDocument();
+    expect(view.container.querySelector('[aria-roledescription="carousel"]')).toBeNull();
+    expect(view.container.querySelectorAll('video, img')).toHaveLength(0);
+    expect(view.container.textContent).not.toContain('Loading videos...');
+    expect(view.container.textContent).not.toContain('Unable to load videos.');
+    expect(view.container.textContent).not.toContain('No published videos yet.');
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(375);
+  });
+}

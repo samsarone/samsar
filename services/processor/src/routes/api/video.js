@@ -1743,7 +1743,12 @@ router.post('/translate_video', validateAPIKeyAndUserId, async function (req, re
         ? { inference_model: requestPayload.inference_model ?? requestPayload.inferenceModel }
         : {}),
       ...copyInferenceEffortOverrides(requestPayload),
-      enable_subtitles: enableSubtitlesOption.value,
+      ...(enableSubtitlesOption.provided
+        ? { enable_subtitles: enableSubtitlesOption.value }
+        : {}),
+      ...((requestPayload.subtitle_language ?? requestPayload.subtitleLanguage) !== undefined
+        ? { subtitle_language: requestPayload.subtitle_language ?? requestPayload.subtitleLanguage }
+        : {}),
       translate_outro: translateOutroOption.value,
       translate_footer: translateFooterOption.value,
       webhookUrl: resolvedWebhookUrl,

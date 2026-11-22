@@ -727,7 +727,7 @@ export default function TopNav(props) {
     betaOptionVisible = true;
   }
 
-  if (user && user._id && !isCreatePage) {
+  if (user && user._id) {
     addSessionButton = (
       <div className="inline-flex items-center">
         <Suspense fallback={<div className="h-11 w-[118px]" />}>
@@ -755,7 +755,7 @@ export default function TopNav(props) {
   }
 
   let userCreditsDisplay = <span />;
-  if (user && user._id && !IS_STANDALONE_DEPLOYMENT && !isCreatePage) {
+  if (user && user._id && !IS_STANDALONE_DEPLOYMENT) {
     const creditsButtonClass = `border border-line-control text-fg ${colorMode === 'dark' ? 'bg-black/15 hover:border-[#f6c453]/60 hover:bg-[#20232e]' : 'bg-white/75 hover:border-slate-300 hover:bg-white'}`;
     const creditsLabelClass = 'text-fg-muted';
     const formattedCredits = formatCredits(userCredits);

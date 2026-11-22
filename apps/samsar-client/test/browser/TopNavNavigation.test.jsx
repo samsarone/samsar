@@ -90,7 +90,7 @@ it('keeps the full menu and project action usable on narrow screens', async () =
 it.each([
   ['desktop', TopNav, 1280],
   ['mobile', MobileTopNav, 375],
-])('keeps Create visible and opens the minimal header on %s', async (_, Nav, width) => {
+])('keeps Create visible and opens the shared header on %s', async (_, Nav, width) => {
   await page.viewport(width, 812);
   mount(Nav);
   const createLink = page.getByRole('link', { name: 'Create', exact: true });
@@ -102,6 +102,6 @@ it.each([
   await createLink.click();
   await expect.element(page.getByLabelText('Current route')).toHaveTextContent('/create');
   await expect.element(createLink).toHaveAttribute('aria-current', 'page');
-  await expect.element(page.getByRole('button', { name: 'New Project', exact: true })).not.toBeInTheDocument();
+  await expect.element(page.getByRole('button', { name: 'New Project', exact: true })).toBeVisible();
   await expect.element(page.getByRole('button', { name: 'Samsar Studio', exact: true })).toBeVisible();
 });

@@ -30,6 +30,8 @@ import {
   applySubtitleLanguageSelectionForRerun,
   backfillTranslatedSubtitleMetadataForRerun,
   refreshSessionSubtitleTranslationRequired,
+  resolveSubtitleEnablement,
+  resolveSubtitleLanguageOption,
   resolveSubtitleLanguageSelectionForRerun,
 } from '../movie_session/SubtitleLanguage.js';
 import { getCanvasDimensionsForAspectRatio } from '../../utils/CanvasUtils.js';
@@ -1183,8 +1185,14 @@ function prepareSessionForTranslate({
   clonedSession,
   normalizedLanguageCode,
   enableSubtitles,
+  subtitleLanguage,
+  subtitleLanguageExplicit,
 }) {
   const shouldEnableSubtitles = enableSubtitles === true;
+  const subtitleOption = resolveSubtitleLanguageOption(
+    { subtitleLanguage, subtitleLanguageExplicit },
+    normalizedLanguageCode,
+  );
   const shouldRegenerateNarratorAvatar = resetNarratorAvatarVoiceoverForRetranslate(clonedSession);
 
   clonedSession.videoLink = null;
@@ -1208,6 +1216,11 @@ function prepareSessionForTranslate({
   clonedSession.enableSubtitles = shouldEnableSubtitles;
   clonedSession.hasSubtitles = shouldEnableSubtitles;
   clonedSession.has_subtitles = shouldEnableSubtitles;
+  clonedSession.subtitleLanguage = subtitleOption.subtitleLanguage;
+  clonedSession.subtitleLanguageString = subtitleOption.subtitleLanguageString;
+  clonedSession.subtitleLanguageExplicit = shouldEnableSubtitles &&
+    (subtitleLanguageExplicit ?? subtitleOption.subtitleLanguageExplicit);
+  clonedSession.subtitleTranslationRequired = shouldEnableSubtitles && subtitleOption.translationRequired;
 
   clonedSession.layers = (clonedSession.layers || []).map((layer) => {
     if (!layer || typeof layer !== 'object') {
@@ -1307,6 +1320,19 @@ function prepareSessionForTranslate({
     audioLayer.defaultSelected = true;
     audioLayer.addSubtitles = shouldEnableSubtitles;
     audioLayer.addTranscriptionsRequired = shouldEnableSubtitles;
+    // All speech has just been translated. Source subtitle text and alignment
+    // describe the old audio and must never survive into this new session.
+    audioLayer.speechLanguage = subtitleOption.speechLanguageCode;
+    audioLayer.languageCode = subtitleOption.speechLanguageCode;
+    audioLayer.subtitleLanguage = subtitleOption.subtitleLanguage;
+    audioLayer.subtitleTranslationRequired = shouldEnableSubtitles && subtitleOption.translationRequired;
+    audioLayer.subtitleText = audioLayer.subtitleTranslationRequired
+      ? null
+      : getSpeechTextFromAudioLayer(audioLayer);
+    audioLayer.subtitleAlignmentMap = [];
+    audioLayer.subtitleSpeakerCharacterName = null;
+    audioLayer.subtitleWordAnimation = 'highlight';
+    audioLayer.transcriptAlignment = null;
 
     hasPendingSpeechLayers = true;
     return audioLayer;
@@ -1622,6 +1648,8 @@ async function processTranslateVideoSessionJob({
   newSessionId,
   normalizedLanguageCode,
   enableSubtitles,
+  subtitleLanguage,
+  subtitleLanguageExplicit,
   translateOutro,
   translateFooter,
   webhookUrl,
@@ -1629,6 +1657,7 @@ async function processTranslateVideoSessionJob({
   inferenceEffort,
 }, {
   translateTextContent: translateTextImpl = translateTextContent,
+  translateSpeech: translateSpeechImpl = translateSpeech,
   copyTranslateSessionAssets: copyAssets = copyTranslateSessionAssets,
   publishClonedAiVideoMedia: publishCopiedMedia = publishClonedAiVideoMedia,
   rewriteSpeechItem,
@@ -1735,7 +1764,20 @@ async function processTranslateVideoSessionJob({
     clonedSession,
     normalizedLanguageCode,
     enableSubtitles,
+    subtitleLanguage,
+    subtitleLanguageExplicit,
   });
+  if (enableSubtitles && clonedSession.subtitleTranslationRequired) {
+    await backfillTranslatedSubtitleMetadataForRerun(clonedSession.audioLayers, {
+      sessionSpeechLanguage: clonedSession.sessionLanguage,
+      sessionSubtitleLanguage: clonedSession.subtitleLanguage,
+      sessionSubtitleLanguageString: clonedSession.subtitleLanguageString,
+      sessionTranslationRequired: true,
+      inferenceModel,
+      translateSpeech: translateSpeechImpl,
+    });
+    refreshSessionSubtitleTranslationRequired(clonedSession);
+  }
   synchronizeMovieResourceTimeline(clonedSession);
 
   // Clear obsolete source lip-sync outputs first, then publish only clips the
@@ -1779,6 +1821,7 @@ async function processTranslateVideoSessionJob({
         speaker,
         audioLayerId: audioLayerId.toString(),
         ttsProvider,
+        languageCode: normalizedLanguageCode,
         defaultSelected: true,
         duration: audioLayer.duration,
         startTime: audioLayer.startTime,
@@ -1814,6 +1857,10 @@ export async function translateVideoSessionAndQueueGeneration(userId, payload = 
     originalSessionData,
     normalizedLanguageCode,
     enableSubtitles,
+    subtitleLanguage,
+    subtitleLanguageString,
+    subtitleLanguageExplicit,
+    subtitleTranslationRequired,
     translateOutro,
     translateFooter,
     durationSeconds,
@@ -1839,6 +1886,10 @@ export async function translateVideoSessionAndQueueGeneration(userId, payload = 
     enableSubtitles,
     hasSubtitles: enableSubtitles,
     has_subtitles: enableSubtitles,
+    subtitleLanguage,
+    subtitleLanguageString,
+    subtitleLanguageExplicit,
+    subtitleTranslationRequired,
     language: normalizedLanguageCode,
     sessionLanguage: normalizedLanguageCode,
     languageString: getLanguageStringFromLanguageCode(normalizedLanguageCode),
@@ -1851,6 +1902,7 @@ export async function translateVideoSessionAndQueueGeneration(userId, payload = 
       originalSessionId: oldSessionId,
       language: normalizedLanguageCode,
       enableSubtitles,
+      subtitleLanguage,
       translateOutro,
       translateFooter,
       durationSeconds,
@@ -1877,6 +1929,7 @@ export async function translateVideoSessionAndQueueGeneration(userId, payload = 
       originalSessionId: oldSessionId,
       language: normalizedLanguageCode,
       enableSubtitles,
+      subtitleLanguage,
       translateOutro,
       translateFooter,
     },
@@ -1888,6 +1941,8 @@ export async function translateVideoSessionAndQueueGeneration(userId, payload = 
     newSessionId,
     normalizedLanguageCode,
     enableSubtitles,
+    subtitleLanguage,
+    subtitleLanguageExplicit,
     translateOutro,
     translateFooter,
     webhookUrl,
@@ -1931,12 +1986,7 @@ export async function translateVideoSessionAndQueueGeneration(userId, payload = 
 export async function getTranslateVideoBillingPreview(userId, payload = {}) {
   const originalSessionId = payload.videoSessionId || payload.sessionId || payload.session_id;
   const languageCode = payload.language || payload.languageCode || payload.language_code;
-  const enableSubtitles = getOptionalBooleanPayloadValue(
-    payload,
-    ['enable_subtitles', 'enableSubtitles', 'add_subtitles', 'addSubtitles'],
-    'enable_subtitles',
-    false,
-  );
+  const enableSubtitles = resolveSubtitleEnablement(payload);
   const translateOutro = getOptionalBooleanPayloadValue(
     payload,
     ['translate_outro', 'translateOutro'],
@@ -1975,6 +2025,7 @@ export async function getTranslateVideoBillingPreview(userId, payload = {}) {
     error.status = 400;
     throw error;
   }
+  const subtitleOption = resolveSubtitleLanguageOption(payload, normalizedLanguageCode);
 
   await getDBConnectionString();
   const oldSessionId = originalSessionId.trim();
@@ -2030,6 +2081,10 @@ export async function getTranslateVideoBillingPreview(userId, payload = {}) {
     originalSessionData,
     normalizedLanguageCode,
     enableSubtitles,
+    subtitleLanguage: subtitleOption.subtitleLanguage,
+    subtitleLanguageString: subtitleOption.subtitleLanguageString,
+    subtitleLanguageExplicit: enableSubtitles && subtitleOption.subtitleLanguageExplicit,
+    subtitleTranslationRequired: enableSubtitles && subtitleOption.translationRequired,
     translateOutro,
     translateFooter,
     durationSeconds,

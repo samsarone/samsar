@@ -62,6 +62,8 @@ scripts/sync-projects.sh
 **/push*.sh
 **/run_task*.sh
 **/install_fonts.sh
+!services/frames-processor/install_fonts.sh
+!services/processor/install_fonts.sh
 **/setup_logger.sh
 services/*/Dockerfile
 services/*/.dockerignore

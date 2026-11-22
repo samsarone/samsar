@@ -1,5 +1,5 @@
 import { render } from '@testing-library/react';
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import axios from 'axios';
@@ -85,9 +85,9 @@ for (const theme of ['light', 'dark']) {
       await expect.element(submit).toBeVisible();
       await expect.element(submit).toBeDisabled();
       await expect.element(page.getByRole('link', { name: 'Create', exact: true })).toHaveAttribute('aria-current', 'page');
-      await expect.element(page.getByRole('button', { name: 'New Project', exact: true })).not.toBeInTheDocument();
+      await expect.element(page.getByRole('button', { name: 'New Project', exact: true })).toBeVisible();
       expect(view.container.querySelectorAll('textarea')).toHaveLength(1);
-      expect(view.container.querySelectorAll('select, input[type="checkbox"], [role="combobox"]')).toHaveLength(0);
+      expect(view.container.querySelectorAll('select')).toHaveLength(2);
       expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
       expect(document.querySelector('[data-app-top-nav]').scrollWidth).toBeLessThanOrEqual(width);
       const promptBounds = prompt.element().getBoundingClientRect();
@@ -102,6 +102,21 @@ for (const theme of ['light', 'dark']) {
       expect(axios.post).not.toHaveBeenCalled();
       expect(axios.get).not.toHaveBeenCalled();
       await page.screenshot({ path: `test-results/create-landing-${theme}-${width}.png` });
+      const help = page.getByRole('button', { name: 'About Create defaults', exact: true });
+      await help.click();
+      const guidance = page.getByRole('dialog', { name: 'Create defaults', exact: true });
+      await expect.element(guidance).toBeVisible();
+      await expect.element(guidance).toHaveTextContent('Saved defaults: 30s · 16:9');
+      await expect.element(guidance).toHaveTextContent('Duration and aspect ratio changes here apply only to this video.');
+      await expect.element(page.getByRole('link', { name: 'Change defaults', exact: true })).toHaveAttribute('href', '/account/settings/defaults');
+      const guidanceBounds = guidance.element().getBoundingClientRect();
+      expect(guidanceBounds.left).toBeGreaterThanOrEqual(0);
+      expect(guidanceBounds.right).toBeLessThanOrEqual(width);
+      expect(guidanceBounds.top).toBeGreaterThanOrEqual(0);
+      expect(guidanceBounds.bottom).toBeLessThanOrEqual(height);
+      await userEvent.keyboard('{Escape}');
+      await expect.element(guidance).not.toBeInTheDocument();
+      await expect.element(help).toHaveFocus();
     });
   }
 }

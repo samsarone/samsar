@@ -80,6 +80,51 @@ describe('Vidgenie completed session models', () => {
     expect(field.querySelector('input')).toBeDisabled();
   }
 
+  it('preserves an independent subtitle language when changing retranslation language and tabs', async () => {
+    completeSession({ speechLanguage: 'en', subtitleLanguage: 'en' });
+    axios.post.mockResolvedValue({ data: { request_id: 'new-project' } });
+    await mount();
+    fireEvent.click(screen.getByRole('button', { name: 'Retranslate', exact: true }));
+    fireEvent.change(screen.getByLabelText('Retranslation language'), { target: { value: 'en' } });
+    fireEvent.change(screen.getByLabelText('Subtitle language'), { target: { value: 'th' } });
+    fireEvent.change(screen.getByLabelText('Retranslation language'), { target: { value: 'ja' } });
+    expect(screen.getByLabelText('Subtitle language')).toHaveValue('th');
+    fireEvent.click(screen.getByRole('button', { name: 'Subtitles', exact: true }));
+    expect(screen.getByLabelText('Subtitle regeneration language')).toHaveValue('en');
+    fireEvent.click(screen.getByRole('button', { name: 'Retranslate', exact: true }));
+    expect(screen.getByLabelText('Subtitle language')).toHaveValue('th');
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retranslate video', exact: true })); });
+    expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/retranslate_video$/), {
+      input: expect.objectContaining({ language: 'ja', subtitle_language: 'th', enable_subtitles: true }),
+    }, expect.anything());
+  });
+
+  it('defaults retranslated captions to the new audio language instead of the source captions', async () => {
+    completeSession({ speechLanguage: 'en', subtitleLanguage: 'th' });
+    axios.post.mockResolvedValue({ data: { request_id: 'new-project' } });
+    await mount();
+    fireEvent.click(screen.getByRole('button', { name: 'Retranslate', exact: true }));
+    expect(screen.getByLabelText('Subtitle language')).toHaveValue('');
+    fireEvent.change(screen.getByLabelText('Retranslation language'), { target: { value: 'ja' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retranslate video', exact: true })); });
+    expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/retranslate_video$/), {
+      input: expect.objectContaining({ language: 'ja', subtitle_language: 'ja', enable_subtitles: true }),
+    }, expect.anything());
+  });
+
+  it('resets retranslation language selections when opening another completed session', async () => {
+    completeSession({ speechLanguage: 'en', subtitleLanguage: 'en' });
+    harness.nextSession = { ...harness.session, _id: 'new-project', subtitleLanguage: 'ja' };
+    await mount();
+    fireEvent.click(screen.getByRole('button', { name: 'Retranslate', exact: true }));
+    fireEvent.change(screen.getByLabelText('Retranslation language'), { target: { value: 'ja' } });
+    fireEvent.change(screen.getByLabelText('Subtitle language'), { target: { value: 'th' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Open new session' })); });
+    fireEvent.click(screen.getByRole('button', { name: 'Retranslate', exact: true }));
+    expect(screen.getByLabelText('Retranslation language')).toHaveValue('');
+    expect(screen.getByLabelText('Subtitle language')).toHaveValue('');
+  });
+
   it('keeps Kling Image 4 selected in a new Vidgenie request and submits its canonical model key', async () => {
     localStorage.setItem('defaultVidGPTImageGenerationModel', 'KLINGIMAGE4');
     await mount();

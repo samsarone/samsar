@@ -277,6 +277,34 @@ describe('VidGenie project loading and wizard requests', () => {
 
 describe('VidGenie generation lifecycle', () => {
   it.each([
+    ['th', true, 'th'],
+    ['', true, 'ja'],
+    ['en', false, undefined],
+  ])('retranslates audio with independent subtitle selection %s and subtitles enabled %s', async (subtitleLanguage, enableSubtitles, expectedSubtitleLanguage) => {
+    harness.session = {
+      ...harness.session,
+      isExpressGeneration: true,
+      speechLanguage: 'en',
+      subtitleLanguage: 'en',
+      videoLink: 'https://media.example/final.mp4',
+    };
+    harness.status = { status: 'COMPLETED', videoLink: harness.session.videoLink };
+    await mountEditor();
+    fireEvent.click(screen.getByRole('button', { name: 'Retranslate', exact: true }));
+    fireEvent.change(screen.getByLabelText('Retranslation language'), { target: { value: 'ja' } });
+    expect(screen.getByLabelText('Subtitle language')).toHaveValue('');
+    fireEvent.change(screen.getByLabelText('Subtitle language'), { target: { value: subtitleLanguage } });
+    if (!enableSubtitles) {
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Add translated subtitles' }));
+      expect(screen.getByLabelText('Subtitle language')).toBeDisabled();
+    }
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retranslate video' })); });
+    const call = axios.post.mock.calls.find(([url]) => url.endsWith('/retranslate_video'));
+    expect(call?.[1].input).toMatchObject({ language: 'ja', enable_subtitles: enableSubtitles });
+    expect(call?.[1].input.subtitle_language).toBe(expectedSubtitleLanguage);
+  });
+
+  it.each([
     ['claude-fable-5.2', 'xhigh', 'claude-fable-5.2'],
     ['claude-fable-5.1', 'xhigh', 'claude-fable-5.2'],
     ['gpt-6.1-sol', 'high', 'gpt-6.1-sol'],

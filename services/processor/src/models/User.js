@@ -1,4 +1,5 @@
 import { getReasoningModelBase } from '../inference/ReasoningModels.js';
+import { resolveCreateDefaults } from '../consts/CreateDefaults.js';
 
 import { generateAuthToken, verifyAuthToken } from './Auth.js';
 import 'dotenv/config';
@@ -262,6 +263,7 @@ export function formatUserClientProfile(user, extras = {}) {
 
   return {
     ...profile,
+    createDefaults: resolveCreateDefaults(user),
     ...extras,
   };
 }

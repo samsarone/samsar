@@ -6,6 +6,8 @@ const FONT_DIRS = [
   '/usr/local/share/fonts',
   '/usr/share/fonts',
   '/usr/share/fonts/truetype',
+  '/usr/share/fonts/truetype/noto',
+  '/usr/share/fonts/opentype/noto',
   '/Library/Fonts',
   '/System/Library/Fonts',
   path.join(process.cwd(), 'fonts'),
@@ -13,7 +15,7 @@ const FONT_DIRS = [
 
 // Map desired family name to possible file names on disk.
 const FONT_CANDIDATES = [
-  { family: 'Sarabun', files: ['Sarabun.ttf', 'Sarabun[wght].ttf'] },
+  { family: 'Sarabun', files: ['Sarabun.ttf', 'Sarabun-Regular.ttf', 'Sarabun[wght].ttf'] },
   { family: 'Noto Sans JP', files: ['NotoSansJP.ttf', 'NotoSansJP[wght].ttf', 'NotoSansJP%5Bwght%5D.ttf'] },
   { family: 'Noto Sans KR', files: ['NotoSansKR.ttf', 'NotoSansKR[wght].ttf', 'NotoSansKR%5Bwght%5D.ttf'] },
   { family: 'Noto Sans SC', files: ['NotoSansSC.ttf', 'NotoSansSC[wght].ttf', 'NotoSansSC%5Bwght%5D.ttf'] },
@@ -31,30 +33,42 @@ const FONT_CANDIDATES = [
   { family: 'Poppins', files: ['Poppins-Regular.ttf', 'Poppins.ttf'] },
 ];
 
-function findFontFile(possibleFiles) {
-  for (const dir of FONT_DIRS) {
+function* findFontFiles(possibleFiles, fontDirs) {
+  const visited = new Set();
+  for (const dir of fontDirs) {
     for (const filename of possibleFiles) {
       const fontPath = path.join(dir, filename);
-      if (fs.existsSync(fontPath)) {
-        return fontPath;
+      if (!visited.has(fontPath) && fs.existsSync(fontPath)) {
+        visited.add(fontPath);
+        yield fontPath;
       }
     }
   }
-  return null;
 }
 
-export function ensureFontsRegistered() {
+export function ensureFontsRegistered({
+  fontDirs = FONT_DIRS,
+  registerFont: registerFontImpl = registerFont,
+  logger = console,
+} = {}) {
   FONT_CANDIDATES.forEach(({ family, files }) => {
-    const fontPath = findFontFile(files);
-    if (fontPath) {
+    // Distro packages use static Regular filenames in nested Noto directories.
+    const possibleFiles = [...files, `${family.replace(/ /g, '')}-Regular.ttf`];
+    let foundFont = false;
+    for (const fontPath of findFontFiles(possibleFiles, fontDirs)) {
+      foundFont = true;
       try {
-        registerFont(fontPath, { family });
-        console.info(`[FontRegistry] Registered ${family} from ${fontPath}`);
+        registerFontImpl(fontPath, { family });
+        logger.info(`[FontRegistry] Registered ${family} from ${fontPath}`);
+        return;
       } catch (err) {
-        console.warn(`[FontRegistry] Failed to register ${family} from ${fontPath}: ${err.message}`);
+        // Old images can contain HTML downloads saved as .ttf files. Keep
+        // looking so a bad legacy file cannot hide a valid installed copy.
+        logger.warn(`[FontRegistry] Failed to register ${family} from ${fontPath}: ${err?.message || String(err)}`);
       }
-    } else {
-      console.warn(`[FontRegistry] Font file not found for ${family}; tried ${files.join(', ')}`);
+    }
+    if (!foundFont) {
+      logger.warn(`[FontRegistry] Font file not found for ${family}; tried ${possibleFiles.join(', ')}`);
     }
   });
 }

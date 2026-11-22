@@ -1,4 +1,224 @@
 {
+  "Saved default: {seconds} seconds. Changes here apply only to this video.": {
+    "en": "Saved default: {seconds} seconds. Changes here apply only to this video.",
+    "th": "ค่าเริ่มต้นที่บันทึกไว้: {seconds} วินาที การเปลี่ยนแปลงนี้ใช้กับวิดีโอนี้เท่านั้น",
+    "ja": "保存済みのデフォルト: {seconds}秒。ここでの変更はこの動画にのみ適用されます。"
+  },
+  "Saved default: {ratio}. Changes here apply only to this video.": {
+    "en": "Saved default: {ratio}. Changes here apply only to this video.",
+    "th": "ค่าเริ่มต้นที่บันทึกไว้: {ratio} การเปลี่ยนแปลงนี้ใช้กับวิดีโอนี้เท่านั้น",
+    "ja": "保存済みのデフォルト: {ratio}。ここでの変更はこの動画にのみ適用されます。"
+  },
+  "{setting}: {model}. Change in Defaults.": {
+    "en": "{setting}: {model}. Change in Defaults.",
+    "th": "{setting}: {model} เปลี่ยนได้ในค่าเริ่มต้น",
+    "ja": "{setting}: {model}。デフォルト設定で変更できます。"
+  },
+  "About Create defaults": {
+    "en": "About Create defaults",
+    "th": "เกี่ยวกับค่าเริ่มต้นของ Create",
+    "ja": "Create のデフォルト設定について"
+  },
+  "View saved defaults": {
+    "en": "View saved defaults",
+    "th": "ดูค่าเริ่มต้นที่บันทึกไว้",
+    "ja": "保存済みのデフォルト設定を表示"
+  },
+  "Saved defaults: {seconds}s · {ratio}": {
+    "en": "Saved defaults: {seconds}s · {ratio}",
+    "th": "ค่าเริ่มต้นที่บันทึกไว้: {seconds} วินาที · {ratio}",
+    "ja": "保存済みのデフォルト: {seconds}秒 · {ratio}"
+  },
+  "Subtitles: {state}": {
+    "en": "Subtitles: {state}",
+    "th": "คำบรรยาย: {state}",
+    "ja": "字幕: {state}"
+  },
+  "Duration and aspect ratio changes here apply only to this video.": {
+    "en": "Duration and aspect ratio changes here apply only to this video.",
+    "th": "การเปลี่ยนระยะเวลาและอัตราส่วนภาพที่นี่ใช้กับวิดีโอนี้เท่านั้น",
+    "ja": "ここでの長さとアスペクト比の変更は、この動画にのみ適用されます。"
+  },
+  "Change defaults": {
+    "en": "Change defaults",
+    "th": "เปลี่ยนค่าเริ่มต้น",
+    "ja": "デフォルト設定を変更"
+  },
+  "Create defaults": {
+    "en": "Create defaults",
+    "th": "ค่าเริ่มต้นของ Create",
+    "ja": "Create のデフォルト設定"
+  },
+  "Choose the models and settings used whenever you start a new video from Create.": {
+    "en": "Choose the models and settings used whenever you start a new video from Create.",
+    "th": "เลือกโมเดลและการตั้งค่าที่ใช้เมื่อเริ่มวิดีโอใหม่จาก Create",
+    "ja": "Create で新しい動画を作成するときに使うモデルと設定を選びます。"
+  },
+  "Unable to load Create defaults. Please try again.": {
+    "en": "Unable to load Create defaults. Please try again.",
+    "th": "โหลดค่าเริ่มต้นของ Create ไม่สำเร็จ โปรดลองอีกครั้ง",
+    "ja": "Create のデフォルト設定を読み込めませんでした。もう一度お試しください。"
+  },
+  "Create defaults saved. New videos will use these settings.": {
+    "en": "Create defaults saved. New videos will use these settings.",
+    "th": "บันทึกค่าเริ่มต้นของ Create แล้ว วิดีโอใหม่จะใช้การตั้งค่านี้",
+    "ja": "Create のデフォルト設定を保存しました。新しい動画にこの設定を使います。"
+  },
+  "Unable to save Create defaults. Please try again.": {
+    "en": "Unable to save Create defaults. Please try again.",
+    "th": "บันทึกค่าเริ่มต้นของ Create ไม่สำเร็จ โปรดลองอีกครั้ง",
+    "ja": "Create のデフォルト設定を保存できませんでした。もう一度お試しください。"
+  },
+  "One or more saved models are unavailable. Choose supported models before saving.": {
+    "en": "One or more saved models are unavailable. Choose supported models before saving.",
+    "th": "โมเดลที่บันทึกไว้อย่างน้อยหนึ่งรายการไม่พร้อมใช้งาน เลือกโมเดลที่รองรับก่อนบันทึก",
+    "ja": "保存済みモデルの一部が利用できません。対応モデルを選んでから保存してください。"
+  },
+  "Choose an aspect ratio supported by both the image and video model.": {
+    "en": "Choose an aspect ratio supported by both the image and video model.",
+    "th": "เลือกอัตราส่วนภาพที่รองรับทั้งโมเดลภาพและโมเดลวิดีโอ",
+    "ja": "画像モデルと動画モデルの両方に対応するアスペクト比を選んでください。"
+  },
+  "Save defaults": {
+    "en": "Save defaults",
+    "th": "บันทึกค่าเริ่มต้น",
+    "ja": "デフォルト設定を保存"
+  },
+  "Reset changes": {
+    "en": "Reset changes",
+    "th": "ยกเลิกการเปลี่ยนแปลง",
+    "ja": "変更を元に戻す"
+  },
+  "High": {
+    "en": "High",
+    "th": "สูง",
+    "ja": "高"
+  },
+  "Extra high": {
+    "en": "Extra high",
+    "th": "สูงพิเศษ",
+    "ja": "最高"
+  },
+  "Express creator": {
+    "en": "Express creator",
+    "th": "เครื่องมือสร้างวิดีโอด่วน",
+    "ja": "Express クリエイター"
+  },
+  "Describe your idea. Bring it to life in one step.": {
+    "en": "Describe your idea. Bring it to life in one step.",
+    "th": "อธิบายไอเดียของคุณ แล้วทำให้เป็นจริงในขั้นตอนเดียว",
+    "ja": "アイデアを説明するだけで、ワンステップで動画に。"
+  },
+  "Render estimate": {
+    "en": "Render estimate",
+    "th": "ประมาณการเรนเดอร์",
+    "ja": "レンダリングの見積もり"
+  },
+  "Estimated render cost": {
+    "en": "Estimated render cost",
+    "th": "ค่าเรนเดอร์โดยประมาณ",
+    "ja": "レンダリング費用の目安"
+  },
+  "API charge": {
+    "en": "API charge",
+    "th": "คิดค่าบริการผ่าน API",
+    "ja": "API 利用料"
+  },
+  "Estimate unavailable": {
+    "en": "Estimate unavailable",
+    "th": "ไม่มีข้อมูลประมาณการ",
+    "ja": "見積もりを表示できません"
+  },
+  "{credits} credits": {
+    "en": "{credits} credits",
+    "th": "{credits} เครดิต",
+    "ja": "{credits} クレジット"
+  },
+  "{seconds}s × {rate} credits/s": {
+    "en": "{seconds}s × {rate} credits/s",
+    "th": "{seconds} วินาที × {rate} เครดิต/วินาที",
+    "ja": "{seconds}秒 × {rate} クレジット/秒"
+  },
+  "Exit focus mode": {
+    "en": "Exit focus mode",
+    "th": "ออกจากโหมดโฟกัส",
+    "ja": "集中モードを終了"
+  },
+  "Focus mode": {
+    "en": "Focus mode",
+    "th": "โหมดโฟกัส",
+    "ja": "集中モード"
+  },
+  "A story, a product, a world you want to share…": {
+    "en": "A story, a product, a world you want to share…",
+    "th": "เรื่องราว สินค้า หรือโลกที่คุณอยากแบ่งปัน…",
+    "ja": "伝えたい物語、商品、世界観を描いてください…"
+  },
+  "Include the subject, visual style, and story.": {
+    "en": "Include the subject, visual style, and story.",
+    "th": "ระบุหัวข้อ สไตล์ภาพ และเรื่องราว",
+    "ja": "被写体、映像のスタイル、ストーリーを含めてください。"
+  },
+  "Prompt character count": {
+    "en": "Prompt character count",
+    "th": "จำนวนอักขระของพรอมต์",
+    "ja": "プロンプトの文字数"
+  },
+  "{seconds} seconds": {
+    "en": "{seconds} seconds",
+    "th": "{seconds} วินาที",
+    "ja": "{seconds}秒"
+  },
+  "Landscape · 16:9": {
+    "en": "Landscape · 16:9",
+    "th": "แนวนอน · 16:9",
+    "ja": "横長 · 16:9"
+  },
+  "Portrait · 9:16": {
+    "en": "Portrait · 9:16",
+    "th": "แนวตั้ง · 9:16",
+    "ja": "縦長 · 9:16"
+  },
+  "Square · 1:1": {
+    "en": "Square · 1:1",
+    "th": "สี่เหลี่ยมจัตุรัส · 1:1",
+    "ja": "正方形 · 1:1"
+  },
+  "Subtitles on": {
+    "en": "Subtitles on",
+    "th": "เปิดคำบรรยาย",
+    "ja": "字幕あり"
+  },
+  "Clear": {
+    "en": "Clear",
+    "th": "ล้างข้อความ",
+    "ja": "クリア"
+  },
+  "Explore the latest published videos.": {
+    "en": "Explore the latest published videos.",
+    "th": "สำรวจวิดีโอที่เผยแพร่ล่าสุด",
+    "ja": "最近公開された動画をご覧ください。"
+  },
+  "Previous videos": {
+    "en": "Previous videos",
+    "th": "วิดีโอก่อนหน้า",
+    "ja": "前の動画"
+  },
+  "Next videos": {
+    "en": "Next videos",
+    "th": "วิดีโอถัดไป",
+    "ja": "次の動画"
+  },
+  "Published videos": {
+    "en": "Published videos",
+    "th": "วิดีโอที่เผยแพร่",
+    "ja": "公開動画"
+  },
+  "Page {current} of {total}": {
+    "en": "Page {current} of {total}",
+    "th": "หน้า {current} จาก {total}",
+    "ja": "{total}ページ中{current}ページ"
+  },
   "Showing the previous render while your updated preview is being prepared.": {
     "en": "Showing the previous render while your updated preview is being prepared.",
     "th": "กำลังแสดงวิดีโอที่เรนเดอร์ไว้ก่อนหน้า ระหว่างเตรียมตัวอย่างวิดีโอที่อัปเดตแล้ว",

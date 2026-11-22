@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
-import { MdClose, MdPlayArrow, MdVideocam } from 'react-icons/md';
+import { MdChevronLeft, MdChevronRight, MdClose, MdPlayArrow, MdVideocam } from 'react-icons/md';
 import { useMediaQuery } from 'react-responsive';
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { IS_STANDALONE_DEPLOYMENT } from '../../utils/environment.jsx';
@@ -9,6 +9,7 @@ import { IMAGE_GENERAITON_MODEL_TYPES, VIDEO_GENERATION_MODEL_TYPES, INFERENCE_M
 
 const API_SERVER = (import.meta.env.VITE_PROCESSOR_API || 'http://localhost:3002').replace(/\/$/, '');
 const PAGE_SIZE = 12;
+const FEED_TIMEOUT_MS = 12000;
 const text = (value) => typeof value === 'string' ? value.trim() : '';
 
 export function resolvePublishedMediaUrl(value, apiBase = API_SERVER, origin = globalThis.location?.origin) {
@@ -96,7 +97,7 @@ function PublishedVideoDialog({ video, onClose }) {
           </div>
           <div className="min-h-0 overflow-y-auto overscroll-contain">
             <div className="flex justify-center bg-black">
-              <video ref={(element) => { if (element) videoRef.current = element; }} key={video.id} src={video.videoUrl} poster={video.posterUrl || undefined} controls playsInline preload="metadata" aria-label={uiText('Video preview')} className="block max-h-[48dvh] w-full object-contain" style={{ aspectRatio: video.aspectRatio }} />
+              <video ref={(element) => { if (element) videoRef.current = element; }} key={video.id} src={video.videoUrl} poster={video.posterUrl || undefined} controls autoPlay playsInline preload="metadata" aria-label={uiText('Video preview')} className="block max-h-[48dvh] w-full object-contain" style={{ aspectRatio: video.aspectRatio }} />
             </div>
             <div className="space-y-5 px-5 py-5">
               <section>
@@ -126,24 +127,62 @@ function PublishedGallery() {
   const [page, setPage] = useState({ items: [], loading: true, error: false, nextCursor: null, hasMore: true });
   const [selectedVideo, setSelectedVideo] = useState(null);
   const sentinelRef = useRef(null);
+  const carouselRef = useRef(null);
+  const [activeSlide, setActiveSlide] = useState(0);
   const requestPendingRef = useRef(true);
   const completedCursorsRef = useRef(new Set());
   const wideScreen = useMediaQuery({ minWidth: 1024 });
   const mediumScreen = useMediaQuery({ minWidth: 640 });
   const columnCount = wideScreen ? 4 : mediumScreen ? 3 : 2;
-  const columns = useMemo(() => {
-    const result = Array.from({ length: columnCount }, () => []);
-    const heights = Array(columnCount).fill(0);
-    for (const item of page.items) {
-      const column = heights.indexOf(Math.min(...heights));
-      result[column].push(item);
-      heights[column] += 1 / item.aspectRatio;
+  const slides = useMemo(() => {
+    const result = [];
+    const itemsPerSlide = columnCount * 2;
+    for (let offset = 0; offset < page.items.length; offset += itemsPerSlide) {
+      const columns = Array.from({ length: columnCount }, () => []);
+      const heights = Array(columnCount).fill(0);
+      for (const item of page.items.slice(offset, offset + itemsPerSlide)) {
+        const column = heights.indexOf(Math.min(...heights));
+        columns[column].push(item);
+        heights[column] += 1 / item.aspectRatio;
+      }
+      result.push(columns);
     }
     return result;
   }, [columnCount, page.items]);
 
+  const moveToSlide = useCallback((index) => {
+    const carousel = carouselRef.current;
+    if (!carousel) return;
+    const target = Math.max(0, Math.min(index, slides.length - 1));
+    const slide = carousel.querySelector(`[data-gallery-slide="${target}"]`);
+    const left = slide?.offsetLeft || 0;
+    const reducedMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (carousel.scrollTo) carousel.scrollTo({ left, behavior: reducedMotion ? 'instant' : 'smooth' });
+    else carousel.scrollLeft = left;
+    setActiveSlide(target);
+  }, [slides.length]);
+
+  function updateActiveSlide() {
+    const carousel = carouselRef.current;
+    if (!carousel) return;
+    const slideElements = [...carousel.querySelectorAll('[data-gallery-slide]')];
+    let closest = 0;
+    for (let index = 1; index < slideElements.length; index += 1) {
+      if (Math.abs(slideElements[index].offsetLeft - carousel.scrollLeft)
+        < Math.abs(slideElements[closest].offsetLeft - carousel.scrollLeft)) closest = index;
+    }
+    setActiveSlide(closest);
+  }
+
+  useEffect(() => {
+    // Restart at the first mosaic page when a breakpoint changes the page size.
+    setActiveSlide(0);
+    if (carouselRef.current) carouselRef.current.scrollLeft = 0;
+  }, [columnCount]);
+
   useEffect(() => {
     const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FEED_TIMEOUT_MS);
     let active = true;
     requestPendingRef.current = true;
     setPage((previous) => ({ ...previous, loading: true, error: false }));
@@ -166,13 +205,14 @@ function PublishedGallery() {
           return { items: [...previous.items, ...additions], loading: false, error: false, nextCursor, hasMore };
         });
       } catch (error) {
-        if (active && error.name !== 'AbortError') setPage((previous) => ({ ...previous, loading: false, error: true }));
+        if (active) setPage((previous) => ({ ...previous, loading: false, error: true }));
       } finally {
+        clearTimeout(timeout);
         if (active) requestPendingRef.current = false;
       }
     }
     void load();
-    return () => { active = false; controller.abort(); };
+    return () => { active = false; clearTimeout(timeout); controller.abort(); };
   }, [request]);
 
   const loadMore = useCallback(() => {
@@ -185,35 +225,63 @@ function PublishedGallery() {
     if (!sentinelRef.current || selectedVideo || page.loading || page.error || !page.hasMore || typeof IntersectionObserver === 'undefined') return undefined;
     const observer = new IntersectionObserver((entries) => {
       if (entries.some((entry) => entry.isIntersecting)) loadMore();
-    }, { rootMargin: '280px' });
+    }, { root: carouselRef.current, rootMargin: '0px 120px 0px 0px' });
     observer.observe(sentinelRef.current);
     return () => observer.disconnect();
   }, [loadMore, page.error, page.hasMore, page.loading, selectedVideo]);
 
   const closeVideo = useCallback(() => setSelectedVideo(null), []);
+  // Publications are optional inspiration. Empty or unavailable feeds should
+  // leave the composer undisturbed, including while the first request loads.
+  if (!page.items.length) return null;
+
   return (
-    <section aria-labelledby="create-gallery-heading" className="mt-12 pb-8 sm:mt-16">
-      <h2 id="create-gallery-heading" className="mb-5 text-sm font-medium text-fg-secondary">{uiText('Made with Samsar')}</h2>
-      <div className="grid grid-cols-2 items-start gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {columns.map((column, columnIndex) => <div key={columnIndex} className="flex min-w-0 flex-col gap-3" data-gallery-column={columnIndex}>
-        {column.map((video) => {
-          const title = video.title || uiText('Untitled video');
-          return <button key={video.id} type="button" onClick={() => setSelectedVideo(video)} aria-label={uiText('Play {title}', { title })} className="group relative block w-full overflow-hidden rounded-2xl bg-surface-muted text-left outline-none transition duration-200 hover:shadow-md focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-canvas" style={{ aspectRatio: video.aspectRatio }}>
-            <MdVideocam aria-hidden="true" className="absolute left-1/2 top-1/2 size-7 -translate-x-1/2 -translate-y-1/2 text-fg-muted/40" />
-            {video.posterUrl && <img src={video.posterUrl} alt="" loading="lazy" decoding="async" width={Math.round(video.aspectRatio * 600)} height="600" className="absolute inset-0 size-full object-cover transition duration-300 group-hover:scale-[1.025] motion-reduce:transform-none" onError={(event) => { event.currentTarget.hidden = true; }} />}
-            <span aria-hidden="true" className="absolute inset-x-0 bottom-0 flex items-center gap-2 bg-gradient-to-t from-black/70 to-transparent px-3 pb-3 pt-8 text-white opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
-              <MdPlayArrow className="size-5 shrink-0" /><span className="truncate text-xs font-medium">{title}</span>
-            </span>
-          </button>;
-        })}
-        </div>)}
+    <section aria-labelledby="create-gallery-heading" aria-roledescription="carousel" className="mt-12 min-w-0 pb-8 sm:mt-16">
+      <div className="mb-5 flex items-center justify-between gap-4">
+        <div>
+          <h2 id="create-gallery-heading" className="text-lg font-semibold tracking-tight text-fg">{uiText('Made with Samsar')}</h2>
+          <p className="mt-1 text-sm text-fg-muted">{uiText('Explore the latest published videos.')}</p>
+        </div>
+        {slides.length > 0 && <div className="flex shrink-0 items-center gap-2">
+          <button type="button" aria-label={uiText('Previous videos')} aria-controls="create-gallery-carousel" disabled={activeSlide === 0} onClick={() => moveToSlide(activeSlide - 1)} className="inline-flex size-10 items-center justify-center rounded-full border border-line bg-surface text-fg-secondary transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-35 motion-reduce:transition-none">
+            <MdChevronLeft aria-hidden="true" className="size-6" />
+          </button>
+          <button type="button" aria-label={uiText('Next videos')} aria-controls="create-gallery-carousel" disabled={activeSlide >= slides.length - 1} onClick={() => moveToSlide(activeSlide + 1)} className="inline-flex size-10 items-center justify-center rounded-full border border-line bg-surface text-fg-secondary transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-35 motion-reduce:transition-none">
+            <MdChevronRight aria-hidden="true" className="size-6" />
+          </button>
+        </div>}
       </div>
-      <div ref={sentinelRef} className="flex min-h-16 items-center justify-center" aria-live="polite">
+      <div id="create-gallery-carousel" ref={carouselRef} role="group" aria-label={uiText('Published videos')} tabIndex={slides.length ? 0 : -1} onScroll={updateActiveSlide} onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === 'ArrowRight') { event.preventDefault(); moveToSlide(activeSlide + 1); }
+        if (event.key === 'ArrowLeft') { event.preventDefault(); moveToSlide(activeSlide - 1); }
+        if (event.key === 'Home') { event.preventDefault(); moveToSlide(0); }
+        if (event.key === 'End') { event.preventDefault(); moveToSlide(slides.length - 1); }
+      }} className="relative flex snap-x snap-mandatory items-start gap-4 overflow-x-auto overscroll-x-contain rounded-2xl pb-3 outline-none [scrollbar-width:thin] focus-visible:ring-2 focus-visible:ring-focus">
+        {slides.map((columns, slideIndex) => <div key={slideIndex} data-gallery-slide={slideIndex} role="group" aria-roledescription="slide" aria-label={uiText('Page {current} of {total}', { current: slideIndex + 1, total: slides.length })} className="grid w-full shrink-0 snap-start grid-cols-2 items-start gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          {columns.map((column, columnIndex) => <div key={columnIndex} className="flex min-w-0 flex-col gap-3" data-gallery-column={columnIndex}>
+            {column.map((video) => {
+              const title = video.title || uiText('Untitled video');
+              return <button key={video.id} type="button" onClick={() => setSelectedVideo(video)} aria-label={uiText('Play {title}', { title })} className="group relative block w-full overflow-hidden rounded-2xl border border-line/40 bg-surface-muted text-left outline-none transition-[box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-canvas motion-reduce:transform-none motion-reduce:transition-none" style={{ aspectRatio: video.aspectRatio }}>
+                <MdVideocam aria-hidden="true" className="absolute left-1/2 top-1/2 size-7 -translate-x-1/2 -translate-y-1/2 text-fg-muted/40" />
+                {video.posterUrl && <img src={video.posterUrl} alt="" loading="lazy" decoding="async" width={Math.round(video.aspectRatio * 600)} height="600" className="absolute inset-0 size-full object-cover transition-transform duration-300 group-hover:scale-[1.025] motion-reduce:transform-none motion-reduce:transition-none" onError={(event) => { event.currentTarget.hidden = true; }} />}
+                <span aria-hidden="true" className="absolute inset-x-0 bottom-0 flex items-end gap-2 bg-gradient-to-t from-black/80 via-black/25 to-transparent px-3 pb-3 pt-12 text-white">
+                  <span className="mb-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-colors group-hover:bg-white/35 motion-reduce:transition-none"><MdPlayArrow className="size-5" /></span>
+                  <span className="min-w-0 truncate pb-1 text-xs font-medium">{title}</span>
+                </span>
+              </button>;
+            })}
+          </div>)}
+        </div>)}
+        <div ref={sentinelRef} aria-hidden="true" className="h-px w-px shrink-0" />
+      </div>
+      {slides.length > 1 && <p className="mt-2 text-center text-xs text-fg-muted" aria-live="polite" aria-atomic="true">{uiText('Page {current} of {total}', { current: activeSlide + 1, total: slides.length })}</p>}
+      {(page.loading || page.error || page.hasMore) && <div className="flex min-h-16 items-center justify-center" aria-live="polite">
         {page.loading ? <span role="status" className="text-xs text-fg-muted">{uiText('Loading videos...')}</span> : page.error ? <div className="flex flex-wrap items-center justify-center gap-3 text-xs text-fg-muted">
           <span>{uiText('Unable to load videos.')}</span>
           <button type="button" onClick={() => setRequest((previous) => ({ ...previous, attempt: previous.attempt + 1 }))} className="min-h-10 rounded-full px-4 font-medium text-fg-secondary hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">{uiText('Try again')}</button>
-        </div> : page.hasMore ? <button type="button" onClick={loadMore} className="min-h-10 rounded-full px-5 text-xs font-medium text-fg-muted transition hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">{uiText('Load more')}</button> : !page.items.length ? <p className="text-xs text-fg-muted">{uiText('No published videos yet.')}</p> : null}
-      </div>
+        </div> : page.hasMore ? <button type="button" onClick={loadMore} className="min-h-10 rounded-full px-5 text-xs font-medium text-fg-muted transition hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">{uiText('Load more')}</button> : null}
+      </div>}
       {selectedVideo && <PublishedVideoDialog video={selectedVideo} onClose={closeVideo} />}
     </section>
   );
