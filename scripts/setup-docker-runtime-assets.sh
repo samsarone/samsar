@@ -141,6 +141,22 @@ parse_args() {
   done
 }
 
+font_file_is_valid() {
+  local signature
+  # Fontconfig is not required on the host: all downloaded fonts use sfnt
+  # headers, which also lets us reject HTML error pages returned with HTTP 200.
+  signature="$(LC_ALL=C od -An -tx1 -N4 "$1" | tr -d '[:space:]')"
+  case "$signature" in
+    00010000|4f54544f|74746366|74727565) ;;
+    *) return 1 ;;
+  esac
+  if command -v fc-scan >/dev/null 2>&1; then
+    local family
+    family="$(fc-scan --format '%{family}' "$1" 2>/dev/null)" || return 1
+    [ -n "$family" ] || return 1
+  fi
+}
+
 download_fonts() {
   require_cmd curl
   mkdir -p "$FONT_DIR"
@@ -152,16 +168,22 @@ download_fonts() {
     IFS='|' read -r font_name font_file font_url <<<"$entry"
     target="${FONT_DIR}/${font_file}"
 
-    if [ -s "$target" ] && [ "$FORCE_DOWNLOAD" != "true" ]; then
+    if [ -s "$target" ] && [ "$FORCE_DOWNLOAD" != "true" ] && font_file_is_valid "$target"; then
       log "Font already present: ${font_file}"
       continue
     fi
 
     log "Downloading ${font_name}"
     tmp_file="$(mktemp)"
-    if ! curl -fL --retry 3 --connect-timeout 20 -o "$tmp_file" "$font_url"; then
+    if ! curl -fL --retry 3 --connect-timeout 20 --max-time 180 -o "$tmp_file" "$font_url"; then
       rm -f "$tmp_file"
       log "Failed to download ${font_name} from ${font_url}"
+      exit 1
+    fi
+
+    if ! font_file_is_valid "$tmp_file"; then
+      rm -f "$tmp_file"
+      log "Downloaded file for ${font_name} is not a readable font."
       exit 1
     fi
 

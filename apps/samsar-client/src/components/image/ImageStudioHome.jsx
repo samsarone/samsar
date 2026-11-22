@@ -567,9 +567,16 @@ export default function ImageStudioHome() {
       .get(`${PROCESSOR_API_URL}/image_sessions/session_details?id=${id}`, headers)
       .then((response) => {
         const session = response.data;
+        const sessionAspectRatio = session?.aspectRatio || '1:1';
         setSessionDetails(session);
         if (assistantRequestGuard.acceptSession(session)) setSessionMessages(assistantRequestGuard.messages(session));
-        setAspectRatio(session?.aspectRatio || '1:1');
+        setAspectRatio(sessionAspectRatio);
+        // Ratio-limited models must see the loaded project ratio immediately,
+        // before the first canvas render can validate the model selection.
+        setGenerationAspectRatio(getPreferredGenerationAspectRatio(
+          sessionAspectRatio,
+          normalizeCanvasDimensions(session?.canvasDimensions, sessionAspectRatio),
+        ));
         setGenerationImages(session?.generations || []);
         const firstLayer = session?.layers?.[0] || null;
         setCurrentLayer(firstLayer);
@@ -591,7 +598,7 @@ export default function ImageStudioHome() {
           }
         );
       });
-  }, [id, syncActiveItemList]);
+  }, [getPreferredGenerationAspectRatio, id, syncActiveItemList]);
 
   const startAssistantQueryPoll = useCallback(() => {
     const headers = getHeaders();

@@ -55,16 +55,16 @@ describe.each([['desktop', TopNav], ['mobile', MobileTopNav]])('%s navigation', 
     }
   );
 
-  it('keeps the Create page navigation free of project setup controls', () => {
+  it('uses the shared project navigation on Create', async () => {
     mocks.userState.user.email = 'creator@example.com';
     renderNav(Nav, '/create');
     expect(screen.getByRole('link', { name: 'Create' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('button', { name: 'Samsar Studio' })).toBeInTheDocument();
     expect(screen.getByText('creator@example.com')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'New Project' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'New Project' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /New Studio project|New image project|Audio actions/ })).not.toBeInTheDocument();
     expect(screen.queryByTestId('session-controls')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Open billing/ })).not.toBeInTheDocument();
+    if (Nav === TopNav) expect(screen.getByRole('button', { name: /Open billing/ })).toBeInTheDocument();
   });
 
   it('does not offer the Create page to external users', () => {

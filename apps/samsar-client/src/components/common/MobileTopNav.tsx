@@ -338,7 +338,7 @@ export default function MobileTopNav(props) {
 
   let addSessionButton = <span />;
 
-  if (user && user._id && !isCreatePage) {
+  if (user && user._id) {
     addSessionButton = (
 
       <div className="">

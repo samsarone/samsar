@@ -3,6 +3,7 @@ import { Schema,model } from 'mongoose';
 import { DEFAULT_LATIN_SUBTITLE_FONT, getSubtitleFontsForLanguage } from '../consts/SubtitleFonts.js';
 import { SUPPORTED_LANGUAGES } from '../consts/SupportedLanguages.js';
 import { DEFAULT_USER_INFERENCE_MODEL } from '../consts/InferenceModels.js';
+import { CREATE_ASPECT_RATIOS, CREATE_DURATIONS } from '../consts/CreateDefaults.js';
 
 
 const UserAPIKey = new Schema({
@@ -42,6 +43,16 @@ const SpeakerOptions = new Schema({
   googleSpeakers: { type: [String], default: [] },
   googleSpeakerDetails: { type: [Object], default: [] },
 }, { _id: false });
+
+const CreateDefaults = new Schema({
+  inferenceModel: { type: String, required: true },
+  imageModel: { type: String, required: true },
+  videoModel: { type: String, required: true },
+  inferenceEffort: { type: String, enum: ['high', 'xhigh'], required: true },
+  duration: { type: Number, enum: CREATE_DURATIONS, required: true },
+  aspectRatio: { type: String, enum: CREATE_ASPECT_RATIOS, required: true },
+  enableSubtitles: { type: Boolean, required: true },
+}, { _id: false, strict: 'throw' });
 
 const CustomAdapters = new Schema({
   api_key: String,
@@ -160,6 +171,8 @@ const userSchema = new Schema({
 
   selectedInferenceModel: {type: String, default: DEFAULT_USER_INFERENCE_MODEL},
   selectedInferenceEffort: { type: String, enum: ['high', 'xhigh'], default: 'high' },
+  // Undefined preserves existing preferences until the user saves Create defaults.
+  createDefaults: { type: CreateDefaults, default: undefined },
   selectedInferenceModelAuthorization: { type: String, enum: ['native', 'deployed'], default: 'native' }, // native uses local provider credentials; deployed uses Samsar API key fallback.
 
   selectedAssistantModel: {type: String, default: DEFAULT_USER_INFERENCE_MODEL},

@@ -137,3 +137,83 @@ it('aborts pending feed requests when the landing page unmounts', () => {
   view.unmount();
   expect(signal.aborted).toBe(true);
 });
+
+
+it('provides bounded carousel buttons and arrow/home/end navigation without loading players', async () => {
+  fetch.mockImplementation(() => respond(Array.from({ length: 9 }, (_, index) => publication(String(index + 1)))));
+  const { container } = render(<CreatePublishedGallery />);
+  const carousel = await screen.findByRole('group', { name: 'Published videos' });
+  await screen.findByRole('button', { name: 'Play Video 1' });
+  const slides = [...carousel.querySelectorAll('[data-gallery-slide]')];
+  expect(slides).toHaveLength(3);
+  slides.forEach((slide, index) => Object.defineProperty(slide, 'offsetLeft', { configurable: true, value: index * 400 }));
+  carousel.scrollTo = vi.fn();
+  const previous = screen.getByRole('button', { name: 'Previous videos' });
+  const next = screen.getByRole('button', { name: 'Next videos' });
+  expect(previous).toBeDisabled();
+  fireEvent.click(next);
+  expect(carousel.scrollTo).toHaveBeenLastCalledWith({ left: 400, behavior: 'smooth' });
+  expect(previous).toBeEnabled();
+  fireEvent.keyDown(carousel, { key: 'End' });
+  expect(carousel.scrollTo).toHaveBeenLastCalledWith({ left: 800, behavior: 'smooth' });
+  expect(next).toBeDisabled();
+  fireEvent.keyDown(carousel, { key: 'ArrowLeft' });
+  expect(carousel.scrollTo).toHaveBeenLastCalledWith({ left: 400, behavior: 'smooth' });
+  fireEvent.keyDown(carousel, { key: 'Home' });
+  expect(carousel.scrollTo).toHaveBeenLastCalledWith({ left: 0, behavior: 'smooth' });
+  expect(previous).toBeDisabled();
+  expect(container.querySelectorAll('video')).toHaveLength(0);
+});
+
+it('filters hidden publications and unsafe playback URLs while keeping frame-only fallbacks', async () => {
+  fetch.mockImplementation(() => respond([
+    publication('hidden', { isHidden: true }), publication('deleted', { isDeleted: true }),
+    publication('unsafe', { videoUrl: 'javascript:alert(1)' }),
+    publication('no-frame', { splashImage: 'data:image/png;base64,invalid' }),
+  ]));
+  const { container } = render(<CreatePublishedGallery />);
+  expect(await screen.findByRole('button', { name: 'Play Video no-frame' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Play Video hidden' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Play Video deleted' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Play Video unsafe' })).toBeNull();
+  expect(container.querySelectorAll('img, video')).toHaveLength(0);
+});
+
+
+it('stays absent while the optional publication feed is pending', () => {
+  fetch.mockReturnValue(new Promise(() => {}));
+  const { container } = render(<CreatePublishedGallery />);
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(container).toBeEmptyDOMElement();
+  expect(screen.queryByRole('status')).toBeNull();
+});
+
+it.each([
+  ['empty', () => respond([])],
+  ['hidden-only', () => respond([publication('hidden', { isHidden: true }), publication('deleted', { isDeleted: true })])],
+  ['malformed', () => Promise.resolve({ ok: true, json: async () => ({ items: 'invalid' }) })],
+  ['missing endpoint', () => Promise.resolve({ ok: false, status: 404 })],
+  ['network failure', () => Promise.reject(new Error('Offline'))],
+])('silently omits an %s initial feed without empty/error placeholders', async (_scenario, response) => {
+  fetch.mockImplementation(response);
+  let view;
+  await act(async () => { view = render(<CreatePublishedGallery />); });
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(view.container).toBeEmptyDOMElement();
+  expect(screen.queryByRole('heading')).toBeNull();
+  expect(screen.queryByText('Unable to load videos.')).toBeNull();
+  expect(screen.queryByText('No published videos yet.')).toBeNull();
+});
+
+it('bounds a hanging optional feed request without exposing an error section', async () => {
+  vi.useFakeTimers();
+  fetch.mockImplementation((_url, { signal }) => new Promise((_resolve, reject) => {
+    signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+  }));
+  const { container } = render(<CreatePublishedGallery />);
+  const { signal } = fetch.mock.calls[0][1];
+  expect(signal.aborted).toBe(false);
+  await act(async () => { await vi.advanceTimersByTimeAsync(12000); });
+  expect(signal.aborted).toBe(true);
+  expect(container).toBeEmptyDOMElement();
+});

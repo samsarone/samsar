@@ -50,6 +50,146 @@ test('translation uses current user model and effort rather than the source sess
   assert.equal(preview.inferenceEffort, 'xhigh');
 });
 
+test('translation accepts independent subtitle languages and defaults subtitles to the translated audio language', async (t) => {
+  mockSession(t);
+  const base = { session_id: 'source-session', language: 'FR' };
+  const omitted = await getTranslateVideoBillingPreview('owner', base);
+  assert.equal(omitted.enableSubtitles, false);
+  assert.equal(omitted.subtitleLanguage, 'fr');
+  assert.equal(omitted.subtitleLanguageExplicit, false);
+  for (const field of ['subtitle_language', 'subtitleLanguage']) {
+    const selected = await getTranslateVideoBillingPreview('owner', {
+      ...base, [field]: 'ja-JP',
+    });
+    assert.equal(selected.enableSubtitles, true);
+    assert.equal(selected.normalizedLanguageCode, 'fr');
+    assert.equal(selected.subtitleLanguage, 'ja');
+    assert.equal(selected.subtitleLanguageString, 'Japanese');
+    assert.equal(selected.subtitleLanguageExplicit, true);
+    assert.equal(selected.subtitleTranslationRequired, true);
+  }
+  const matching = await getTranslateVideoBillingPreview('owner', {
+    ...base, enable_subtitles: true, subtitle_language: 'fr',
+  });
+  assert.equal(matching.subtitleTranslationRequired, false);
+});
+
+test('translation rejects invalid and disabled subtitle language selections before accessing a source session', async () => {
+  const base = { session_id: 'source-session', language: 'fr' };
+  for (const subtitle_language of ['not-a-language', 42]) {
+    await assert.rejects(getTranslateVideoBillingPreview('owner', {
+      ...base, subtitle_language,
+    }), (error) => error.status === 400 && /subtitle_language must be one of/.test(error.message));
+  }
+  await assert.rejects(getTranslateVideoBillingPreview('owner', {
+    ...base, enable_subtitles: false, subtitleLanguage: 'ja',
+  }), (error) => error.status === 400 && /requires enable_subtitles/.test(error.message));
+});
+
+test('retranslation generates fresh Japanese subtitles and alignment from the final French speech', async (t) => {
+  const source = mockSession(t);
+  Object.assign(source, {
+    sessionLanguage: 'en', subtitleLanguage: 'es', subtitleLanguageExplicit: true,
+    subtitleTranslationRequired: true,
+  });
+  Object.assign(source.audioLayers[0], {
+    speechLanguage: 'en', subtitleLanguage: 'es', subtitleText: 'Hola.',
+    subtitleAlignmentMap: [{ sourceText: 'Hello.', translatedText: 'Hola.' }],
+    subtitleSpeakerCharacterName: 'Narrador',
+  });
+  const original = structuredClone(source);
+  const preview = await getTranslateVideoBillingPreview('owner', {
+    session_id: 'source-session', language: 'fr', enable_subtitles: true, subtitle_language: 'ja',
+  });
+  let saved;
+  const queued = [];
+  const subtitleCalls = [];
+  t.mock.method(VideoSession, 'updateOne', async (_query, update) => { saved = update.$set; });
+  t.mock.method(AudioGeneration.prototype, 'save', async function () { queued.push(this.toObject()); });
+  await __testOnly__.processTranslateVideoSessionJob({
+    ...preview, userId: 'owner', newSessionId: 'translated-session',
+    translateOutro: false, translateFooter: false,
+  }, {
+    copyTranslateSessionAssets: async () => {},
+    publishClonedAiVideoMedia: async () => {},
+    translateTextContent: async (texts) => texts.map((text) => text === 'Hello.' ? 'Bonjour.' : 'Narrateur'),
+    translateSpeech: async (text, language, model, options) => {
+      subtitleCalls.push({ text, language, model, options });
+      return {
+        text: 'こんにちは。',
+        subtitleAlignmentMap: [{ sourceText: 'Bonjour.', translatedText: 'こんにちは。' }],
+        subtitleSpeakerCharacterName: 'ナレーター',
+      };
+    },
+  });
+  assert.equal(subtitleCalls.length, 1);
+  assert.equal(subtitleCalls[0].text, 'Bonjour.');
+  assert.equal(subtitleCalls[0].language, 'Japanese');
+  assert.equal(subtitleCalls[0].options.targetLanguageCode, 'ja');
+  assert.equal(subtitleCalls[0].options.includeSubtitleAlignment, true);
+  assert.equal(subtitleCalls[0].options.speakerCharacterName, 'Narrateur');
+  assert.equal(saved.sessionLanguage, 'fr');
+  assert.equal(saved.subtitleLanguage, 'ja');
+  assert.equal(saved.subtitleTranslationRequired, true);
+  assert.equal(saved.audioLayers[0].speechLanguage, 'fr');
+  assert.equal(saved.audioLayers[0].subtitleText, 'こんにちは。');
+  assert.equal(saved.audioLayers[0].subtitleSpeakerCharacterName, 'ナレーター');
+  assert.deepEqual(saved.audioLayers[0].subtitleAlignmentMap, [
+    { sourceText: 'Bonjour.', translatedText: 'こんにちは。' },
+  ]);
+  assert.equal(queued[0].prompt, 'Bonjour.');
+  assert.equal(queued[0].languageCode, 'fr');
+  assert.deepEqual(source, original);
+});
+
+test('retranslation clears inherited translated subtitles when subtitles follow the new audio or are disabled', () => {
+  for (const enableSubtitles of [true, false]) {
+    const clonedSession = {
+      sessionLanguage: 'en', subtitleLanguage: 'es', subtitleLanguageExplicit: true,
+      subtitleTranslationRequired: true, layers: [],
+      audioLayers: [{ generationType: 'speech', prompt: 'Bonjour.', speechLanguage: 'en',
+        subtitleLanguage: 'es', subtitleTranslationRequired: true, subtitleText: 'Hola.',
+        subtitleAlignmentMap: [{ sourceText: 'Hello.', translatedText: 'Hola.' }],
+        subtitleSpeakerCharacterName: 'Narrador' }],
+    };
+    __testOnly__.prepareSessionForTranslate({
+      clonedSession, normalizedLanguageCode: 'fr', enableSubtitles,
+    });
+    assert.equal(clonedSession.subtitleLanguage, 'fr');
+    assert.equal(clonedSession.subtitleLanguageExplicit, false);
+    assert.equal(clonedSession.subtitleTranslationRequired, false);
+    assert.equal(clonedSession.audioLayers[0].speechLanguage, 'fr');
+    assert.equal(clonedSession.audioLayers[0].subtitleLanguage, 'fr');
+    assert.equal(clonedSession.audioLayers[0].subtitleText, 'Bonjour.');
+    assert.equal(clonedSession.audioLayers[0].subtitleTranslationRequired, false);
+    assert.deepEqual(clonedSession.audioLayers[0].subtitleAlignmentMap, []);
+    assert.equal(clonedSession.audioLayers[0].subtitleSpeakerCharacterName, null);
+    assert.equal(clonedSession.audioLayers[0].addSubtitles, enableSubtitles);
+  }
+});
+
+test('retranslation queues no speech when translated subtitle alignment does not cover the new audio', async (t) => {
+  mockSession(t);
+  const preview = await getTranslateVideoBillingPreview('owner', {
+    session_id: 'source-session', language: 'fr', subtitle_language: 'ja',
+  });
+  const save = t.mock.method(AudioGeneration.prototype, 'save', async () => {});
+  const update = t.mock.method(VideoSession, 'updateOne', async () => {});
+  await assert.rejects(__testOnly__.processTranslateVideoSessionJob({
+    ...preview, userId: 'owner', newSessionId: 'translated-session',
+    translateOutro: false, translateFooter: false,
+  }, {
+    copyTranslateSessionAssets: async () => {},
+    translateTextContent: async (texts) => texts.map((text) => text === 'Hello.' ? 'Bonjour.' : 'Narrateur'),
+    translateSpeech: async () => ({
+      text: 'こんにちは。', subtitleSpeakerCharacterName: 'ナレーター',
+      subtitleAlignmentMap: [{ sourceText: 'Hello.', translatedText: 'こんにちは。' }],
+    }),
+  }), /alignment map does not completely cover the source speech/);
+  assert.equal(save.mock.callCount(), 0);
+  assert.equal(update.mock.callCount(), 0);
+});
+
 test('translation request selection overrides saved settings for every supported model family', async (t) => {
   mockSession(t, { selectedInferenceModel: 'gpt-6.2-astra', selectedInferenceEffort: 'high' });
   for (const model of ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {

@@ -32,6 +32,7 @@ const DEFAULT_POST_PROCESSING_FORM = Object.freeze({
   footerCtaLogo: '',
   footerCtaUrl: '',
   translationLanguage: '',
+  translationSubtitleLanguage: '',
   translationEnableSubtitles: true,
   translationTranslateOutro: true,
   translationTranslateFooter: true,
@@ -83,6 +84,12 @@ export function buildExpressPostProcessingRequest({ actionKey, id, postProcessin
       language: languageCode,
       enable_subtitles: canGenerateSubtitles &&
         postProcessingForm.translationEnableSubtitles === true,
+      ...(canGenerateSubtitles && postProcessingForm.translationEnableSubtitles === true
+        ? buildSubtitleRegenerationLanguageFields({
+            selectedLanguage: postProcessingForm.translationSubtitleLanguage,
+            audioLanguage: languageCode,
+          })
+        : {}),
       translate_outro: postProcessingForm.translationTranslateOutro !== false,
       translate_footer: postProcessingForm.translationTranslateFooter !== false,
       inference_model: normalizeInferenceModelKey(inferenceModel),

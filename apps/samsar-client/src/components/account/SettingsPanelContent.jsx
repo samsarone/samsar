@@ -38,6 +38,7 @@ import { isImageModelAllowedForDeploymentScope } from '../../utils/imageModelAva
 import { isVideoModelAllowedForDeploymentScope } from '../../utils/videoModelAvailability.mjs';
 import { resolveGenerationModelDefaults } from '../../utils/generationDefaults.mjs';
 import GeminiModelSelect from '../common/GeminiModelSelect.jsx';
+import CreateDefaultsSettings from './CreateDefaultsSettings.jsx';
 
 const BACKING_TRACK_MODEL_OPTIONS = [
   { value: "ELEVENLABS_MUSIC", get label() { return uiText("ElevenLabs"); } },
@@ -51,6 +52,7 @@ function normalizeBackingTrackModelValue(value) {
 
 const SETTINGS_TABS = [
   { key: "general", get label() { return uiText("General"); } },
+  { key: "defaults", get label() { return uiText("Defaults"); } },
   { key: "fonts", get label() { return uiText("Fonts"); } },
   { key: "agent", get label() { return uiText("Agent"); } },
   { key: "security", get label() { return uiText("Security"); } },
@@ -731,6 +733,8 @@ export default function SettingsPanelContent(props) {
           ))}
         </div>
       </div>
+
+      {activeTab === "defaults" && <CreateDefaultsSettings />}
 
       {activeTab === "general" && (
         <form onSubmit={handleUpdateUserDetails}>

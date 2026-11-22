@@ -125,6 +125,20 @@ test('Docker dependency installs are immutable and include platform optionals', 
   assert.doesNotMatch(setupWizardDockerfile, /npm install/);
 });
 
+test('subtitle font installers and system glyph fallbacks survive source packaging', async () => {
+  for (const service of ['frames-processor', 'processor']) {
+    const installer = await readText(`services/${service}/install_fonts.sh`);
+    assert.match(installer, /curl --fail --location --retry 3/);
+    assert.match(installer, /fc-scan --format '%\{family\}'/);
+    assert.match(installer, /TTF_FILE="\$\{FONT_NAME\}\.ttf"/);
+  }
+  const dockerfile = await readText('Dockerfile');
+  const runtime = dockerfile.split(' AS runtime')[1];
+  assert.ok(runtime);
+  assert.match(runtime, /\n\s+fonts-noto-core\s*\\/);
+  assert.match(runtime, /\n\s+fonts-noto-cjk\s*\\/);
+});
+
 test('native frontend and image dependencies cover Linux x64 and arm64', async () => {
   const compose = await readText('deploy/compose/docker-compose.yml');
   const servicePaths = [...compose.matchAll(/SERVICE_PATH:\s*([^\s]+)/g)].map((match) => match[1]);

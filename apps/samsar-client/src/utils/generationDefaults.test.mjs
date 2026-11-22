@@ -2,8 +2,25 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   resolveGenerationModelDefaults,
+  resolveCreateDefaults,
   resolvePreferredGenerationModelOption,
 } from './generationDefaults.mjs';
+
+test('Create preferences are independent, normalized and fall back for older accounts', () => {
+  assert.deepEqual(resolveCreateDefaults(), {
+    inferenceModel: 'claude-opus-5.5', imageModel: 'GPTIMAGE2.5', videoModel: 'KLINGIMGTOVID4',
+    inferenceEffort: 'high', duration: 30, aspectRatio: '16:9', enableSubtitles: false,
+  });
+  const user = { selectedInferenceModel: 'gpt-6.1-sol-xhigh', agentImageModel: 'SEEDREAM', createDefaults: {
+    imageModel: 'GPTIMAGE2.6', videoModel: 'RUNWAYML', duration: 90, aspectRatio: '9:16', enableSubtitles: true,
+  } };
+  assert.deepEqual(resolveCreateDefaults(user), {
+    inferenceModel: 'gpt-6.1-sol', imageModel: 'GPTIMAGE2.5', videoModel: 'RUNWAYML',
+    inferenceEffort: 'xhigh', duration: 90, aspectRatio: '9:16', enableSubtitles: true,
+  });
+  assert.equal(user.agentImageModel, 'SEEDREAM');
+  assert.equal(resolveCreateDefaults({ createDefaults: { duration: 999, aspectRatio: 'bogus' } }).duration, 30);
+});
 
 test('new users get Claude Opus 5.5, GPT Image 2.6 and Kling 4', () => {
   assert.deepEqual(resolveGenerationModelDefaults(), {

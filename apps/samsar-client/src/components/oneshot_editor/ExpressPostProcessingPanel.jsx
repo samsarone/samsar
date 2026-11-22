@@ -140,23 +140,47 @@ export default function ExpressPostProcessingPanel({
       <div className="mt-3">
         {postProcessingAction === 'retranslate' && (
           <div className="space-y-3">
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-              <select
-                value={postProcessingForm.translationLanguage}
-                onChange={(event) =>
-                  updatePostProcessingFormField('translationLanguage', event.target.value)
-                }
-                disabled={isAnyPostProcessingPending}
-                aria-label={uiText("Retranslation language")}
-                className={fieldClass}
-              >
-                <option value="">{uiText("Choose target language")}</option>
-                {SUPPORTED_LANGUAGES.map((languageOption) => (
-                  <option key={languageOption.code} value={languageOption.code}>
-                    {uiText(languageOption.name)}
-                  </option>
-                ))}
-              </select>
+            <div className={`grid grid-cols-1 items-end gap-2 ${canGenerateSubtitles ? 'sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]' : 'sm:grid-cols-[minmax(0,1fr)_auto]'}`}>
+              <label>
+                <span className={`mb-1 block text-caption font-medium ${mutedText}`}>{uiText("Retranslation language")}</span>
+                <select
+                  value={postProcessingForm.translationLanguage}
+                  onChange={(event) =>
+                    updatePostProcessingFormField('translationLanguage', event.target.value)
+                  }
+                  disabled={isAnyPostProcessingPending}
+                  aria-label={uiText("Retranslation language")}
+                  className={fieldClass}
+                >
+                  <option value="">{uiText("Choose target language")}</option>
+                  {SUPPORTED_LANGUAGES.map((languageOption) => (
+                    <option key={languageOption.code} value={languageOption.code}>
+                      {uiText(languageOption.name)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {canGenerateSubtitles ? (
+                <label>
+                  <span className={`mb-1 block text-caption font-medium ${mutedText}`}>{uiText("Subtitle language")}</span>
+                  <select
+                    value={postProcessingForm.translationSubtitleLanguage}
+                    onChange={(event) =>
+                      updatePostProcessingFormField('translationSubtitleLanguage', event.target.value)
+                    }
+                    disabled={isAnyPostProcessingPending || !postProcessingForm.translationEnableSubtitles}
+                    aria-label={uiText("Subtitle language")}
+                    className={fieldClass}
+                  >
+                    <option value="">{uiText("Same as audio")}</option>
+                    {SUPPORTED_LANGUAGES.map((languageOption) => (
+                      <option key={languageOption.code} value={languageOption.code}>
+                        {uiText(languageOption.name)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               <button
                 type="button"
                 onClick={() => submitPostProcessingOperation('retranslate')}
