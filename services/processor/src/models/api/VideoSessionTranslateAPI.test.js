@@ -524,6 +524,39 @@ test('add subtitles prep clears translation-only metadata for the audio language
   assert.equal(clonedSession.audioLayers[0].subtitleSpeakerCharacterName, null);
 });
 
+test('add English subtitles repairs Japanese retranslation metadata without replacing audio', async () => {
+  const clonedSession = {
+    sessionLanguage: 'ja', subtitleLanguage: 'en', subtitleLanguageExplicit: true,
+    subtitleTranslationRequired: false,
+    audioLayers: [{
+      generationType: 'speech', prompt: '夜が明ける。', speechLanguage: 'en',
+      languageCode: 'en', subtitleLanguage: 'en', subtitleTranslationRequired: false,
+      subtitleText: '夜が明ける。', subtitleAlignmentMap: [],
+      selectedLocalAudioLink: 'assets_v2/audio/existing-japanese-speech.mp3',
+      generationStatus: 'COMPLETED', speakerCharacterName: 'Narrator',
+    }],
+  };
+  const result = await __testOnly__.prepareSubtitleLanguageMetadataForAddition({
+    clonedSession, subtitleLanguage: 'en',
+    translateSpeechImpl: async (_text, targetLanguage, _model, options) => {
+      assert.equal(targetLanguage, 'English');
+      assert.equal(options.detectSourceLanguage, true);
+      return {
+        sourceLanguage: 'ja', translationRequired: true, text: 'Dawn breaks.',
+        subtitleAlignmentMap: [{ sourceText: '夜が明ける。', translatedText: 'Dawn breaks.' }],
+        subtitleSpeakerCharacterName: 'Narrator',
+      };
+    },
+  });
+  assert.equal(result.metadataUpdatedCount, 1);
+  assert.equal(clonedSession.subtitleLanguage, 'en');
+  assert.equal(clonedSession.subtitleTranslationRequired, true);
+  assert.equal(clonedSession.audioLayers[0].speechLanguage, 'ja');
+  assert.equal(clonedSession.audioLayers[0].subtitleText, 'Dawn breaks.');
+  assert.equal(clonedSession.audioLayers[0].generationStatus, 'COMPLETED');
+  assert.equal(clonedSession.audioLayers[0].selectedLocalAudioLink, 'assets_v2/audio/existing-japanese-speech.mp3');
+});
+
 test('add subtitles prep preserves legacy metadata when target language is omitted', async () => {
   const clonedSession = {
     sessionLanguage: 'en',

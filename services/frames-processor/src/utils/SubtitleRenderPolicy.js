@@ -669,6 +669,40 @@ export function isMappedTranslatedSubtitleItem(item = {}) {
   );
 }
 
+function hasExplicitSessionSubtitleSelection(session = {}) {
+  return session.subtitleLanguageExplicit === true || session.subtitle_language_explicit === true;
+}
+
+function getExplicitSessionSubtitleLanguage(session = {}) {
+  return (
+    hasExplicitSessionSubtitleSelection(session) ||
+    session.subtitleTranslationRequired === true ||
+    session.subtitle_translation_required === true
+  ) ? firstConcreteLanguage(session.subtitleLanguage, session.subtitle_language) : '';
+}
+
+function getTranslatedSubtitlePayloads(session, item, audioLayer) {
+  const targetLanguage = getExplicitSessionSubtitleLanguage(session);
+  if (!targetLanguage || !hasExplicitSessionSubtitleSelection(session)) {
+    return { item, audioLayer };
+  }
+
+  const target = normalizeComparableSubtitleLanguage(targetLanguage);
+  const matchesTarget = (payload) => normalizeComparableSubtitleLanguage(firstConcreteLanguage(
+    payload.subtitleLanguage,
+    payload.subtitle_language,
+  )) === target;
+  const targetItem = matchesTarget(item) ? item : {};
+  return {
+    // Normal transcript items contain source speech in text/words. They can
+    // supply timings, but only a labelled translated cue can supply its text.
+    item: isExplicitMappedSubtitleItem(targetItem) || isExplicitStaticSubtitleItem(targetItem)
+      ? targetItem
+      : { ...targetItem, text: '' },
+    audioLayer: matchesTarget(audioLayer) ? audioLayer : {},
+  };
+}
+
 export function getSubtitleTranslationContext(session = {}, item = {}) {
   const audioLayer = findItemAudioLayer(session, item) || {};
   const audioLanguage = firstConcreteLanguage(
@@ -683,6 +717,7 @@ export function getSubtitleTranslationContext(session = {}, item = {}) {
     session.language,
   );
   const subtitleLanguage = firstConcreteLanguage(
+    getExplicitSessionSubtitleLanguage(session),
     item.subtitleLanguage,
     item.subtitle_language,
     audioLayer.subtitleLanguage,
@@ -809,18 +844,19 @@ function getSafeSubtitleFonts(item, targetLanguage) {
 }
 
 function prepareMappedSubtitleItem(item, session, translationContext, audioLayer) {
-  const alignmentMap = getSubtitleAlignmentMap(item, audioLayer);
+  const targetPayloads = getTranslatedSubtitlePayloads(session, item, audioLayer);
+  const alignmentMap = getSubtitleAlignmentMap(targetPayloads.item, targetPayloads.audioLayer);
   const targetLanguage = firstConcreteLanguage(
+    translationContext.subtitleLanguage,
     item.subtitleLanguage,
     item.subtitle_language,
-    translationContext.subtitleLanguage,
     translationContext.audioLanguage,
   );
-  let translatedText = getTranslatedSubtitleText(item, audioLayer, alignmentMap);
+  let translatedText = getTranslatedSubtitleText(targetPayloads.item, targetPayloads.audioLayer, alignmentMap);
   let timedWords = normalizeTimedWords(item.words);
 
   const itemAlreadyMapped = (
-    isExplicitMappedSubtitleItem(item) ||
+    isExplicitMappedSubtitleItem(targetPayloads.item) ||
     wordsMatchTranslatedText(timedWords, translatedText)
   );
 
@@ -875,7 +911,7 @@ function prepareMappedSubtitleItem(item, session, translationContext, audioLayer
     targetLanguage,
   );
   const breakTextWidth = existingConfig.breakTextWidth ?? item.breakTextWidth;
-  const speaker = getLocalizedSpeakerName(item, audioLayer);
+  const speaker = getLocalizedSpeakerName(targetPayloads.item, targetPayloads.audioLayer);
   const { animation: _ignoredAnimation, ...itemWithoutLegacyAnimation } = item;
 
   return {
@@ -1169,11 +1205,12 @@ function prepareStaticSubtitleItem(
   { fullTextFallback = false } = {},
 ) {
   const audioLayer = findItemAudioLayer(session, item) || {};
-  const alignmentMap = getSubtitleAlignmentMap(item, audioLayer);
+  const targetPayloads = getTranslatedSubtitlePayloads(session, item, audioLayer);
+  const alignmentMap = getSubtitleAlignmentMap(targetPayloads.item, targetPayloads.audioLayer);
   const targetLanguage = firstConcreteLanguage(
+    translationContext.subtitleLanguage,
     item.subtitleLanguage,
     item.subtitle_language,
-    translationContext.subtitleLanguage,
     translationContext.audioLanguage,
   );
   const { existingConfig, fontFamily, speakerFontFamily } = getSafeSubtitleFonts(
@@ -1181,10 +1218,13 @@ function prepareStaticSubtitleItem(
     targetLanguage,
   );
   const breakTextWidth = existingConfig.breakTextWidth ?? item.breakTextWidth;
-  const speaker = getLocalizedSpeakerName(item, audioLayer);
+  const speaker = getLocalizedSpeakerName(targetPayloads.item, targetPayloads.audioLayer);
   const translatedText = translationContext.isTranslated
-    ? getStaticTranslatedSubtitleText(item, audioLayer, alignmentMap)
+    ? getStaticTranslatedSubtitleText(targetPayloads.item, targetPayloads.audioLayer, alignmentMap)
     : firstNonEmptyString(item.text);
+  if (translationContext.isTranslated && getExplicitSessionSubtitleLanguage(session) && !translatedText) {
+    return null;
+  }
   const { animation: _ignoredAnimation, ...itemWithoutLegacyAnimation } = item;
 
   return {
@@ -1513,11 +1553,12 @@ export function prepareLayerSubtitlesForRendering(layer = {}, session = {}) {
     }
 
     changed = true;
-    return [enrichSubtitleTimingMetadata(
+    const preparedItem = enrichSubtitleTimingMetadata(
       prepareStaticSubtitleItem(item, session, translationContext),
       layer,
       session,
-    )];
+    );
+    return preparedItem ? [preparedItem] : [];
   });
 
   if (!changed) {

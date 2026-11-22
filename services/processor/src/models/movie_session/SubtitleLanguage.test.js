@@ -206,6 +206,129 @@ test('subtitle rerun language selection respects each speech layer language', ()
   assert.equal(session.subtitleTranslationRequired, false);
 });
 
+test('subtitle rerun repairs legacy Japanese speech mislabeled as the selected English subtitle language', async () => {
+  const session = {
+    sessionLanguage: 'ja',
+    subtitleLanguage: 'en',
+    subtitleLanguageExplicit: true,
+    subtitleTranslationRequired: false,
+    audioLayers: [{
+      generationType: 'speech',
+      prompt: '夜が明ける。',
+      speechLanguage: 'en',
+      languageCode: 'en',
+      subtitleLanguage: 'en',
+      subtitleTranslationRequired: false,
+      subtitleText: '夜が明ける。',
+      subtitleAlignmentMap: [],
+      transcriptAlignment: { languageCode: 'en', words: [{ word: 'old', start: 0, end: 1 }] },
+      speakerCharacterName: 'Narrator',
+    }],
+  };
+  const selection = applySubtitleLanguageSelectionForRerun(session, { subtitle_language: 'en' });
+  assert.equal(selection.translationRequired, true);
+  assert.equal(session.audioLayers[0].subtitleText, null);
+  const calls = [];
+  await backfillTranslatedSubtitleMetadataForRerun(session.audioLayers, {
+    sessionSpeechLanguage: session.sessionLanguage,
+    sessionSubtitleLanguage: session.subtitleLanguage,
+    sessionTranslationRequired: session.subtitleTranslationRequired,
+    translateSpeech: async (text, targetLanguage, _model, options) => {
+      calls.push({ text, targetLanguage, options });
+      return {
+        sourceLanguage: 'ja',
+        translationRequired: true,
+        text: 'Dawn breaks.',
+        subtitleAlignmentMap: [{ sourceText: '夜が明ける。', translatedText: 'Dawn breaks.' }],
+        subtitleSpeakerCharacterName: 'Narrator',
+      };
+    },
+  });
+  refreshSessionSubtitleTranslationRequired(session);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].targetLanguage, 'English');
+  assert.equal(calls[0].options.detectSourceLanguage, true);
+  assert.equal(calls[0].options.returnMetadata, true);
+  assert.equal(session.subtitleTranslationRequired, true);
+  assert.equal(session.audioLayers[0].speechLanguage, 'ja');
+  assert.equal(session.audioLayers[0].subtitleLanguage, 'en');
+  assert.equal(session.audioLayers[0].subtitleText, 'Dawn breaks.');
+  assert.equal(session.audioLayers[0].transcriptAlignment, null);
+  assert.deepEqual(session.audioLayers[0].subtitleAlignmentMap, [
+    { sourceText: '夜が明ける。', translatedText: 'Dawn breaks.' },
+  ]);
+});
+
+test('subtitle rerun backfill detects conflicting legacy metadata even when all translation flags are false', async () => {
+  const speechLayer = {
+    generationType: 'speech', prompt: '夜が明ける。', speechLanguage: 'en',
+    languageCode: 'en', subtitleLanguage: 'en', subtitleTranslationRequired: false,
+    subtitleText: '夜が明ける。', subtitleAlignmentMap: [],
+  };
+  const result = await backfillTranslatedSubtitleMetadataForRerun([speechLayer], {
+    sessionSpeechLanguage: 'ja', sessionSubtitleLanguage: 'en', sessionTranslationRequired: false,
+    translateSpeech: async (_text, _language, _model, options) => {
+      assert.equal(options.detectSourceLanguage, true);
+      return {
+        sourceLanguage: 'jpn', text: 'Dawn breaks.',
+        subtitleAlignmentMap: [{ sourceText: '夜が明ける。', translatedText: 'Dawn breaks.' }],
+      };
+    },
+  });
+  assert.equal(result.updatedCount, 1);
+  assert.equal(speechLayer.speechLanguage, 'ja');
+  assert.equal(speechLayer.subtitleLanguage, 'en');
+  assert.equal(speechLayer.subtitleTranslationRequired, true);
+  assert.equal(speechLayer.subtitleText, 'Dawn breaks.');
+});
+
+test('conflicting session language does not translate genuine English speech into the session language', async () => {
+  const session = {
+    sessionLanguage: 'ja',
+    audioLayers: [{
+      generationType: 'speech', prompt: 'Keep this English sentence exactly.',
+      speechLanguage: 'en', languageCode: 'en', subtitleLanguage: 'en',
+    }],
+  };
+  let detectionCalls = 0;
+  applySubtitleLanguageSelectionForRerun(session, { subtitleLanguage: 'en' });
+  await backfillTranslatedSubtitleMetadataForRerun(session.audioLayers, {
+    sessionSpeechLanguage: session.sessionLanguage,
+    sessionSubtitleLanguage: session.subtitleLanguage,
+    sessionTranslationRequired: session.subtitleTranslationRequired,
+    translateSpeech: async (_text, targetLanguage, _model, options) => {
+      detectionCalls += 1;
+      assert.equal(targetLanguage, 'English');
+      assert.equal(options.detectSourceLanguage, true);
+      return {
+        sourceLanguage: 'en', translationRequired: false,
+        text: 'An unnecessary rewritten sentence must be ignored.',
+      };
+    },
+  });
+  refreshSessionSubtitleTranslationRequired(session);
+  assert.equal(detectionCalls, 1);
+  assert.equal(session.subtitleTranslationRequired, false);
+  assert.equal(session.audioLayers[0].speechLanguage, 'en');
+  assert.equal(session.audioLayers[0].subtitleLanguage, 'en');
+  assert.equal(session.audioLayers[0].subtitleText, 'Keep this English sentence exactly.');
+  assert.deepEqual(session.audioLayers[0].subtitleAlignmentMap, []);
+});
+
+test('conflicting speech language repair rejects missing translated alignment without changing the layer', async () => {
+  const speechLayer = {
+    generationType: 'speech', prompt: '夜が明ける。', speechLanguage: 'en',
+    languageCode: 'en', subtitleLanguage: 'en', subtitleTranslationRequired: false,
+    subtitleText: '夜が明ける。', subtitleAlignmentMap: [],
+  };
+  const original = structuredClone(speechLayer);
+  await assert.rejects(backfillTranslatedSubtitleMetadataForRerun([speechLayer], {
+    sessionSpeechLanguage: 'ja', sessionSubtitleLanguage: 'en',
+    translateSpeech: async () => ({ sourceLanguage: 'ja', text: 'Dawn breaks.' }),
+  }), /empty alignment map/);
+  assert.deepEqual(speechLayer, original);
+});
+
 test('subtitle rerun backfills known-language translation metadata and preserves speaker identity', async () => {
   const speechLayer = {
     generationType: 'speech',

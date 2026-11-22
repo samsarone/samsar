@@ -259,6 +259,24 @@ describe('VidGenie project loading and wizard requests', () => {
     expect(payload.input).toMatchObject({ enable_subtitles: true, subtitle_language: 'th' });
   });
 
+  it('submits English captions independently from Japanese speech in a normal Vidgenie request', async () => {
+    await mountEditor();
+    const audioLanguageControl = screen.getByText('Audio language').parentElement;
+    fireEvent.keyDown(within(audioLanguageControl).getByRole('combobox'), { key: 'ArrowDown' });
+    fireEvent.click(screen.getByRole('option', { name: 'Japanese', exact: true }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Subtitles', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
+    fireEvent.change(screen.getByLabelText('Subtitle language'), { target: { value: 'en' } });
+
+    await submitPrompt('日本語のナレーションと英語の字幕を付けてください。');
+
+    expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/step\/text_to_video$/), expect.objectContaining({
+      input: expect.objectContaining({
+        language: 'ja', enable_subtitles: true, subtitle_language: 'en', session_id: 'project-1',
+      }),
+    }), expect.any(Object));
+  });
+
   it('reports server request failures and restores the submit control', async () => {
     axios.post.mockRejectedValue({ response: { data: { message: 'Insufficient generation credits' } } });
     await mountEditor();
@@ -497,6 +515,15 @@ describe('VidGenie image-list requests and JSON editor validation', () => {
     const payload = axios.post.mock.calls[0][1];
     expect(payload.endpoint).toBeUndefined();
     expect(payload.input).toMatchObject({ aspect_ratio: '9:16', enable_subtitles: true, subtitle_language: 'th', session_id: 'project-1' });
+  });
+
+  it('preserves English subtitle selection with Japanese speech in JSON mode', async () => {
+    await openJson({ input: { ...validJson(), language: 'JP', enableSubtitles: true, subtitleLanguage: 'English' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Submit', exact: true })); });
+
+    expect(axios.post.mock.calls[0][1].input).toMatchObject({
+      language: 'ja', enable_subtitles: true, subtitle_language: 'en', session_id: 'project-1',
+    });
   });
 });
 
