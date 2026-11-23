@@ -145,10 +145,26 @@ services/generator/image_*.png
 !apps/samsar-client/src/fonts/inter-latin-opsz-italic.woff2
 !apps/samsar-client/src/fonts/jetbrains-mono-latin-wght-normal.woff2
 
-# Browser icon required by the Docker-distributed client.
+# Public artwork shipped with the client.
 !apps/samsar-client/public/
 apps/samsar-client/public/*
 !apps/samsar-client/public/favicon.ico
+!apps/samsar-client/public/images/
+apps/samsar-client/public/images/*
+!apps/samsar-client/public/images/splash/
+apps/samsar-client/public/images/splash/*
+!apps/samsar-client/public/images/splash/samsar-worlds-1600.jpg
+!apps/samsar-client/public/images/splash/samsar-worlds-1600.webp
+!apps/samsar-client/public/images/splash/samsar-worlds-960.webp
+!apps/samsar-client/public/images/splash/samsar-worlds-portrait-540.webp
+!apps/samsar-client/public/images/splash/samsar-worlds-portrait-900.webp
+!apps/samsar-client/public/og/
+apps/samsar-client/public/og/*
+!apps/samsar-client/public/og/samsar-generative-video-1080x1080.jpg
+!apps/samsar-client/public/og/samsar-generative-video-1200x630.jpg
+
+# The campaign design notes and masters live together in the source project.
+/apps/samsar-client/design/splash/
 
 # README architecture diagrams
 !assets/

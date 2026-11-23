@@ -4,7 +4,7 @@ import { Suspense, lazy } from 'react';
 import axios from 'axios';
 import { useUser } from '../../contexts/UserContext';
 import CommonButton from './CommonButton.tsx';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAlertDialog } from '../../contexts/AlertDialogContext';
 import { IoMdLogIn } from 'react-icons/io';
 import { useColorMode } from '../../contexts/ColorMode.jsx';
@@ -51,7 +51,6 @@ export default function MobileTopNav(props) {
   const isStudioEditor = location.pathname === '/video' || location.pathname.startsWith('/video/');
   const isAudioEditor = location.pathname.startsWith('/audio/studio');
   const isGenerationsView = location.pathname.startsWith('/generations');
-  const isCreatePage = location.pathname === '/create';
 
   const navShell =
     `border-b text-fg ${colorMode === 'dark' ? 'border-[#3a4050] bg-[#12141c]/94 shadow-[0_10px_28px_rgba(0,0,0,0.32)] backdrop-blur-xl' : 'bg-gradient-to-r from-[#e9edf7] via-[#dfe7f5] to-[#eef3fb] border-[#d7deef]'}`;
@@ -89,15 +88,6 @@ export default function MobileTopNav(props) {
 
   const { user, userFetching, userInitiated } = useUser();
   const navigate = useNavigate();
-  const createShortcut = !user?.isExternalUser ? (
-    <Link
-      to="/create"
-      aria-current={isCreatePage ? 'page' : undefined}
-      className={`inline-flex min-h-10 shrink-0 items-center justify-center rounded-full border px-3 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f6c453] ${isCreatePage
-        ? 'border-[#f6c453]/60 bg-[#f6c453]/15 text-fg'
-        : 'border-line-control bg-surface-raised text-fg-body hover:bg-surface-hover'}`}
-    >{uiText("Create")}</Link>
-  ) : null;
   const addNewVidGPTSession = onNewVidgenieSession || (() => {
     createBlankVidgenieSession(PROCESSOR_SERVER, getHeaders()).then(sessionId => {
       if (sessionId) navigate(`/vidgenie/${sessionId}`);
@@ -354,6 +344,8 @@ export default function MobileTopNav(props) {
             openVideoEditor={openVideoEditor}
             openImageEditor={openImageEditor}
             openAudioEditor={openAudioEditor}
+            createPageHref={!user.isExternalUser ? '/create' : undefined}
+            isCreatePage={location.pathname === '/create'}
             projectActionLabel={isImageEditor ? uiText("New image project") : (isAudioEditor && openAudioActions ? uiText("Audio actions") : (isStudioEditor ? uiText("New Studio project") : null))}
             onProjectAction={isAudioEditor ? openAudioActions : undefined}
             compact
@@ -361,6 +353,17 @@ export default function MobileTopNav(props) {
         </Suspense>
       </div>
 
+    );
+  } else if (!userFetching && userInitiated !== false && !user?.isExternalUser) {
+    addSessionButton = (
+      <Suspense fallback={<div className="h-11 w-[118px]" />}>
+        <AddSessionDropdown
+          createPageHref="/create"
+          isCreatePage={location.pathname === '/create'}
+          showProjectActions={false}
+          compact
+        />
+      </Suspense>
     );
   }
 
@@ -371,7 +374,6 @@ export default function MobileTopNav(props) {
           <BrandLogo onClick={gotoHome} className={isGenerationsView ? '' : 'mt-1'} />
           {isGenerationsView && (
             <div className="flex min-w-0 items-center justify-end gap-2">
-              {createShortcut}
               <div className="text-xs inline-flex items-center">
                 {addSessionButton}
               </div>
@@ -381,7 +383,6 @@ export default function MobileTopNav(props) {
         </div>
         {!isGenerationsView && (
           <div className="flex min-w-0 basis-2/3 items-center justify-end gap-2 pr-2">
-            {createShortcut}
             <div className="text-xs inline-flex items-center">
               <div>{addSessionButton}</div>
             </div>

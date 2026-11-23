@@ -117,7 +117,8 @@ it('saves account defaults then uses them when Create submits a new video', asyn
   await expect.element(page.getByRole('form', { name: 'Create defaults', exact: true }).getByRole('status')).toHaveTextContent('Create defaults saved.');
   expect(axios.put).toHaveBeenCalledOnce();
   expect(fixture.currentUser.createDefaults).toMatchObject({ inferenceModel: 'gpt-6.2-astra', imageModel: 'SEEDREAM', videoModel: 'RUNWAYML', duration: 60, aspectRatio: '9:16', inferenceEffort: 'xhigh', enableSubtitles: true });
-  await page.getByRole('link', { name: 'Create', exact: true }).click();
+  await page.getByRole('button', { name: 'View Projects', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Create', exact: true }).click();
   await expect.element(page.getByRole('heading', { name: 'Create video', exact: true })).toBeVisible();
   await expect.element(page.getByRole('combobox', { name: 'Duration', exact: true })).toHaveValue('60');
   await expect.element(page.getByRole('combobox', { name: 'Aspect ratio', exact: true })).toHaveValue('9:16');

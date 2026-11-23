@@ -2,10 +2,11 @@ import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { translateText as uiText } from '../../utils/localization.js';
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
 import { Menu } from '@headlessui/react';
-import { FaPlus, FaStar, FaTimes } from 'react-icons/fa';
+import { FaStar, FaTimes } from 'react-icons/fa';
 import { useColorMode } from '../../contexts/ColorMode.jsx';
-import { MdExplore, MdCreateNewFolder } from 'react-icons/md';
+import { MdAutoAwesome, MdExplore, MdCreateNewFolder, MdFolderOpen, MdKeyboardArrowDown } from 'react-icons/md';
 import SingleSelect from './SingleSelect.jsx';
 import {
   aspectRatioOptions as defaultAspectRatioOptions,
@@ -73,6 +74,9 @@ function AddSessionDropdown(props) {
     openVideoEditor,
     openImageEditor,
     openAudioEditor,
+    createPageHref,
+    isCreatePage = false,
+    showProjectActions = true,
     projectActionLabel,
     onProjectAction,
     useImageProjectModal = false,
@@ -122,6 +126,10 @@ function AddSessionDropdown(props) {
     : 'bg-slate-100 text-slate-800 hover:bg-white';
   const modalPrimaryButton = `text-on-accent ${colorMode === 'dark' ? 'bg-gradient-to-r from-[#ff4655] to-[#ff6b4a] hover:from-[#ff6572] hover:to-[#ff8066] hover:shadow-[0_10px_26px_rgba(255,70,85,0.22)]' : 'bg-rose-500 hover:bg-rose-600'}`;
   const triggerShadow = colorMode === 'dark' ? 'shadow-[0_8px_18px_rgba(3,12,28,0.18)]' : '';
+  const projectTriggerSurface = colorMode === 'dark'
+    ? 'border-[#f6c453]/45 bg-[#f6c453]/10 text-[#ffe0a3] hover:border-[#f6c453]/75 hover:bg-[#f6c453]/15 hover:shadow-[0_4px_18px_rgba(246,196,83,0.10)]'
+    : 'border-[#c69723]/35 bg-[#fff7df] text-[#664d16] hover:border-[#c69723]/60 hover:bg-[#fff0c0] hover:shadow-sm';
+  const menuItemMotion = 'transition-[background-color,color,scale] duration-150 active:scale-[0.98] motion-reduce:scale-100 motion-reduce:transition-none';
 
   const selectedAspectRatio = aspectRatio?.value || aspectRatioOptions?.[0]?.value || '1:1';
   const selectedCanvasDimensions = useMemo(
@@ -358,7 +366,7 @@ function AddSessionDropdown(props) {
 
   return (
     <div className="inline-flex max-w-full items-center gap-2 text-left">
-      {projectActionLabel && (
+      {showProjectActions && projectActionLabel && (
         <button
           type="button"
           onClick={onProjectAction || (useImageProjectModal ? openProjectModal : openVideoProjectModal)}
@@ -373,44 +381,60 @@ function AddSessionDropdown(props) {
       <Menu as="div" className="relative inline-block max-w-full">
         <Menu.Button
           type="button"
-          title={t("common.newProject")}
-          className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-lg py-1.5 text-sm font-semibold transition-all duration-200 ease-out hover:-translate-y-[1px] focus:outline-none sm:min-h-[38px] ${compact ? 'w-11 min-w-11 max-w-11 px-0 sm:w-[38px] sm:min-w-[38px] sm:max-w-[38px]' : 'w-full min-w-[110px] max-w-[144px] px-3'} ${textColor} ${bgColor} ${triggerShadow}`}
+          title={t("common.viewProjects")}
+          className={`group inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border py-1.5 font-semibold transition-[background-color,border-color,box-shadow,translate,scale] duration-200 ease-out hover:-translate-y-px active:translate-y-0 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f6c453] focus-visible:ring-offset-2 focus-visible:ring-offset-canvas sm:min-h-[38px] motion-reduce:translate-y-0 motion-reduce:scale-100 motion-reduce:transition-none ${compact ? 'min-w-0 px-2.5' : 'min-w-[138px] px-3'} ${projectTriggerSurface}`}
         >
-          <FaPlus className="shrink-0" />
-          <span className={compact ? 'sr-only' : 'truncate text-xs'}>{t("common.newProject")}</span>
+          <MdFolderOpen aria-hidden="true" className="size-4 shrink-0" />
+          <span className="truncate text-xs">{t("common.viewProjects")}</span>
+          <MdKeyboardArrowDown aria-hidden="true" className="size-4 shrink-0 transition-transform duration-200 group-aria-expanded:rotate-180 motion-reduce:transition-none" />
         </Menu.Button>
 
         <Menu.Items
           anchor={{ to: 'bottom end', gap: 8 }}
           portal
-          aria-label={t('common.newProject')}
+          aria-label={t('common.viewProjects')}
           className={`z-[1220] max-h-[calc(100dvh-24px)] min-w-[13rem] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg p-1 ${menuSurface}`}
         >
-          {editorActions.map((action) => (
+          {createPageHref && <>
+            <Menu.Item>
+              {({ active }) => (
+                <Link
+                  to={createPageHref}
+                  aria-current={isCreatePage ? 'page' : undefined}
+                  className={`flex min-h-10 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold outline-none ${menuItemSurface} ${menuItemMotion} ${active || isCreatePage ? 'bg-surface-hover text-fg' : ''}`}
+                >
+                  <MdAutoAwesome aria-hidden="true" className="size-4 shrink-0 text-accent" />
+                  {uiText("Create")}
+                </Link>
+              )}
+            </Menu.Item>
+            {showProjectActions && <div role="separator" className="my-1 border-t border-line" />}
+          </>}
+          {showProjectActions && editorActions.map((action) => (
             <Menu.Item key={action.label}>
               {({ active }) => (
                 <button
                   type="button"
                   onClick={action.onSelect}
-                  className={`block w-full rounded-md px-3 py-2 text-left text-xs outline-none ${menuItemSurface} ${active ? 'bg-surface-hover' : ''}`}
+                  className={`block w-full rounded-md px-3 py-2 text-left text-xs outline-none ${menuItemSurface} ${menuItemMotion} ${active ? 'bg-surface-hover' : ''}`}
                 >
                   <action.icon className="mb-1 inline-flex" /> {action.label}
                 </button>
               )}
             </Menu.Item>
           ))}
-          <Menu.Item>
+          {showProjectActions && <Menu.Item>
             {({ active }) => (
               <button
                 type="button"
                 onClick={viewSessions}
-                className={`flex w-full items-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-left text-xs outline-none ${menuItemSurface} ${active ? 'bg-surface-hover' : ''}`}
+                className={`flex w-full items-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-left text-xs outline-none ${menuItemSurface} ${menuItemMotion} ${active ? 'bg-surface-hover' : ''}`}
               >
                 <MdExplore className="shrink-0" />
                 <span className="whitespace-nowrap">{t("common.viewProjects")}</span>
               </button>
             )}
-          </Menu.Item>
+          </Menu.Item>}
         </Menu.Items>
       </Menu>
 

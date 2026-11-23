@@ -1,0 +1,64 @@
+.create-gallery-skeleton-block {
+  position: relative;
+  overflow: hidden;
+}
+
+.create-gallery-skeleton-block::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  background: linear-gradient(100deg, transparent 20%, var(--color-surface-raised) 50%, transparent 80%);
+  opacity: 0.65;
+  animation: create-gallery-shimmer 1.8s ease-in-out infinite;
+}
+
+.create-publication-card {
+  animation: create-gallery-reveal 240ms ease-out backwards;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+@media (hover: hover) {
+  .create-publication-card:hover {
+    transform: translateY(-2px);
+  }
+}
+
+.create-publication-card:active {
+  transform: scale(0.985);
+}
+
+.create-publication-poster {
+  transition: opacity 200ms ease;
+}
+
+.create-publication-dialog {
+  animation: create-gallery-reveal 180ms ease-out both;
+}
+
+@keyframes create-gallery-shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
+@keyframes create-gallery-reveal {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .create-gallery-skeleton-block::after,
+  .create-publication-card,
+  .create-publication-dialog {
+    animation: none;
+  }
+
+  .create-publication-card,
+  .create-publication-poster {
+    transition: none;
+  }
+
+  .create-publication-card:hover,
+  .create-publication-card:active {
+    transform: none;
+  }
+}

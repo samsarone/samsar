@@ -44,7 +44,8 @@ describe('simple create landing', () => {
     expect(screen.getByRole('combobox', { name: 'Duration' })).toHaveValue('30');
     expect(screen.getByRole('combobox', { name: 'Aspect ratio' })).toHaveValue('16:9');
     expect(screen.getByRole('status', { name: 'Render estimate' })).toHaveTextContent('1,080 credits');
-    expect(screen.getByRole('link', { name: 'Defaults' })).toHaveAttribute('href', '/account/settings/defaults');
+    expect(screen.getByRole('button', { name: 'About Create defaults' })).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'Claude Opus 5.5' })).toBeNull();
     expect(screen.queryByRole('checkbox')).toBeNull();
     expect(screen.getByRole('textbox')).toHaveAttribute('maxlength', '4000');
     expect(screen.getByRole('button', { name: 'Create video' })).toBeDisabled();
@@ -204,12 +205,13 @@ it('explains saved defaults and links to account defaults without changing rende
   fireEvent.change(screen.getByRole('combobox', { name: 'Duration' }), { target: { value: '90' } });
   expect(screen.getByRole('combobox', { name: 'Duration' })).toHaveAttribute('title', 'Saved default: 60 seconds. Changes here apply only to this video.');
   expect(screen.getByRole('combobox', { name: 'Aspect ratio' })).toHaveAttribute('title', 'Saved default: 9:16. Changes here apply only to this video.');
-  const model = screen.getByRole('link', { name: 'Claude Opus 5.5' });
-  expect(model).toHaveAttribute('href', '/account/settings/defaults');
-  expect(model).toHaveAttribute('title', 'Text model: Claude Opus 5.5. Change in Defaults.');
+  expect(screen.queryByRole('link', { name: 'Claude Opus 5.5' })).toBeNull();
   expect(screen.queryByRole('dialog', { name: 'Create defaults' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'About Create defaults' }));
   const guidance = await screen.findByRole('dialog', { name: 'Create defaults' });
+  const model = screen.getByRole('link', { name: 'Claude Opus 5.5' });
+  expect(model).toHaveAttribute('href', '/account/settings/defaults');
+  expect(model).toHaveAttribute('title', 'Text model: Claude Opus 5.5. Change in Defaults.');
   expect(guidance).toHaveTextContent('Saved defaults: 60s · 9:16');
   expect(guidance).toHaveTextContent('Subtitles: On');
   expect(guidance).toHaveTextContent('Duration and aspect ratio changes here apply only to this video.');
@@ -217,5 +219,25 @@ it('explains saved defaults and links to account defaults without changing rende
   expect(screen.getByRole('combobox', { name: 'Duration' })).toHaveValue('90');
   fireEvent.click(screen.getByRole('link', { name: 'Change defaults' }));
   expect(screen.getByLabelText('Current route')).toHaveTextContent('/account/settings/defaults');
+  expect(axios.post).not.toHaveBeenCalled();
+});
+
+it.each(['profile', 'models'])('shows a composer skeleton until %s defaults resolve without losing the draft', async (loading) => {
+  sessionStorage.setItem('samsarCreatePrompt', 'A saved idea');
+  if (loading === 'profile') scenario.user = { user: null, userInitiated: false, userFetching: true };
+  else scenario.deployment.isLoading = true;
+  const view = mount();
+  const status = screen.getByRole('status', { name: 'Loading...' });
+  expect(status).toHaveAttribute('aria-busy', 'true');
+  expect(status.querySelectorAll('button, input, select, textarea, a')).toHaveLength(0);
+  expect(screen.queryByRole('textbox')).toBeNull();
+  expect(screen.queryByRole('status', { name: 'Render estimate' })).toBeNull();
+  scenario.user = { user: { _id: 'user', createDefaults: { duration: 60, aspectRatio: '9:16' } }, userInitiated: true, userFetching: false };
+  scenario.deployment.isLoading = false;
+  view.rerender(<MemoryRouter><CreateLanding /><CurrentRoute /></MemoryRouter>);
+  expect(screen.queryByRole('status', { name: 'Loading...' })).toBeNull();
+  expect(screen.getByRole('textbox')).toHaveValue('A saved idea');
+  expect(screen.getByRole('combobox', { name: 'Duration' })).toHaveValue('60');
+  expect(screen.getByRole('combobox', { name: 'Aspect ratio' })).toHaveValue('9:16');
   expect(axios.post).not.toHaveBeenCalled();
 });

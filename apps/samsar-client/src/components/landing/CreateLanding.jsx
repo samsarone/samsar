@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { MdArrowForward, MdCenterFocusStrong, MdCloseFullscreen, MdOutlineTune, MdAutoAwesome, MdInfoOutline } from 'react-icons/md';
+import { MdArrowForward, MdAspectRatio, MdCenterFocusStrong, MdCloseFullscreen, MdOutlineTune, MdAutoAwesome, MdSchedule } from 'react-icons/md';
 import { Popover, PopoverButton, PopoverPanel } from '@headlessui/react';
 import { FaSpinner } from 'react-icons/fa';
 import axios from 'axios';
@@ -20,13 +20,16 @@ import { getExpressVideoCreditsPerSecondForRateClass } from '../../constants/pri
 import { isProviderBilledVideoPricing } from '../../utils/videoModelAvailability.mjs';
 import VidgeniePageShell from '../oneshot_editor/VidgeniePageShell.jsx';
 import { IS_STANDALONE_DEPLOYMENT } from '../../utils/environment.jsx';
+import { CreateComposerSkeleton } from './CreateLandingSkeleton.jsx';
+import CreatePublishedGallerySkeleton from './CreatePublishedGallerySkeleton.jsx';
+import './createLanding.css';
 
 const CreatePublishedGallery = lazy(() => import('./CreatePublishedGallery.jsx'));
 const API_SERVER = import.meta.env.VITE_PROCESSOR_API || 'http://localhost:3002';
 const DRAFT_KEY = 'samsarCreatePrompt';
 const PROMPT_LIMIT = 4000;
-const controlClass = 'min-h-11 w-full rounded-lg border border-control-border bg-surface-raised px-3 py-2 text-sm text-fg outline-none transition-colors hover:border-accent/60 focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-50 motion-reduce:transition-none';
-const secondaryClass = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-control-border bg-surface-raised px-3 py-2 text-sm font-medium text-control-fg transition-colors hover:bg-surface-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none';
+const controlClass = 'create-control min-h-11 max-w-full cursor-pointer rounded-lg border border-transparent bg-transparent py-2 pl-8 pr-2 text-xs text-fg-secondary outline-none hover:border-line hover:bg-surface-hover hover:text-fg focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-9';
+const quietActionClass = 'create-control inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg px-2 text-xs text-fg-muted hover:bg-surface-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-9';
 
 function readDraft() {
   try { return sessionStorage.getItem(DRAFT_KEY) || ''; } catch { return ''; }
@@ -144,23 +147,28 @@ export default function CreateLanding() {
   return (
     <VidgeniePageShell>
       <main className="pb-6 pt-4 sm:pt-7">
-        <section className="mx-auto w-full max-w-4xl text-left" aria-labelledby="create-title">
-          <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        {isLoading ? <CreateComposerSkeleton /> : <section className="create-content-enter mx-auto w-full max-w-4xl text-left" aria-labelledby="create-title">
+          <div className="create-splash-intro mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <picture className="create-splash-artwork" aria-hidden="true">
+              <source media="(max-width: 640px)" type="image/webp" srcSet="/images/splash/samsar-worlds-portrait-540.webp 540w, /images/splash/samsar-worlds-portrait-900.webp 900w" sizes="100vw" />
+              <source type="image/webp" srcSet="/images/splash/samsar-worlds-960.webp 960w, /images/splash/samsar-worlds-1600.webp 1600w" sizes="(max-width: 1024px) 100vw, 896px" />
+              <img src="/images/splash/samsar-worlds-1600.jpg" alt="" width="1600" height="900" fetchpriority="high" decoding="async" />
+            </picture>
             <div>
               <p className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-fg-muted"><MdAutoAwesome aria-hidden="true" />{uiText('Express creator')}</p>
               <h1 id="create-title" className="text-2xl font-semibold tracking-tight sm:text-3xl">{uiText('Create video')}</h1>
               <p className="mt-2 max-w-lg text-sm leading-6 text-fg-secondary">{uiText('Describe your idea. Bring it to life in one step.')}</p>
             </div>
-            <div role="status" aria-label={uiText('Render estimate')} className="shrink-0 rounded-xl border border-line bg-surface-raised px-4 py-3 sm:text-right">
+            <div role="status" aria-label={uiText('Render estimate')} className="shrink-0 text-xs sm:text-right">
               <p className="text-xs text-fg-muted">{uiText('Estimated render cost')}</p>
-              <p className="mt-1 text-base font-semibold tabular-nums">{providerBilled ? uiText('API charge') : estimatedCredits == null ? uiText('Estimate unavailable') : uiText('{credits} credits', { credits: formatUiNumber(estimatedCredits) })}</p>
+              <p className="mt-1 text-sm font-medium tabular-nums text-fg-secondary">{providerBilled ? uiText('API charge') : estimatedCredits == null ? uiText('Estimate unavailable') : uiText('{credits} credits', { credits: formatUiNumber(estimatedCredits) })}</p>
               {!providerBilled && rate != null && <p className="mt-1 text-xs text-fg-muted">{uiText('{seconds}s × {rate} credits/s', { seconds: duration, rate })}</p>}
             </div>
           </div>
-          <form onSubmit={handleSubmit} onFocusCapture={warmPreview} aria-busy={isSubmitting} className="vidgenie-editor-card relative rounded-2xl border border-line bg-white p-4 text-fg shadow-sm dark:bg-[#181b24]/96 dark:shadow-[0_20px_56px_rgba(0,0,0,0.32)] sm:p-6">
+          <form onSubmit={handleSubmit} onFocusCapture={warmPreview} aria-busy={isSubmitting} className="create-composer vidgenie-editor-card relative rounded-2xl border border-line bg-white p-4 text-fg shadow-sm dark:bg-[#181b24]/96 dark:shadow-[0_20px_56px_rgba(0,0,0,0.32)] sm:p-6">
             <div className="mb-3 flex items-center justify-between gap-3">
               <label htmlFor="create-prompt" className="text-sm font-semibold">{uiText('Describe your video')}</label>
-              <button type="button" aria-pressed={focused} onClick={() => setFocused(!focused)} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-xs text-fg-muted hover:bg-surface-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">
+              <button type="button" aria-pressed={focused} disabled={isSubmitting} onClick={() => setFocused(!focused)} className={quietActionClass}>
                 {focused ? <MdCloseFullscreen aria-hidden="true" className="size-4" /> : <MdCenterFocusStrong aria-hidden="true" className="size-4" />}
                 {focused ? uiText('Exit focus mode') : uiText('Focus mode')}
               </button>
@@ -182,55 +190,58 @@ export default function CreateLanding() {
               <p id="create-prompt-hint">{uiText('Include the subject, visual style, and story.')}</p>
               <span className="shrink-0 tabular-nums" aria-label={uiText('Prompt character count')}>{formatUiNumber(prompt.length)} / {formatUiNumber(PROMPT_LIMIT)}</span>
             </div>
-            <div className="mt-5 grid grid-cols-2 gap-3 sm:max-w-md sm:gap-4">
-              <div>
-                <label htmlFor="create-duration" className="mb-1.5 block text-xs font-medium text-fg-muted">{uiText('Duration')}</label>
+            <div className="mt-3 flex flex-wrap items-center gap-1" role="group" aria-label={`${uiText('Duration')} · ${uiText('Aspect ratio')}`}>
+              <div className="relative min-w-0">
+                <label htmlFor="create-duration" className="sr-only">{uiText('Duration')}</label>
+                <MdSchedule aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-fg-muted" />
                 <select id="create-duration" value={duration} title={uiText('Saved default: {seconds} seconds. Changes here apply only to this video.', { seconds: defaults.duration })} aria-describedby="create-defaults-hint" onChange={(event) => changeOption('duration', Number(event.target.value))} disabled={isSubmitting} className={controlClass}>
                   {CREATE_DURATION_OPTIONS.map((value) => <option key={value} value={value}>{uiText('{seconds} seconds', { seconds: value })}</option>)}
                 </select>
               </div>
-              <div>
-                <label htmlFor="create-aspect-ratio" className="mb-1.5 block text-xs font-medium text-fg-muted">{uiText('Aspect ratio')}</label>
+              <div className="relative min-w-0">
+                <label htmlFor="create-aspect-ratio" className="sr-only">{uiText('Aspect ratio')}</label>
+                <MdAspectRatio aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-fg-muted" />
                 <select id="create-aspect-ratio" value={aspectRatio} title={uiText('Saved default: {ratio}. Changes here apply only to this video.', { ratio: defaults.aspectRatio })} aria-describedby="create-defaults-hint" onChange={(event) => changeOption('aspectRatio', event.target.value)} disabled={isSubmitting} className={controlClass}>
                   {CREATE_ASPECT_RATIOS.map((value) => <option key={value} value={value} disabled={!aspectRatioSupported(value)}>{value === '16:9' ? uiText('Landscape · 16:9') : value === '9:16' ? uiText('Portrait · 9:16') : uiText('Square · 1:1')}</option>)}
                 </select>
               </div>
             </div>
-            <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-fg-secondary" aria-label={uiText('Model settings')}>
-              {[
-                [uiText('Text model'), modelLabel(defaults.inferenceModel, INFERENCE_MODEL_TYPES)],
-                [uiText('Image model'), modelLabel(defaults.imageModel, IMAGE_GENERAITON_MODEL_TYPES)],
-                [uiText('Video model'), modelLabel(defaults.videoModel, VIDEO_GENERATION_MODEL_TYPES)],
-              ].map(([label, value]) => <Link key={label} to="/account/settings/defaults" title={uiText('{setting}: {model}. Change in Defaults.', { setting: label, model: value })} className="rounded-md bg-surface-muted px-2.5 py-1.5 transition-colors hover:bg-surface-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus motion-reduce:transition-none">{value}</Link>)}
-              {defaults.enableSubtitles && <span className="rounded-md bg-surface-muted px-2.5 py-1.5">{uiText('Subtitles on')}</span>}
+            <p id="create-defaults-hint" className="sr-only">{uiText('Saved defaults: {seconds}s · {ratio}', { seconds: defaults.duration, ratio: defaults.aspectRatio })}. {uiText('Duration and aspect ratio changes here apply only to this video.')}</p>
+            {error && <p id="create-error" role="alert" className="create-content-enter mt-4 rounded-lg border border-danger/25 bg-danger/5 px-3 py-2 text-sm text-danger">{error} <Link to="/account/settings/defaults" className="font-medium underline">{uiText('Defaults')}</Link></p>}
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-4">
               <Popover className="relative inline-flex">
-                <PopoverButton type="button" aria-label={uiText('About Create defaults')} title={uiText('View saved defaults')} className="inline-flex size-8 items-center justify-center rounded-full text-fg-muted hover:bg-surface-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">
-                  <MdInfoOutline aria-hidden="true" className="size-4" />
+                <PopoverButton type="button" disabled={isSubmitting} aria-label={uiText('About Create defaults')} title={uiText('View saved defaults')} className={quietActionClass}>
+                  <MdOutlineTune aria-hidden="true" className="size-4" />{uiText('Defaults')}
                 </PopoverButton>
-                <PopoverPanel anchor="bottom end" role="dialog" aria-label={uiText('Create defaults')} className="z-[1300] w-72 max-w-[calc(100vw-1.5rem)] space-y-2 rounded-xl border border-line bg-surface p-4 text-left text-xs leading-5 text-fg-secondary shadow-xl [--anchor-gap:8px] [--anchor-padding:12px]">
+                <PopoverPanel transition anchor="bottom start" role="dialog" aria-label={uiText('Create defaults')} className="z-[1300] w-72 max-w-[calc(100vw-1.5rem)] space-y-2 rounded-xl border border-line bg-surface p-4 text-left text-xs leading-5 text-fg-secondary shadow-xl transition-[opacity,transform] duration-150 data-closed:translate-y-1 data-closed:opacity-0 motion-reduce:transition-none motion-reduce:transform-none [--anchor-gap:8px] [--anchor-padding:12px]">
                   <p className="font-semibold text-fg">{uiText('Saved defaults: {seconds}s · {ratio}', { seconds: defaults.duration, ratio: defaults.aspectRatio })}</p>
+                  <div className="space-y-1.5 border-y border-line py-2" aria-label={uiText('Model settings')}>
+                    {[
+                      [uiText('Text model'), modelLabel(defaults.inferenceModel, INFERENCE_MODEL_TYPES)],
+                      [uiText('Image model'), modelLabel(defaults.imageModel, IMAGE_GENERAITON_MODEL_TYPES)],
+                      [uiText('Video model'), modelLabel(defaults.videoModel, VIDEO_GENERATION_MODEL_TYPES)],
+                    ].map(([label, value]) => <div key={label} className="flex items-baseline justify-between gap-3">
+                      <span className="shrink-0 text-fg-muted">{label}</span>
+                      <Link to="/account/settings/defaults" title={uiText('{setting}: {model}. Change in Defaults.', { setting: label, model: value })} className="create-control min-w-0 rounded text-right hover:text-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">{value}</Link>
+                    </div>)}
+                  </div>
                   <p>{uiText('Subtitles: {state}', { state: defaults.enableSubtitles ? uiText('On') : uiText('Off') })}</p>
                   <p>{uiText('Duration and aspect ratio changes here apply only to this video.')}</p>
                   <Link to="/account/settings/defaults" className="inline-flex min-h-9 items-center gap-1 rounded text-sm font-medium text-fg underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">{uiText('Change defaults')}<MdArrowForward aria-hidden="true" /></Link>
                 </PopoverPanel>
               </Popover>
-            </div>
-            <p id="create-defaults-hint" className="sr-only">{uiText('Saved defaults: {seconds}s · {ratio}', { seconds: defaults.duration, ratio: defaults.aspectRatio })}. {uiText('Duration and aspect ratio changes here apply only to this video.')}</p>
-            {error && <p id="create-error" role="alert" className="mt-4 rounded-lg border border-danger/25 bg-danger/5 px-3 py-2 text-sm text-danger">{error} <Link to="/account/settings/defaults" className="font-medium underline">{uiText('Defaults')}</Link></p>}
-            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
-              <Link to="/account/settings/defaults" className={secondaryClass}><MdOutlineTune aria-hidden="true" className="size-4" />{uiText('Defaults')}</Link>
               <div className="ml-auto flex items-center gap-2">
-                {prompt && <button type="button" disabled={isSubmitting} onClick={() => { setPrompt(''); storeDraft(''); setError(''); promptRef.current?.focus(); }} className="min-h-11 rounded-lg px-3 text-xs text-fg-muted hover:bg-surface-hover hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-50">{uiText('Clear')}</button>}
-                <button type="submit" disabled={isLoading || isSubmitting || !prompt.trim()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-accent-from to-accent-to px-4 py-2.5 text-sm font-semibold text-on-accent transition-all duration-200 hover:from-accent-hover-from hover:to-accent-hover-to hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 dark:shadow-[0_8px_18px_rgba(3,12,28,0.22)] motion-reduce:transition-none motion-reduce:hover:translate-y-0">
+                {prompt && <button type="button" disabled={isSubmitting} onClick={() => { setPrompt(''); storeDraft(''); setError(''); promptRef.current?.focus(); }} className={quietActionClass}>{uiText('Clear')}</button>}
+                <button type="submit" disabled={isSubmitting || !prompt.trim()} className="create-action inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-accent-from to-accent-to px-4 py-2.5 text-sm font-semibold text-on-accent hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface disabled:cursor-not-allowed disabled:opacity-50 dark:shadow-[0_8px_18px_rgba(3,12,28,0.22)]">
                   {isSubmitting ? <FaSpinner aria-hidden="true" className="animate-spin motion-reduce:animate-none" /> : null}
                   {isSubmitting ? uiText('Creating your video...') : uiText('Create video')}
-                  {!isSubmitting && <MdArrowForward aria-hidden="true" className="size-4" />}
+                  {!isSubmitting && <MdArrowForward aria-hidden="true" className="create-submit-arrow size-4" />}
                 </button>
               </div>
             </div>
           </form>
-        </section>
-        {!focused && !IS_STANDALONE_DEPLOYMENT && !deployment.isStandaloneDeployment && <Suspense fallback={null}><CreatePublishedGallery /></Suspense>}
+        </section>}
+        {!focused && !IS_STANDALONE_DEPLOYMENT && !deployment.isStandaloneDeployment && <Suspense fallback={<CreatePublishedGallerySkeleton />}><CreatePublishedGallery /></Suspense>}
       </main>
     </VidgeniePageShell>
   );

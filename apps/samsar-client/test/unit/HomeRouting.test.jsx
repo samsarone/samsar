@@ -744,7 +744,7 @@ describe('page-specific lazy loading fallbacks', () => {
     render(getRouteLoadingFallback(path, false));
     expect(screen.getByText('Loading Vidgenie page')).toBeInTheDocument();
   });
-  it.each([['/quick_video/a', 'quick'], ['/image/studio/a', 'image'], ['/iamge/studio/a', 'image'], ['/audio/studio', 'audio'], ['/account/settings', 'account'], ['/my_sessions', 'projects'], ['/login', 'auth']])('matches the destination layout at %s', (path, layout) => {
+  it.each([['/create', 'create'], ['/quick_video/a', 'quick'], ['/image/studio/a', 'image'], ['/iamge/studio/a', 'image'], ['/audio/studio', 'audio'], ['/account/settings', 'account'], ['/my_sessions', 'projects'], ['/login', 'auth']])('matches the destination layout at %s', (path, layout) => {
     const { container } = render(getRouteLoadingFallback(path, false));
     expect(container.querySelector('[data-loading-page]')).toHaveAttribute('data-loading-page', layout);
     expect(container.querySelector('.animate-spin')).toBeNull();

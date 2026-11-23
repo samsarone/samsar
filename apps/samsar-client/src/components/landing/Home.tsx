@@ -27,6 +27,7 @@ import VidgenieSkeletonLoader from '../oneshot_editor/VidgenieSkeletonLoader.jsx
 import StudioSkeletonLoader from '../video/util/StudioSkeletonLoader.jsx';
 import PageSkeletonLoader from '../common/PageSkeletonLoader.jsx';
 import RouteLoadingScreen from '../common/RouteLoadingScreen.jsx';
+import CreateLandingSkeleton from './CreateLandingSkeleton.jsx';
 
 const EditorHome = lazy(() => import("../editor/EditorHome.tsx"));
 const UserAccount = lazy(() => import("../account/UserAccount.tsx"));
@@ -83,6 +84,7 @@ function getSanitizedRouteSearch(search) {
 
 export function getRouteLoadingFallback(pathname, isMobile) {
   const route = pathname.split('/')[1];
+  if (route === 'create') return <CreateLandingSkeleton />;
   if (isMobile && /^\/video\/(share|collab)\//.test(pathname)) return <RouteLoadingScreen />;
   if (['vidgenie', 'vidgpt', 'videogpt', 'vidgemie'].includes(route)
       || (isMobile && ['', 'video', 'quick_video'].includes(route))) {
