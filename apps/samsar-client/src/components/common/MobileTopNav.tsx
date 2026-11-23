@@ -3,7 +3,6 @@ import { translateText as uiText } from '../../utils/localization.js';
 import { Suspense, lazy } from 'react';
 import axios from 'axios';
 import { useUser } from '../../contexts/UserContext';
-import CommonButton from './CommonButton.tsx';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAlertDialog } from '../../contexts/AlertDialogContext';
 import { IoMdLogIn } from 'react-icons/io';
@@ -41,50 +40,18 @@ export default function MobileTopNav(props) {
   useUiLanguage();
   const { addNewVidGPTSession: onNewVidgenieSession, openAudioActions } = props;
   const { colorMode } = useColorMode();
-  const { openAlertDialog, closeAlertDialog } = useAlertDialog();
+  const { openAlertDialog } = useAlertDialog();
   const location = useLocation();
   const isImageEditor =
     location.pathname.includes('/image/') ||
     location.pathname.includes('/iamge/') ||
     location.pathname.includes('/image_sessions');
-  const isVideoEditor = location.pathname.includes('/video/') || location.pathname.includes('/vidgenie/') || location.pathname.includes('/vidgpt/') || location.pathname.includes('/adcreator/');
   const isStudioEditor = location.pathname === '/video' || location.pathname.startsWith('/video/');
   const isAudioEditor = location.pathname.startsWith('/audio/studio');
   const isGenerationsView = location.pathname.startsWith('/generations');
 
   const navShell =
     `border-b text-fg ${colorMode === 'dark' ? 'border-[#3a4050] bg-[#12141c]/94 shadow-[0_10px_28px_rgba(0,0,0,0.32)] backdrop-blur-xl' : 'bg-gradient-to-r from-[#e9edf7] via-[#dfe7f5] to-[#eef3fb] border-[#d7deef]'}`;
-
-  const resetSession = () => {
-    closeAlertDialog();
-    if (isImageEditor) {
-      createNewImageSession();
-      return;
-    }
-    createNewSession();
-  };
-
-  const alertDialogComponent = (
-    <div>
-      <div>{uiText("This will reset your current session. Are you sure you want to proceed?")}</div>
-      <div className="mt-4 mb-4 m-auto">
-        <div className="inline-flex ml-2 mr-2">
-          <CommonButton
-            onClick={() => {
-              resetSession();
-            }}
-          >{uiText("Yes")}</CommonButton>
-        </div>
-        <div className="inline-flex ml-2 mr-2">
-          <CommonButton
-            onClick={() => {
-              closeAlertDialog();
-            }}
-          >{uiText("No")}</CommonButton>
-        </div>
-      </div>
-    </div>
-  );
 
   const { user, userFetching, userInitiated } = useUser();
   const navigate = useNavigate();
@@ -97,12 +64,12 @@ export default function MobileTopNav(props) {
   let userProfile = <span />;
 
   const gotoUserAccount = () => {
-    navigate('/account');
+    navigate(user?.isExternalUser ? '/external/studio' : '/account');
   };
 
   const showLoginDialog = () => {
     const redirectTo = !user?._id && location.pathname.startsWith('/vidgenie')
-      ? '/vidgenie'
+      ? '/'
       : undefined;
     const loginComponent = (
       <Suspense fallback={dialogFallback}>
@@ -222,6 +189,10 @@ export default function MobileTopNav(props) {
   };
 
   const gotoViewSessionsPage = () => {
+    if (user?.isExternalUser) {
+      navigate('/external/studio');
+      return;
+    }
     if (isImageEditor) {
       navigate('/image_sessions');
       return;
@@ -263,7 +234,7 @@ export default function MobileTopNav(props) {
   let userTierDisplay = null;
 
   if (user && user._id) {
-    if (!IS_STANDALONE_DEPLOYMENT) {
+    if (!IS_STANDALONE_DEPLOYMENT && !user.isExternalUser) {
       if (user.isPremiumUser) {
         userTierDisplay = (
           <div className="text-[#ffe5e8]">
@@ -313,19 +284,6 @@ export default function MobileTopNav(props) {
     );
   }
 
-  const gotoHome = () => {
-    if (!user?._id) {
-      navigate('/');
-      return;
-    }
-
-    if (user && user._id && !isImageEditor && !isVideoEditor) {
-      navigate('/generations');
-      return;
-    }
-    openAlertDialog(alertDialogComponent);
-  };
-
   let addSessionButton = <span />;
 
   if (user && user._id) {
@@ -337,6 +295,7 @@ export default function MobileTopNav(props) {
             key={location.pathname}
             createNewSession={isImageEditor ? createNewImageSession : createNewSession}
             gotoViewSessionsPage={gotoViewSessionsPage}
+            showProjectActions={!user.isExternalUser}
             addNewVidGPTSession={addNewVidGPTSession}
             aspectRatioOptions={isImageEditor ? imageAspectRatioOptions : undefined}
             aspectRatioStorageKey={isImageEditor ? 'defaultImageAspectRatio' : 'defaultAspectRatio'}
@@ -344,7 +303,7 @@ export default function MobileTopNav(props) {
             openVideoEditor={openVideoEditor}
             openImageEditor={openImageEditor}
             openAudioEditor={openAudioEditor}
-            createPageHref={!user.isExternalUser ? '/create' : undefined}
+            createPageHref="/create"
             isCreatePage={location.pathname === '/create'}
             projectActionLabel={isImageEditor ? uiText("New image project") : (isAudioEditor && openAudioActions ? uiText("Audio actions") : (isStudioEditor ? uiText("New Studio project") : null))}
             onProjectAction={isAudioEditor ? openAudioActions : undefined}
@@ -371,7 +330,7 @@ export default function MobileTopNav(props) {
     <div data-app-top-nav className={`${navShell} fixed top-0 z-[1200] w-[100vw] ${isGenerationsView ? 'py-2' : 'h-[50px]'}`}>
       <div className={`${isGenerationsView ? 'flex flex-col gap-3 px-3' : 'flex flex-basis items-center h-full'}`}>
         <div className={isGenerationsView ? 'flex min-h-[44px] items-center justify-between' : 'basis-1/3 pl-2'}>
-          <BrandLogo onClick={gotoHome} className={isGenerationsView ? '' : 'mt-1'} />
+          <BrandLogo onClick={() => navigate('/')} className={isGenerationsView ? '' : 'mt-1'} />
           {isGenerationsView && (
             <div className="flex min-w-0 items-center justify-end gap-2">
               <div className="text-xs inline-flex items-center">

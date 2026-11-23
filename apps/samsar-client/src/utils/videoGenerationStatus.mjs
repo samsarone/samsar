@@ -190,7 +190,8 @@ function normalizeDetailedImageItem(item = {}, index = 0) {
 function normalizeDetailedLayer(layer = {}, index = 0) {
   const layerId = getRecordId(layer, `status_layer_${index}`);
   const image = isPlainObject(layer.image) ? layer.image : {};
-  const imageUrl = firstText([
+  // A retained frame can belong to the previous take during a reroll.
+  const imageUrl = layer.rerollPreview ? firstText([image.url]) : firstText([
     image.url,
     layer.preview?.type === 'image' ? layer.preview?.url : '',
     layer.frameImages?.startFrameUrl,
@@ -199,7 +200,7 @@ function normalizeDetailedLayer(layer = {}, index = 0) {
   ]);
   let activeItemList = Array.isArray(layer.imageSession?.activeItemList)
     ? layer.imageSession.activeItemList
-    : Array.isArray(image.items)
+    : !layer.rerollPreview && Array.isArray(image.items)
       ? image.items.map(normalizeDetailedImageItem).filter((item) => item.src)
       : [];
 

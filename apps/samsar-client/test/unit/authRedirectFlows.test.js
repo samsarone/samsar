@@ -3,17 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({
   standalone: false,
   headers: { headers: { Authorization: 'Bearer owner' } },
-  storedRedirect: null,
   cookies: true,
   post: vi.fn(),
   resolveEntry: vi.fn(),
-  createStudio: vi.fn(),
-  ensureLayer: vi.fn(),
-  fetchConfig: vi.fn(),
-  extractAvailability: vi.fn(),
-  extractInference: vi.fn(),
-  hasPipeline: vi.fn(),
-  initialPath: vi.fn(),
   setRedirect: vi.fn(),
   consumeRedirect: vi.fn(),
 }));
@@ -30,27 +22,13 @@ vi.mock('../../src/utils/vidgenieRouting.js', () => ({
   appendRouteSearch: (path, search = '') => search ? `${path}${search.startsWith('?') ? search : `?${search}`}` : path,
   resolveAuthenticatedEntryPath: state.resolveEntry,
 }));
-vi.mock('../../src/utils/studioSessionApi.js', () => ({
-  createStudioSession: state.createStudio,
-  ensureInitialLayerForNewStudioSession: state.ensureLayer,
-}));
-vi.mock('../../src/utils/deploymentProviders.js', () => ({
-  fetchDeploymentProviderConfig: state.fetchConfig,
-  extractDeploymentModelAvailability: state.extractAvailability,
-  extractDeploymentInferenceModelValues: state.extractInference,
-}));
-vi.mock('../../src/utils/standaloneInitialRoute.mjs', () => ({
-  hasConfiguredStandaloneTextToVideoPipeline: state.hasPipeline,
-  getStandaloneInitialEditorPath: state.initialPath,
-}));
-
 import {
   buildGoogleLoginUrl, buildLoginPathForRedirect, consumeResolvedAuthRedirect,
   getCurrentAuthRedirect, getRedirectParam, getRoutePath,
   persistAuthRedirectForFlow, resolvePostAuthDestination, resolvePostSignupDestination,
   sanitizeAuthRedirect,
 } from '../../src/utils/authRedirect.js';
-import { getDefaultAuthenticatedPath, hasInsufficientGenerationCredits } from '../../src/utils/defaultRoutes.js';
+import { hasInsufficientGenerationCredits } from '../../src/utils/defaultRoutes.js';
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -58,12 +36,6 @@ beforeEach(() => {
   state.headers = { headers: { Authorization: 'Bearer owner' } };
   state.cookies = true;
   state.consumeRedirect.mockReturnValue(null);
-  state.ensureLayer.mockResolvedValue({ _id: 'created', layers: [{ _id: 'first' }] });
-  state.extractAvailability.mockReturnValue({ textToVideoImageModelValues: ['image'], textToVideoVideoModelValues: ['video'] });
-  state.extractInference.mockReturnValue(['inference']);
-  state.fetchConfig.mockResolvedValue({ deployment: 'configured' });
-  state.hasPipeline.mockReturnValue(true);
-  state.initialPath.mockReturnValue('/vidgenie');
 });
 
 describe('authentication redirect input', () => {
@@ -103,6 +75,10 @@ describe('authentication redirect input', () => {
     expect(getCurrentAuthRedirect()).toBeNull();
     expect(buildLoginPathForRedirect('/video/a?title=A & B')).toBe('/login?redirect=%2Fvideo%2Fa%3Ftitle%3DA%20%26%20B');
     expect(buildLoginPathForRedirect('//evil.test')).toBe('/login');
+  });
+  it('uses the default landing flow for a login from Create unless a return path was requested', () => {
+    expect(getCurrentAuthRedirect({ pathname: '/create' })).toBeNull();
+    expect(getCurrentAuthRedirect({ pathname: '/login', search: '?redirect=%2Fcreate' })).toBe('/create');
   });
   it.each(['/vidgenie/a', '/vidgpt/a', '/videogpt/a', '/quick_video/a'])('remembers the quick-video media flow for %s', (path) => {
     expect(persistAuthRedirectForFlow(path)).toBe(path);
@@ -144,121 +120,62 @@ describe('authentication redirect input', () => {
   });
 });
 
-describe('new account project routing', () => {
-  it.each([false, true])('creates an independent project for a signup (mobile=%s)', async (isMobile) => {
+describe('new account routing', () => {
+  it('opens Create after signup without allocating a project or resuming a public sample', () => {
     state.consumeRedirect.mockReturnValue('/vidgenie/public-sample');
-    state.post.mockResolvedValue({ data: { sessionId: '  new-project  ' } });
-    await expect(resolvePostSignupDestination({ apiServer: '/api', isMobile })).resolves.toBe(isMobile ? '/vidgenie/new-project' : '/video/new-project');
-    expect(state.post).toHaveBeenCalledWith('/api/video_sessions/create_signup_project', { editor: isMobile ? 'vidgenie' : 'studio' }, state.headers);
+    expect(resolvePostSignupDestination()).toBe('/create');
     expect(state.consumeRedirect).toHaveBeenCalledOnce();
-    expect(localStorage.getItem('videoSessionId')).toBe('new-project');
-    expect(state.ensureLayer).toHaveBeenCalledTimes(isMobile ? 0 : 1);
-  });
-  it.each(['session_id', '_id', 'id'])('supports signup response id alias %s', async (key) => {
-    state.post.mockResolvedValue({ data: { [key]: 'project' } });
-    await expect(resolvePostSignupDestination({ apiServer: '/api', isMobile: true })).resolves.toBe('/vidgenie/project');
-  });
-  it('accepts a database id with a meaningful string representation', async () => {
-    state.post.mockResolvedValue({ data: { id: { toString: () => 'db-project' } } });
-    await expect(resolvePostSignupDestination({ apiServer: '/api', isMobile: true })).resolves.toBe('/vidgenie/db-project');
-  });
-  it.each([{}, { id: {} }, { id: ' ' }, { id: { toString: () => '' } }])('rejects a signup without a usable project id', async (data) => {
-    state.post.mockResolvedValue({ data });
-    await expect(resolvePostSignupDestination({ apiServer: '/api' })).rejects.toThrow('did not include a session id');
-    expect(state.ensureLayer).not.toHaveBeenCalled();
-    expect(localStorage.getItem('videoSessionId')).toBeNull();
-  });
-  it('returns the editor fallback without making unauthenticated requests', async () => {
-    state.headers = undefined;
-    await expect(resolvePostSignupDestination({ apiServer: '/api' })).resolves.toBe('/video');
-    await expect(resolvePostSignupDestination({ apiServer: '/api', isMobile: true })).resolves.toBe('/vidgenie');
     expect(state.post).not.toHaveBeenCalled();
-  });
-  it('does not issue a signup request without an API server', async () => {
-    await expect(resolvePostSignupDestination()).resolves.toBe('/video');
-    expect(state.post).not.toHaveBeenCalled();
-  });
-  it.each([404, 405])('uses the legacy mobile creation endpoint for unsupported signup API (%s)', async (status) => {
-    state.post.mockRejectedValueOnce({ response: { status } }).mockResolvedValueOnce({ data: { id: 'legacy' } });
-    await expect(resolvePostSignupDestination({ apiServer: '/api', isMobile: true })).resolves.toBe('/vidgenie/legacy');
-    expect(state.post).toHaveBeenNthCalledWith(2, '/api/vidgenie/create_blank', {}, state.headers);
-  });
-  it('creates a legacy Studio session and ensures its first scene', async () => {
-    state.post.mockRejectedValue({ response: { status: 404 } });
-    state.createStudio.mockResolvedValue({ _id: 'legacy-studio' });
-    await expect(resolvePostSignupDestination({ apiServer: '/api' })).resolves.toBe('/video/legacy-studio');
-    expect(state.createStudio).toHaveBeenCalledWith({ processorServer: '/api', headers: state.headers, payload: { prompts: [] } });
-    expect(state.ensureLayer).toHaveBeenCalledWith({ processorServer: '/api', headers: state.headers, sessionId: 'legacy-studio', payload: { prompts: [] } });
-  });
-  it.each([401, 403, 429, 500])('preserves unexpected signup errors instead of creating a second project (%s)', async (status) => {
-    const error = { response: { status } };
-    state.post.mockRejectedValue(error);
-    await expect(resolvePostSignupDestination({ apiServer: '/api' })).rejects.toBe(error);
-    expect(state.createStudio).not.toHaveBeenCalled();
-    expect(state.post).toHaveBeenCalledOnce();
-  });
-  it('does not publish a Studio destination until the first scene is ready', async () => {
-    state.post.mockResolvedValue({ data: { id: 'project' } });
-    state.ensureLayer.mockRejectedValue(new Error('scene missing'));
-    await expect(resolvePostSignupDestination({ apiServer: '/api' })).rejects.toThrow('scene missing');
+    expect(state.resolveEntry).not.toHaveBeenCalled();
     expect(localStorage.getItem('videoSessionId')).toBeNull();
-  });
-  it('routes successfully after creation if local storage is unavailable', async () => {
-    state.post.mockResolvedValue({ data: { id: 'project' } });
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('denied'); });
-    await expect(resolvePostSignupDestination({ apiServer: '/api' })).resolves.toBe('/video/project');
   });
 });
 
 describe('existing account routing', () => {
-  it('resumes an explicit local destination without creating another project', async () => {
-    await expect(resolvePostAuthDestination({ redirect: '/video/existing', apiServer: '/api' })).resolves.toBe('/video/existing');
+  it('returns explicit local destinations with their query and fragment intact', async () => {
+    const redirect = '/video/existing?tab=images#timeline';
+    await expect(resolvePostAuthDestination({ redirect, apiServer: '/api' })).resolves.toBe(redirect);
     expect(state.resolveEntry).not.toHaveBeenCalled();
-  });
-  it('includes search parameters in the unauthenticated fallback', async () => {
-    state.headers = undefined;
-    await expect(resolvePostAuthDestination({ search: 'tab=images' })).resolves.toBe('/vidgenie?tab=images');
-    expect(state.resolveEntry).not.toHaveBeenCalled();
-  });
-  it('passes routing policy to the entry resolver', async () => {
-    state.resolveEntry.mockResolvedValue('/vidgenie/existing');
-    const user = { _id: 'owner' };
-    await expect(resolvePostAuthDestination({ user, isMobile: true, apiServer: '/api', search: '?tab=audio', createIfMissing: false })).resolves.toBe('/vidgenie/existing');
-    expect(state.resolveEntry).toHaveBeenCalledWith({ user, isMobile: true, apiServer: '/api', headers: state.headers, search: '?tab=audio', createIfMissing: false, defaultPath: '/vidgenie' });
-  });
-  it.each([null, undefined, ''])('falls back when entry resolution produces no route (%s)', async (value) => {
-    state.resolveEntry.mockResolvedValue(value);
-    await expect(resolvePostAuthDestination({ search: '?tab=audio' })).resolves.toBe('/vidgenie?tab=audio');
-  });
-  it('falls back when entry lookup fails and respects external accounts', async () => {
-    state.resolveEntry.mockRejectedValue(new Error('offline'));
-    await expect(resolvePostAuthDestination({ user: { isExternalUser: true }, search: '?a=b' })).resolves.toBe('/external/studio?a=b');
-  });
-  it('uses deployment capabilities for standalone desktop and discards public redirects', async () => {
-    state.standalone = true;
-    state.resolveEntry.mockResolvedValue(null);
-    await expect(resolvePostAuthDestination({ user: {}, apiServer: '/api', redirect: '/video/public', search: '?public=1' })).resolves.toBe('/vidgenie');
-    expect(state.fetchConfig).toHaveBeenCalledWith('/api', state.headers);
-    expect(state.hasPipeline).toHaveBeenCalledWith({ inferenceModelValues: ['inference'], textToVideoImageModelValues: ['image'], textToVideoVideoModelValues: ['video'] });
-    expect(state.initialPath).toHaveBeenCalledWith({ isStandaloneDeployment: true, hasTextToVideoPipeline: true });
-    expect(state.resolveEntry).toHaveBeenCalledWith(expect.objectContaining({ search: '', defaultPath: '/vidgenie' }));
   });
 
-  it.each([false, true])('returns to the simple create page after signing in (standalone=%s)', async standalone => {
+  it('includes search parameters in the unauthenticated fallback', async () => {
+    state.headers = undefined;
+    await expect(resolvePostAuthDestination({ search: 'tab=images' })).resolves.toBe('/create?tab=images');
+    expect(state.resolveEntry).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('uses the authenticated render resolver, including on standalone (standalone=%s)', async (standalone) => {
+    state.standalone = standalone;
+    state.resolveEntry.mockResolvedValue('/vidgenie/pending?view=preview');
+    const user = { _id: 'owner' };
+    await expect(resolvePostAuthDestination({ user, apiServer: '/api', search: '?tab=audio' })).resolves.toBe('/vidgenie/pending?view=preview');
+    expect(state.resolveEntry).toHaveBeenCalledWith({ user, apiServer: '/api', headers: state.headers, search: standalone ? '' : '?tab=audio' });
+  });
+
+  it('resolves the pending destination with the external account identity', async () => {
+    const user = { _id: 'external', isExternalUser: true };
+    state.resolveEntry.mockResolvedValue('/external/studio?request=external-render');
+    await expect(resolvePostAuthDestination({ user, apiServer: '/api' })).resolves.toBe('/external/studio?request=external-render');
+    expect(state.resolveEntry).toHaveBeenCalledWith({ user, apiServer: '/api', headers: state.headers, search: '' });
+  });
+
+  it('falls back to Create if no pending destination is available', async () => {
+    state.resolveEntry.mockResolvedValue(null);
+    await expect(resolvePostAuthDestination({ search: '?tab=audio' })).resolves.toBe('/create?tab=audio');
+    state.resolveEntry.mockRejectedValue(new Error('offline'));
+    await expect(resolvePostAuthDestination({ user: { isExternalUser: true } })).resolves.toBe('/create');
+  });
+
+  it('keeps standalone sign-in local to the configured app entry', async () => {
+    state.standalone = true;
+    await expect(resolvePostAuthDestination({ user: {}, apiServer: '/api', redirect: '/video/public', search: '?public=1' })).resolves.toBe('/create');
+    expect(state.resolveEntry).toHaveBeenCalledWith(expect.objectContaining({ search: '' }));
+  });
+
+  it.each([false, true])('returns to an explicitly requested Create page (standalone=%s)', async (standalone) => {
     state.standalone = standalone;
     await expect(resolvePostAuthDestination({ user: { _id: 'user' }, apiServer: '/api', redirect: '/create' })).resolves.toBe('/create');
     expect(state.resolveEntry).not.toHaveBeenCalled();
-    expect(state.fetchConfig).not.toHaveBeenCalled();
-  });
-  it('fails closed to Studio if standalone capability discovery fails', async () => {
-    state.standalone = true;
-    state.fetchConfig.mockRejectedValue(new Error('offline'));
-    await expect(resolvePostAuthDestination({ apiServer: '/api' })).resolves.toBe('/video');
-  });
-  it.each([{ isMobile: true }, { user: { isExternalUser: true } }, { apiServer: undefined }])('does not discover standalone capabilities outside the desktop owner flow', async (overrides) => {
-    state.standalone = true;
-    await resolvePostAuthDestination({ apiServer: '/api', ...overrides });
-    expect(state.fetchConfig).not.toHaveBeenCalled();
   });
 });
 
@@ -273,17 +190,5 @@ describe('authenticated route and credit policy', () => {
   it('supports an operation-specific credit threshold', () => {
     expect(hasInsufficientGenerationCredits({ generationCredits: 20 }, 21)).toBe(true);
     expect(hasInsufficientGenerationCredits({ generationCredits: 20 }, 20)).toBe(false);
-  });
-  it('routes external users to their dashboard on every device and deployment', () => {
-    for (const standalone of [false, true]) {
-      state.standalone = standalone;
-      for (const isMobile of [false, true]) expect(getDefaultAuthenticatedPath({ isExternalUser: true }, { isMobile })).toBe('/external/studio');
-    }
-  });
-  it('selects Studio for standalone desktop and Vidgenie for mobile or hosted users', () => {
-    expect(getDefaultAuthenticatedPath({})).toBe('/vidgenie');
-    state.standalone = true;
-    expect(getDefaultAuthenticatedPath({})).toBe('/video');
-    expect(getDefaultAuthenticatedPath({}, { isMobile: true })).toBe('/vidgenie');
   });
 });

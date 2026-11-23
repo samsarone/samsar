@@ -119,6 +119,16 @@
     "th": "ค่าเรนเดอร์โดยประมาณ",
     "ja": "レンダリング費用の目安"
   },
+  "Not enough credits for this video": {
+    "en": "Not enough credits for this video",
+    "th": "เครดิตไม่พอสำหรับสร้างวิดีโอนี้",
+    "ja": "この動画を作成するためのクレジットが不足しています"
+  },
+  "This render needs {required} credits. Your balance is {available}.": {
+    "en": "This render needs {required} credits. Your balance is {available}.",
+    "th": "การเรนเดอร์นี้ต้องใช้ {required} เครดิต คุณมี {available} เครดิต",
+    "ja": "この動画のレンダリングには {required} クレジットが必要です。残高は {available} クレジットです。"
+  },
   "API charge": {
     "en": "API charge",
     "th": "คิดค่าบริการผ่าน API",
@@ -6248,6 +6258,11 @@
     "en": "Preparing avatar and video",
     "th": "กำลังเตรียมอวาตาร์และวิดีโอ",
     "ja": "アバターと動画を準備中"
+  },
+  "Preparing copied scenes": {
+    "en": "Preparing copied scenes",
+    "th": "กำลังเตรียมฉากที่คัดลอก",
+    "ja": "コピーしたシーンを準備中"
   },
   "Preparing generation": {
     "en": "Preparing generation",

@@ -82,6 +82,7 @@ export const VIDEO_STATUS_SESSION_PROJECTION = [
   ...VIDEO_STATUS_BRANCH_PROJECTION,
   'expressGenerationStatus',
   'postProcessingProgress',
+  'postProcessingPreparationPending',
   'postProcessingPreferences',
   'expressGenerationCreditCharges',
   'generationError',
@@ -198,6 +199,9 @@ export const VIDEO_STATUS_DETAILED_SESSION_PROJECTION = [
   'updatedAt',
   'generations',
   'layers._id',
+  'layers.rerollPreview',
+  'postProcessingBilling.operation',
+  'layers.imageSession.videoRenderStartFrameImage',
   'layers.prompt',
   'layers.videoGenerationPrompt',
   'layers.status',
@@ -1952,16 +1956,21 @@ function buildDetailedImageItems(
   return serializedItems;
 }
 
-function getLayerSelectedImageUrl(layer = {}) {
-  const activeItems = Array.isArray(layer?.imageSession?.activeItemList)
+function getLayerSelectedImageUrl(layer = {}, { visibleImagesOnly = false } = {}) {
+  const items = Array.isArray(layer?.imageSession?.activeItemList)
     ? layer.imageSession.activeItemList
     : [];
+  const activeItems = visibleImagesOnly
+    ? items.filter(item => item?.type === 'image' && !item.isHidden)
+    : items;
   const baseImageItem = activeItems.find((item) => item?.is_base_image === true) ||
     activeItems.find((item) => normalizeString(item?.type).toLowerCase() === 'image') ||
     activeItems[0] ||
     null;
 
-  const activeItemUrl = getItemAssetUrl(baseImageItem || {});
+  const activeItemUrl = getItemAssetUrl(baseImageItem || {}) || pickFirstString(
+    baseImageItem?.rawSrc, baseImageItem?.rawUrl, baseImageItem?.imageUrl, baseImageItem?.previewUrl,
+  );
   if (activeItemUrl) {
     return activeItemUrl;
   }
@@ -1973,6 +1982,33 @@ function getLayerSelectedImageUrl(layer = {}) {
     ],
     remote: layer?.imageSession?.activeImageRemoteLink,
   });
+}
+
+// Capture the copied asset before resetting a reroll. Keep its reference out
+// of the active generation fields used by workers and the editable timeline.
+export function getRerollLayerVisual(layer, { includePoster = true } = {}) {
+  const video = selectResponseMediaSource({ local: layer.lipSyncVideoLayer, remote: layer.lipSyncRemoteLink })
+    || selectResponseMediaSource({ local: layer.soundEffectVideoLayer, remote: layer.soundEffectRemoteLink })
+    || selectResponseMediaSource({ local: layer.userVideoLayer, remote: layer.userVideoRemoteLink })
+    || selectResponseMediaSource({ local: layer.aiVideoLayer, remote: layer.aiVideoRemoteLink });
+  if (video) return { type: 'video', url: video };
+  const image = getLayerSelectedImageUrl(layer, { visibleImagesOnly: true }) || (includePoster && getRerollPoster(layer));
+  return image ? { type: 'image', url: image } : null;
+}
+
+function getRerollPoster(layer) {
+  return pickFirstString(layer.imageSession?.videoRenderStartFrameImage, layer.aiLayerStartFrame,
+    layer.baseLayerStartFrame, layer.aiVideoThumbnailPath, layer.thumbnailPath);
+}
+
+export function getPendingRerollPreview(session, layer) {
+  if (session.postProcessingBilling?.operation !== 'reroll_layers' ||
+      !session.expressGenerationPending || session.expressGenerationFailed || session.expressGenerationCancelled ||
+      getRerollLayerVisual(layer, { includePoster: false })) return null;
+  if (layer.rerollPreview?.url) return { type: layer.rerollPreview.type, url: layer.rerollPreview.url };
+  // Previously queued rerolls cleared their active media but retained copied frame references.
+  const poster = layer.imageSession?.generationStatus === 'PENDING' && getRerollPoster(layer);
+  return poster ? { type: 'image', url: poster } : null;
 }
 
 function buildAssetStatus(rawStatus, fallbackUrl = null) {
@@ -2170,6 +2206,9 @@ function serializeDetailedLayer(
   return compactObject({
     index,
     id: toObjectIdString(layer._id),
+    rerollPreview: options.rerollPreview && {
+      ...options.rerollPreview, url: normalizeResponseAssetUrl(options.rerollPreview.url, req),
+    },
     startTime,
     endTime,
     duration,
@@ -2411,7 +2450,7 @@ export function buildNormalizedVideoSessionPreview(
       index,
       req,
       generatedImageCandidatesByLayer.get(index) || [],
-      { includeEditedImage },
+      { includeEditedImage, rerollPreview: getPendingRerollPreview(sessionData, layer) },
     ));
   const audioLayers = (Array.isArray(sessionData.audioLayers) ? sessionData.audioLayers : [])
     .map((layer, index) => serializeDetailedAudioLayer(layer, index, req));
@@ -2492,6 +2531,7 @@ export function buildNormalizedVideoSessionPreview(
     provider: normalizeNonEmptyString(statusPayload.provider || sessionData.provider),
     expressGenerationFailed: normalizeBoolean(sessionData.expressGenerationFailed),
     expressGenerationCancelled: normalizeBoolean(sessionData.expressGenerationCancelled),
+    ...(sessionData.postProcessingPreparationPending && { postProcessingPreparationPending: true }),
     postProcessingProgress,
     ...(sessionData.postProcessingPreferences
       ? { postProcessingPreferences: normalizePostProcessingPreferences(sessionData.postProcessingPreferences) }

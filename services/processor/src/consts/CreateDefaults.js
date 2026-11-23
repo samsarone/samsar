@@ -10,7 +10,7 @@ export const SYSTEM_CREATE_DEFAULTS = Object.freeze({
   imageModel: 'GPTIMAGE2.5',
   videoModel: 'KLINGIMGTOVID4',
   inferenceEffort: 'high',
-  duration: 30,
+  duration: 60,
   aspectRatio: '16:9',
   enableSubtitles: false,
 });

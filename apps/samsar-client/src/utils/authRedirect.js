@@ -1,21 +1,5 @@
-import { translateText as uiText } from "./localization.js";
-import axios from 'axios';
-import { getDefaultAuthenticatedPath } from './defaultRoutes.js';
+import { DEFAULT_APP_PATH } from './defaultRoutes.js';
 import { appendRouteSearch, resolveAuthenticatedEntryPath } from './vidgenieRouting.js';
-import {
-  extractDeploymentInferenceModelValues,
-  extractDeploymentModelAvailability,
-  fetchDeploymentProviderConfig,
-} from './deploymentProviders.js';
-import {
-  getStandaloneInitialEditorPath,
-  hasConfiguredStandaloneTextToVideoPipeline,
-} from './standaloneInitialRoute.mjs';
-import {
-  createStudioSession,
-  ensureInitialLayerForNewStudioSession,
-} from './studioSessionApi.js';
-import { getStudioSessionId } from './studioSessionPolicy.mjs';
 import {
   consumePostAuthRedirect,
   getHeaders,
@@ -64,7 +48,7 @@ export function getCurrentAuthRedirect(location, explicitRedirect) {
   if (queryRedirect) return queryRedirect;
 
   const pathname = location?.pathname || '/';
-  if (pathname === '/' || AUTH_ROUTE_PATHS.has(pathname)) return null;
+  if (pathname === '/' || pathname === DEFAULT_APP_PATH || AUTH_ROUTE_PATHS.has(pathname)) return null;
 
   return sanitizeAuthRedirect(getRoutePath(location));
 }
@@ -137,146 +121,32 @@ export function consumeResolvedAuthRedirect(fallbackRedirect = null) {
   return normalizedFallback || storedRedirect;
 }
 
-function getCreatedProjectSessionId(data) {
-  const value = data?.sessionId || data?.session_id || data?._id || data?.id;
-  if (typeof value === 'string') return value.trim() || null;
-  if (value && typeof value.toString === 'function') {
-    const stringValue = value.toString();
-    return stringValue && stringValue !== '[object Object]' ? stringValue : null;
-  }
-  return null;
-}
-
-function storeCreatedProjectSessionId(sessionId) {
-  if (typeof window === 'undefined' || !sessionId) return;
-  try {
-    window.localStorage.setItem('videoSessionId', sessionId);
-  } catch {
-    // Storage access should not block the new-user route.
-  }
-}
-
-async function createSignupProjectWithLegacyEndpoint({
-  apiServer,
-  headers,
-  editor,
-}) {
-  if (editor === 'vidgenie') {
-    const { data } = await axios.post(`${apiServer}/vidgenie/create_blank`, {}, headers);
-    return getCreatedProjectSessionId(data);
-  }
-
-  const session = await createStudioSession({
-    processorServer: apiServer,
-    headers,
-    payload: { prompts: [] },
-  });
-  return getStudioSessionId(session);
-}
-
-export async function resolvePostSignupDestination({
-  isMobile = false,
-  apiServer,
-} = {}) {
-  // A signup started from the public sample must never resume that sample.
-  consumeResolvedAuthRedirect();
-
-  const editor = isMobile ? 'vidgenie' : 'studio';
-  const fallbackPath = isMobile ? '/vidgenie' : '/video';
-  const headers = getHeaders();
-  if (!apiServer || !headers) return fallbackPath;
-
-  let sessionId = null;
-  try {
-    const { data } = await axios.post(
-      `${apiServer}/video_sessions/create_signup_project`,
-      { editor },
-      headers,
-    );
-    sessionId = getCreatedProjectSessionId(data);
-  } catch (error) {
-    if (![404, 405].includes(error?.response?.status)) {
-      throw error;
-    }
-    sessionId = await createSignupProjectWithLegacyEndpoint({
-      apiServer,
-      headers,
-      editor,
-    });
-  }
-
-  if (!sessionId) {
-    throw new Error(uiText("The new project response did not include a session id."));
-  }
-
-  if (editor === 'studio') {
-    await ensureInitialLayerForNewStudioSession({
-      processorServer: apiServer,
-      headers,
-      sessionId,
-      payload: { prompts: [] },
-    });
-  }
-
-  storeCreatedProjectSessionId(sessionId);
-  return isMobile ? `/vidgenie/${sessionId}` : `/video/${sessionId}`;
+export function resolvePostSignupDestination() {
+  // A new account starts on Create even if signup began in a public sample.
+  consumePostAuthRedirect();
+  return DEFAULT_APP_PATH;
 }
 
 export async function resolvePostAuthDestination({
   user,
-  isMobile = false,
   apiServer,
   search = '',
   redirect = null,
-  createIfMissing = true,
 } = {}) {
   const requestedRedirect = sanitizeAuthRedirect(redirect);
-  const normalizedRedirect = IS_STANDALONE_DEPLOYMENT && requestedRedirect !== '/create' ? null : requestedRedirect;
-  if (normalizedRedirect) return normalizedRedirect;
+  if (requestedRedirect && (!IS_STANDALONE_DEPLOYMENT || requestedRedirect === '/create')) {
+    return requestedRedirect;
+  }
 
   const destinationSearch = IS_STANDALONE_DEPLOYMENT ? '' : search;
+  const fallback = appendRouteSearch(DEFAULT_APP_PATH, destinationSearch);
   const headers = getHeaders();
-  let defaultPath = getDefaultAuthenticatedPath(user, { isMobile }) || '/vidgenie';
-
-  if (
-    IS_STANDALONE_DEPLOYMENT &&
-    !isMobile &&
-    !user?.isExternalUser &&
-    apiServer &&
-    headers
-  ) {
-    try {
-      const deploymentConfig = await fetchDeploymentProviderConfig(apiServer, headers);
-      const modelAvailability = extractDeploymentModelAvailability(deploymentConfig);
-      defaultPath = getStandaloneInitialEditorPath({
-        isStandaloneDeployment: true,
-        hasTextToVideoPipeline: hasConfiguredStandaloneTextToVideoPipeline({
-          inferenceModelValues: extractDeploymentInferenceModelValues(deploymentConfig),
-          textToVideoImageModelValues: modelAvailability.textToVideoImageModelValues,
-          textToVideoVideoModelValues: modelAvailability.textToVideoVideoModelValues,
-        }),
-      });
-    } catch {
-      // Fail closed to Studio while deployment capabilities are unavailable.
-    }
-  }
-
-  if (!headers) {
-    return appendRouteSearch(defaultPath, destinationSearch);
-  }
+  if (!headers) return fallback;
 
   try {
-    const targetPath = await resolveAuthenticatedEntryPath({
-      user,
-      isMobile,
-      apiServer,
-      headers,
-      search: destinationSearch,
-      createIfMissing,
-      defaultPath,
-    });
-    return targetPath || appendRouteSearch(defaultPath, destinationSearch);
+    const path = await resolveAuthenticatedEntryPath({ user, apiServer, headers, search: destinationSearch });
+    return path || fallback;
   } catch {
-    return appendRouteSearch(defaultPath, destinationSearch);
+    return fallback;
   }
 }

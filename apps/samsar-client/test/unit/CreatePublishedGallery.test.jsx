@@ -1,4 +1,5 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { Context as ResponsiveContext } from 'react-responsive';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import CreatePublishedGallery, { resolvePublishedMediaUrl } from '../../src/components/landing/CreatePublishedGallery.jsx';
 import { setUiLanguage } from '../../src/utils/localization.js';
@@ -60,7 +61,7 @@ it('initially mounts lazy thumbnails with the saved aspect ratio, without mounti
   expect(container.querySelectorAll('video')).toHaveLength(0);
   expect([...container.querySelectorAll('img')].every((img) => img.getAttribute('loading') === 'lazy' && img.getAttribute('decoding') === 'async')).toBe(true);
   expect(fetch).toHaveBeenCalledOnce();
-  expect(fetch.mock.calls[0][0]).toMatch(/\/publication\?limit=12$/);
+  expect(fetch.mock.calls[0][0]).toMatch(/\/publication\?limit=32$/);
   expect(fetch.mock.calls[0][1]).toMatchObject({ credentials: 'omit', signal: expect.any(AbortSignal) });
 });
 
@@ -95,6 +96,41 @@ it('loads another cursor on intersection, deduplicates items, and stops repeated
   expect(fetch.mock.calls[1][0]).toContain('cursor=next-page');
   expect(screen.getAllByRole('button', { name: 'Play Video one' })).toHaveLength(1);
   expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
+});
+
+it('starts a fresh filtered feed and ignores a previous selection’s pending cursor', async () => {
+  let finishCursor;
+  fetch.mockImplementationOnce(() => respond([publication('first')], { hasMore: true, nextCursor: 'older' }))
+    .mockImplementationOnce(() => new Promise((resolve) => { finishCursor = resolve; }))
+    .mockImplementationOnce(() => respond([publication('current')]));
+  const view = render(<CreatePublishedGallery inferenceModel="one" videoModel="first-model" language="ja" />);
+  await screen.findByRole('button', { name: 'Play Video first' });
+  expect(screen.getByText('one · first-model · Japanese')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+  const [url, options] = fetch.mock.calls[1];
+  expect(Object.fromEntries(new URL(url).searchParams)).toEqual({
+    limit: '32', cursor: 'older', inferenceModel: 'one', videoModel: 'first-model', language: 'ja',
+  });
+  view.rerender(<CreatePublishedGallery inferenceModel="two" videoModel="next-model" language="auto" />);
+  await screen.findByRole('button', { name: 'Play Video current' });
+  expect(screen.getByText('two · next-model')).toBeVisible();
+  expect(options.signal.aborted).toBe(true);
+  expect(Object.fromEntries(new URL(fetch.mock.calls[2][0]).searchParams)).toEqual({
+    limit: '32', inferenceModel: 'two', videoModel: 'next-model',
+  });
+  await act(async () => finishCursor(await respond([publication('outdated')])));
+  expect(screen.queryByRole('button', { name: 'Play Video first' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Play Video outdated' })).toBeNull();
+});
+
+it('follows an empty filtered page to the next matching playable result', async () => {
+  fetch.mockImplementationOnce(() => respond([], { hasMore: true, nextCursor: 'next-visible' }))
+    .mockImplementationOnce(() => respond([publication('visible')]));
+  render(<CreatePublishedGallery videoModel="chosen" />);
+  await screen.findByRole('button', { name: 'Play Video visible' });
+  expect(Object.fromEntries(new URL(fetch.mock.calls[1][0]).searchParams)).toEqual({
+    limit: '32', videoModel: 'chosen', cursor: 'next-visible',
+  });
 });
 
 it('plays only the selected publication and shows its saved prompt and model snapshot', async () => {
@@ -158,29 +194,40 @@ it('aborts pending feed requests when the landing page unmounts', () => {
 });
 
 
-it('provides bounded carousel buttons and arrow/home/end navigation without loading players', async () => {
-  fetch.mockImplementation(() => respond(Array.from({ length: 9 }, (_, index) => publication(String(index + 1)))));
-  const { container } = render(<CreatePublishedGallery />);
+it.each([
+  [375, [8, 8, 8, 8]],
+  [768, [12, 12, 8]],
+  [1280, [16, 16]],
+])('fills mosaic pages and supports bounded keyboard navigation at %ipx', async (width, expectedCounts) => {
+  const shapes = ['9:16', '1:1', '16:9', '4:3'];
+  const items = Array.from({ length: 32 }, (_, index) =>
+    publication(String(index + 1), { aspectRatio: shapes[index % shapes.length] }));
+  fetch.mockImplementation(() => respond(items));
+  const { container } = render(
+    <ResponsiveContext.Provider value={{ width }}><CreatePublishedGallery /></ResponsiveContext.Provider>
+  );
   const carousel = await screen.findByRole('group', { name: 'Published videos' });
-  await screen.findByRole('button', { name: 'Play Video 1' });
-  const slides = [...carousel.querySelectorAll('[data-gallery-slide]')];
-  expect(slides).toHaveLength(3);
-  slides.forEach((slide, index) => Object.defineProperty(slide, 'offsetLeft', { configurable: true, value: index * 400 }));
+  const slides = within(carousel).getAllByRole('group', { name: /^Page \d+ of \d+$/ });
+  expect(slides.map((slide) => within(slide).getAllByRole('button').length)).toEqual(expectedCounts);
+  slides.forEach((slide, index) => Object.defineProperty(slide, 'offsetLeft', { configurable: true, value: index * width }));
+  const end = (slides.length - 1) * width;
   carousel.scrollTo = vi.fn();
   const previous = screen.getByRole('button', { name: 'Previous videos' });
   const next = screen.getByRole('button', { name: 'Next videos' });
   expect(previous).toBeDisabled();
   fireEvent.click(next);
-  expect(carousel.scrollTo).toHaveBeenLastCalledWith({ left: 400, behavior: 'smooth' });
+  expect(carousel.scrollTo).toHaveBeenLastCalledWith({ left: width, behavior: 'smooth' });
   expect(previous).toBeEnabled();
   fireEvent.keyDown(carousel, { key: 'End' });
-  expect(carousel.scrollTo).toHaveBeenLastCalledWith({ left: 800, behavior: 'smooth' });
+  expect(carousel.scrollTo).toHaveBeenLastCalledWith({ left: end, behavior: 'smooth' });
   expect(next).toBeDisabled();
   fireEvent.keyDown(carousel, { key: 'ArrowLeft' });
-  expect(carousel.scrollTo).toHaveBeenLastCalledWith({ left: 400, behavior: 'smooth' });
+  expect(carousel.scrollTo).toHaveBeenLastCalledWith({ left: end - width, behavior: 'smooth' });
   fireEvent.keyDown(carousel, { key: 'Home' });
   expect(carousel.scrollTo).toHaveBeenLastCalledWith({ left: 0, behavior: 'smooth' });
   expect(previous).toBeDisabled();
+  fireEvent.keyDown(carousel, { key: 'ArrowRight' });
+  expect(carousel.scrollTo).toHaveBeenLastCalledWith({ left: width, behavior: 'smooth' });
   expect(container.querySelectorAll('video')).toHaveLength(0);
 });
 

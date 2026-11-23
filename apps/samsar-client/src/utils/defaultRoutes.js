@@ -1,4 +1,4 @@
-import { IS_STANDALONE_DEPLOYMENT } from './environment.jsx';
+export const DEFAULT_APP_PATH = '/create';
 
 const STUDIO_ACCESS_CREDIT_THRESHOLD = 100;
 const VIDGENIE_MINIMUM_GENERATION_CREDITS = STUDIO_ACCESS_CREDIT_THRESHOLD;
@@ -13,16 +13,4 @@ export function hasInsufficientGenerationCredits(
 ) {
   if (!user || user.isExternalUser) return false;
   return getGenerationCredits(user) < threshold;
-}
-
-export function getDefaultAuthenticatedPath(user, { isMobile = false } = {}) {
-  if (user?.isExternalUser) {
-    return '/external/studio';
-  }
-
-  if (IS_STANDALONE_DEPLOYMENT && !isMobile) {
-    return '/video';
-  }
-
-  return '/vidgenie';
 }

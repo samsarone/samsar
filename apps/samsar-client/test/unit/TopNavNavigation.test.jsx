@@ -44,6 +44,14 @@ beforeEach(() => {
 });
 
 describe.each([['desktop', TopNav], ['mobile', MobileTopNav]])('%s navigation', (_, Nav) => {
+  it.each(['/account', '/video/video-1'])('opens the app landing route from the logo on %s', async (path) => {
+    renderNav(Nav, path);
+    fireEvent.click(await screen.findByRole('button', { name: 'Samsar Studio' }));
+    expect(screen.getByLabelText('Current route')).toHaveTextContent(/^\/$/);
+    expect(createStudioSession).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
   it.each(['/video/video-1', '/image/studio/image-1', '/audio/studio', '/vidgenie/video-1', '/account', '/generations'])(
     'opens the simple Create page from the projects menu on %s', async (path) => {
       renderNav(Nav, path);
@@ -70,12 +78,17 @@ describe.each([['desktop', TopNav], ['mobile', MobileTopNav]])('%s navigation', 
     expect(await screen.findByRole('menuitem', { name: 'Create' })).toHaveAttribute('aria-current', 'page');
   });
 
-  it('does not offer the Create page to external users', async () => {
+  it('offers Create and the partner dashboard to external users', async () => {
     mocks.userState.user.isExternalUser = true;
     renderNav(Nav, '/external/studio');
-    expect(screen.queryByRole('link', { name: 'Create' })).not.toBeInTheDocument();
     fireEvent.click(await screen.findByRole('button', { name: 'View Projects' }));
-    expect(screen.queryByRole('menuitem', { name: 'Create' })).not.toBeInTheDocument();
+    const menu = await screen.findByRole('menu', { name: 'View Projects' });
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent.trim())).toEqual(['Create', 'View Projects']);
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Create' }));
+    expect(screen.getByLabelText('Current route')).toHaveTextContent('/create');
+    fireEvent.click(await screen.findByRole('button', { name: 'View Projects' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'View Projects' }));
+    expect(screen.getByLabelText('Current route')).toHaveTextContent('/external/studio');
   });
 
   it('keeps Create discoverable for guests without offering session actions', async () => {

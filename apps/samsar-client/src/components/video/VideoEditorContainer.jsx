@@ -24,6 +24,7 @@ import VideoCanvasContainer from './editor/VideoCanvasContainer.jsx';
 import VideoEditorToolbar from './toolbars/VideoEditorToolbar.jsx'
 import LoadingImage from './util/LoadingImage.jsx';
 import LoadingImageBase from './util/LoadingImageBase.jsx';
+import MinimalTaskSkeleton from '../common/MinimalTaskSkeleton.jsx';
 import { createLayerBoundImageItem } from './util/layerBoundImageItem.js';
 
 
@@ -109,6 +110,8 @@ export default function VideoEditorContainer(props) {
     currentLayerSeek,
     setCurrentLayerSeek,
     currentLayer,
+    rerollImageUrl,
+    rerollVideoUrl,
     updateSessionLayerActiveItemList,
     updateSessionLayerActiveItemListAnimations,
     activeItemList,
@@ -985,7 +988,7 @@ export default function VideoEditorContainer(props) {
         img.src = getRenderableImageUrl(src, PROCESSOR_API_URL);
       });
 
-    for (const item of currentLayer.imageSession.activeItemList || []) {
+    for (const item of currentLayer?.imageSession?.activeItemList || []) {
       if (item.type === 'text') {
         drawCanvasTextItem(ctx, item, { width, height });
         continue;
@@ -1448,7 +1451,7 @@ export default function VideoEditorContainer(props) {
 
 
     // Draw each item
-    for (const item of currentLayer.imageSession.activeItemList || []) {
+    for (const item of currentLayer?.imageSession?.activeItemList || []) {
       if (item.type === 'text') {
         drawCanvasTextItem(ctx, item, stageDimensions);
         continue;
@@ -2104,8 +2107,10 @@ export default function VideoEditorContainer(props) {
     updateSessionLayerActiveItemList(newItemList);
     setCurrentCanvasAction(TOOLBAR_ACTION_VIEW.SHOW_DEFAULT_DISPLAY);
 
-    currentLayer.imageSession.activeItemList = newItemList;
-    updateCurrentLayer(currentLayer);
+    updateCurrentLayer({
+      ...currentLayer,
+      imageSession: { ...currentLayer.imageSession, activeItemList: newItemList },
+    });
 
     toast.success(
       <div>
@@ -2947,13 +2952,19 @@ export default function VideoEditorContainer(props) {
   }
 
 
-  let viewDisplay = <span />;
+  let viewDisplay = props.isPreparingCopiedScenes
+    ? <MinimalTaskSkeleton title={uiText("Preparing copied scenes")} />
+    : <span />;
 
 
 
 
-  if (currentLayer && currentLayer.imageSession && currentLayer.imageSession.activeItemList) {
-    if (currentLayer.imageSession.generationStatus === 'PENDING') {
+  const hasSceneMedia = currentVideoLayerState.url || rerollImageUrl || rerollVideoUrl;
+  if (currentLayer && (currentLayer.imageSession?.activeItemList || hasSceneMedia)) {
+    const hasVisibleContent = hasSceneMedia ||
+      activeItemList.some(item => item && !item.isHidden &&
+        (item.type !== 'image' || getRenderableImageUrl(item, PROCESSOR_API_URL)));
+    if (currentLayer.imageSession?.generationStatus === 'PENDING' && !hasVisibleContent) {
       viewDisplay = <LoadingImage />;
     } else {
       if (currentCanvasAction === TOOLBAR_ACTION_VIEW.SHOW_LIBRARY_DISPLAY) {
@@ -3032,12 +3043,15 @@ export default function VideoEditorContainer(props) {
               removeVideoLayer={removeAIVideoLayer}
               aspectRatio={aspectRatio}
               isAIVideoGenerationPending={isAIVideoGenerationPending}
+              isRenderPending={isRenderPending}
               toggleStageZoom={toggleStageZoom}
               stageZoomScale={stageZoomScale}
               onCanvasViewportChange={onCanvasViewportChange}
               requestRegenerateSubtitles={requestRegenerateSubtitles}
               displayZoomType={displayZoomType}
               aiVideoLayer={currentVideoLayerState.url}
+              rerollImageUrl={rerollImageUrl}
+              rerollVideoUrl={rerollVideoUrl}
               aiVideoLayerType={currentVideoLayerState.type}
               nextAiVideoLayer={nextVideoLayerState.url}
               nextAiVideoLayerType={nextVideoLayerState.type}

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import VideoSession from '../../schema/VideoSession.js';
 
 import { __testOnly__, rerollVideoSessionLayersAndQueueGeneration } from './VideoSessionRerollAPI.js';
 import { buildSourceSceneFields } from '../video/SceneIdentity.js';
@@ -134,13 +135,20 @@ test('F2P: failed visual inference does not leave a cloned session', async () =>
 test('F2P/P2P: legacy SFX reroll queues the correct new frame while preserving the original render', async () => {
   const { source, clone, events, dependencies } = rerollHarness();
   const before = structuredClone(source);
+  clone.layers[0].aiVideoLayer = 'copied/video.mp4';
+  clone.layers[1].imageSession = { activeSelectedImage: 'copied/outro.png' };
   const result = await rerollVideoSessionLayersAndQueueGeneration(
     'user', { videoSessionId: source._id, layerIndexes: [1] }, dependencies,
   );
   assert.equal(result.session_id, 'clone-session');
   assert.deepEqual(events, ['billing', 'visual', 'copy', 'delete', 'save', 'queue', 'mapping']);
   assert.deepEqual(source, before);
+  assert.equal(clone.isExpressGeneration, true);
   assert.equal(clone.layers[0].imageSession.generationStatus, 'PENDING');
+  assert.deepEqual(clone.layers[0].rerollPreview, { type: 'video', url: 'copied/video.mp4' });
+  assert.equal(clone.layers[0].aiVideoLayer, null);
+  assert.equal(clone.layers[1].imageSession.activeSelectedImage, 'copied/outro.png');
+  assert.equal(clone.layers[1].rerollPreview, undefined);
   assert.equal(clone.layers[0].sourceSceneIndex, 0);
   assert.equal(clone.layers[0].sourceSceneRef.scene.visual, 'The original commander');
   assert.equal(clone.layers[0].prompt, 'Regenerated commander prompt');
@@ -385,6 +393,7 @@ test('reroll reset clears stale selected image sources while preserving non-imag
   );
 
   assert.equal(layer.imageSession.activeGeneratedImage, '');
+  assert.deepEqual(layer.rerollPreview, { type: 'image', url: 'assets_v2/generations/source/old.png' });
   assert.equal(layer.imageSession.activeSelectedImage, '');
   assert.equal(layer.imageSession.activeEditedImage, '');
   assert.equal(layer.imageSession.activeImageRemoteLink, '');
@@ -406,6 +415,21 @@ test('reroll reset clears stale selected image sources while preserving non-imag
   assert.equal(layer.imageSession.lastFailureAt, null);
   assert.equal(layer.imageSession.lastFailureMessage, null);
   assert.equal(layer.imageSession.lastFailureSource, null);
+});
+
+test('a stored poster becomes a preview without leaving a reusable generation frame on the selected scene', () => {
+  const userId = '507f1f77bcf86cd799439011';
+  const copy = VideoSession.hydrate({ userId, layers: [{
+    thumbnailPath: 'copied/poster.png', aiVideoThumbnailPath: 'copied/start.png',
+    imageSession: { userId, activeItemList: [{ type: 'image', isHidden: true, src: 'hidden.png' }] },
+  }] });
+  __testOnly__.resetLayerForReroll(copy, copy.layers[0], 1, { prompt: 'Another take' });
+  const [saved] = copy.toObject().layers;
+  assert.deepEqual(saved.rerollPreview, { type: 'image', url: 'copied/start.png' });
+  assert.equal(saved.thumbnailPath, null);
+  assert.equal(saved.aiVideoThumbnailPath, null);
+  assert.equal(saved.imageSession.videoRenderStartFrameImage, '');
+  assert.deepEqual(saved.imageSession.activeItemList, []);
 });
 
 test('reroll visual regeneration uses the raw narrative scene and enriched speech metadata', async () => {

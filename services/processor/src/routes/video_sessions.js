@@ -68,6 +68,7 @@ import {
   unpublishSessionVideo,
 } from '../models/Publication.js';
 import VideoSessionDocument from '../schema/VideoSession.js';
+import { getLatestRender } from '../models/video/LatestRender.js';
 
 import { requestGenerateCustomAIVideo, } from '../models/ai_video/index.js';
 
@@ -505,7 +506,7 @@ router.post('/refresh_session_layers', async function (req, res) {
   }
   try {
     await assertEditableRouteAccess(userId, { ...req.body, sessionId: id });
-    const updateSessionLayerResponse = await refreshLayersForSession(id);
+    const updateSessionLayerResponse = await refreshLayersForSession(id, userId);
     res.send(updateSessionLayerResponse);
   } catch (e) {
     res.status(400).send("Error updating session layers");
@@ -1254,6 +1255,18 @@ router.get('/get_or_create_session', async function (req, res) {
   res.json(sessionData);
 });
 
+
+router.get('/latest_render', async function (req, res) {
+  res.setHeader('Cache-Control', 'private, no-store');
+  const userId = verifyUserAuth(req.headers);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    return res.json(await getLatestRender(userId));
+  } catch (error) {
+    console.error('Failed to retrieve latest render', error);
+    return res.status(500).json({ error: 'Unable to retrieve the latest render.' });
+  }
+});
 
 router.get('/get_session', async function (req, res) {
   const headers = req.headers;

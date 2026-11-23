@@ -186,11 +186,11 @@ describe('Vidgenie entry failures, retries, and stale work', () => {
     api.get.mockResolvedValue({ data });
     mount();
     expect(await screen.findByRole('heading', { name: 'VidGenie sample unavailable' })).toBeVisible();
-    expect(screen.getByText('The sample project is unavailable. Log in to create in VidGenie.')).toBeVisible();
+    expect(screen.getByText('This sample is no longer available. Log in to create in your own workspace.')).toBeVisible();
     expect(screen.queryByRole('region', { name: 'Project editor' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Log in to create', exact: true }));
     expect(await screen.findByText('Login screen')).toBeVisible();
-    expect(screen.getByLabelText('Current route')).toHaveTextContent('/login?redirect=%2Fvidgenie');
+    expect(screen.getByLabelText('Current route')).toHaveTextContent(/^\/login$/);
     expect(api.post).not.toHaveBeenCalled();
   });
 

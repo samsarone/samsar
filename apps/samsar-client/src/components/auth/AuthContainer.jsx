@@ -40,7 +40,6 @@ export default function AuthContainer(props) {
   const [error, setError] = useState('');
   const [currentLoginView, setCurrentLoginView] = useState('login');
   
-  const API_SERVER = import.meta.env.VITE_PROCESSOR_API;
   const navigate = useNavigate();
   const location = useLocation();
   const isMobile = useMediaQuery({ query: '(max-width: 767px)' });
@@ -90,8 +89,7 @@ export default function AuthContainer(props) {
       const redirect = consumeResolvedAuthRedirect(requestedRedirect);
       const destination = await resolvePostAuthDestination({
         user: resolvedUser,
-        isMobile,
-        apiServer: API_SERVER,
+        apiServer: PROCESSOR_SERVER,
         redirect,
         search: location.search,
       });
@@ -99,29 +97,6 @@ export default function AuthContainer(props) {
     } catch  {
       setError(uiText("Unable to open your workspace."));
     }
-  };
-
-  const navigateAfterSignup = async () => {
-    const destination = await resolvePostSignupDestination({
-      isMobile,
-      apiServer: API_SERVER,
-    });
-    navigate(destination, { replace: true });
-  };
-
-  const verifyAndSetUserProfile = (profile) => {
-    axios.post(`${PROCESSOR_SERVER}/users/verify`, profile)
-      .then((dataRes) => {
-        const userData = dataRes.data;
-        const authToken = userData.authToken;
-        persistAuthToken(authToken);
-        setUser(userData);
-        closeAlertDialog();
-      })
-      .catch(() => {
-        
-        setError(uiText("Unable to verify user profile."));
-      });
   };
 
   /**
@@ -143,14 +118,8 @@ export default function AuthContainer(props) {
     localStorage.setItem(PURCHASE_CREDITS_PROMPT_STORAGE_KEY, 'true');
     localStorage.setItem("setShowSetPaymentFlow", true);
 
-    try {
-      await navigateAfterSignup();
-      closeAlertDialog();
-    } catch {
-      const message = uiText("Your account was created, but a new project could not be opened.");
-      setError(message);
-      onError(message);
-    }
+    navigate(resolvePostSignupDestination(), { replace: true });
+    closeAlertDialog();
   };
 
   let authoComponent;
@@ -162,7 +131,6 @@ export default function AuthContainer(props) {
       <Login
         setCurrentLoginView={setCurrentLoginView}
         signInWithGoogle={signInWithGoogle}
-        verifyAndSetUserProfile={verifyAndSetUserProfile}
         setUser={setUser}
         closeAlertDialog={closeAlertDialog}
         getOrCreateUserSession={navigateAfterAuth}
@@ -182,10 +150,6 @@ export default function AuthContainer(props) {
       <Register
         setCurrentLoginView={setCurrentLoginView}
         registerWithGoogle={registerWithGoogle}
-        verifyAndSetUserProfile={verifyAndSetUserProfile}
-        setUser={setUser}
-        getOrCreateUserSession={navigateAfterAuth}
-        closeAlertDialog={closeAlertDialog}
         registerUserWithEmail={registerUserWithEmail}
         showLoginButton={true}
       />
@@ -195,7 +159,6 @@ export default function AuthContainer(props) {
       <Login
         setCurrentLoginView={setCurrentLoginView}
         signInWithGoogle={signInWithGoogle}
-        verifyAndSetUserProfile={verifyAndSetUserProfile}
         setUser={setUser}
         closeAlertDialog={closeAlertDialog}
         getOrCreateUserSession={navigateAfterAuth}

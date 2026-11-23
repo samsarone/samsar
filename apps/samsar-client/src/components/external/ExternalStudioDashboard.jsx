@@ -3,7 +3,9 @@ import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { translateText as uiText } from '../../utils/localization.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import ExternalRenderStatus from './ExternalRenderStatus.jsx';
+import VidgeniePageShell from '../oneshot_editor/VidgeniePageShell.jsx';
 
 import { useUser } from '../../contexts/UserContext.jsx';
 import { getHeaders } from '../../utils/web.jsx';
@@ -91,8 +93,29 @@ function toDataUrl(file) {
 
 export default function ExternalStudioDashboard() {
   useUiLanguage();
+  const { user, userFetching, userInitiated } = useUser();
+  const { hash, search } = useLocation();
+  if (!user) {
+    if (userFetching || userInitiated === false) {
+      return <div className="p-10 text-center text-slate-500">{uiText("Loading external studio…")}</div>;
+    }
+    return <Navigate to="/login" replace />;
+  }
+  if (!user.isExternalUser) return <Navigate to="/" replace />;
+
+  const requestId = new URLSearchParams(search).get('request')?.trim();
+  if (requestId) {
+    return <VidgeniePageShell focused>
+      <ExternalRenderStatus key={JSON.stringify([user._id, requestId])} requestId={requestId} apiServer={PROCESSOR_SERVER} />
+    </VidgeniePageShell>;
+  }
+  return <ExternalStudioContent key={user._id} openCredits={hash === '#credits'} />;
+}
+
+function ExternalStudioContent({ openCredits }) {
   const navigate = useNavigate();
-  const { user, userFetching, resetUser } = useUser();
+  const { user, resetUser } = useUser();
+  const creditsSection = useRef(null);
   const [credits, setCredits] = useState(null);
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -249,11 +272,6 @@ export default function ExternalStudioDashboard() {
   }, []);
 
   const loadDashboard = useCallback(async () => {
-    if (!user?.isExternalUser) {
-      setLoading(false);
-      return;
-    }
-
     try {
       const [creditsResponse, requestsResponse] = await Promise.all([
         callExternalApi({
@@ -276,25 +294,13 @@ export default function ExternalStudioDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [callExternalApi, user?.isExternalUser]);
+  }, [callExternalApi]);
+
+  useEffect(() => { void loadDashboard(); }, [loadDashboard]);
 
   useEffect(() => {
-    if (userFetching) {
-      return;
-    }
-
-    if (!user) {
-      navigate('/login', { replace: true });
-      return;
-    }
-
-    if (!user.isExternalUser) {
-      navigate('/', { replace: true });
-      return;
-    }
-
-    void loadDashboard();
-  }, [loadDashboard, navigate, user, userFetching]);
+    if (openCredits && !loading) creditsSection.current?.scrollIntoView();
+  }, [loading, openCredits]);
 
   useEffect(() => {
     if (!pendingRequests.length) {
@@ -493,10 +499,6 @@ export default function ExternalStudioDashboard() {
     return <div className="p-10 text-center text-slate-500">{uiText("Loading external studio…")}</div>;
   }
 
-  if (!user?.isExternalUser) {
-    return null;
-  }
-
   return (
     <div className="min-h-screen bg-[#0a1020] px-4 py-10 text-slate-100">
       <div className="mx-auto max-w-6xl">
@@ -669,7 +671,7 @@ export default function ExternalStudioDashboard() {
           </div>
 
           <div className="space-y-6">
-            <section className="rounded-3xl border border-white/10 bg-white/5 p-6">
+            <section id="credits" ref={creditsSection} className="scroll-mt-[calc(var(--app-nav-height)+var(--workspace-inset))] rounded-3xl border border-white/10 bg-white/5 p-6">
               <h2 className="text-xl font-semibold text-white">{uiText("Top up credits")}</h2>
               <div className="mt-4 space-y-4">
                 <select

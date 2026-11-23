@@ -1019,7 +1019,11 @@ async function handleStepTextToVideo(req, res) {
     return res.status(200).json(response);
   } catch (error) {
     if (error?.code === 'INSUFFICIENT_CREDITS') {
-      return res.status(402).json({ message: 'Insufficient credits.' });
+      return res.status(402).json({
+        message: 'Insufficient credits.',
+        requiredCredits: error.requiredCredits,
+        availableCredits: error.availableCredits,
+      });
     }
     return res.status(error?.status || error?.response?.status || 500).json({
       message: error?.message || 'Internal server error while creating step text-to-video request.',

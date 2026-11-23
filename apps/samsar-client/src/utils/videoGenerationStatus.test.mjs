@@ -68,6 +68,19 @@ test('status preview is converted into Studio layers with partial image and vide
   assert.equal(Object.prototype.hasOwnProperty.call(session, 'branching'), false);
 });
 
+test('detailed reroll status keeps the copied preview out of editable image items', () => {
+  const preview = { type: 'video', url: '/assets_v2/copy/previous.mp4' };
+  const session = buildStudioSessionDetailsFromStatus({
+    status: 'PENDING', session_id: 'copy', session: { layers: [{
+      id: 'selected', image: { status: 'PENDING', items: [{ url: '/unselected-candidate.png' }] }, rerollPreview: preview,
+      frameImages: { startFrameUrl: '/assets_v2/copy/previous.png' },
+    }] },
+  });
+  assert.deepEqual(session.layers[0].rerollPreview, preview);
+  assert.deepEqual(session.layers[0].imageSession.activeItemList, []);
+  assert.equal(session.layers[0].hasAiVideoLayer, false);
+});
+
 test('client prefers the exact failed AI-video layer provider error over a generic status message', () => {
   const providerError = 'Provider error: input image may contain a real person';
   const status = {

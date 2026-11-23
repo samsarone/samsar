@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, expect, it, vi } from 'vitest';
 import axios from 'axios';
 import VideoHome from '../../src/components/video/VideoHome.jsx';
@@ -241,6 +241,62 @@ const mountPending = async (handoff = pendingHandoff()) => {
   if (handoff) sessionStorage.setItem('advancedVideoEditPendingSession', JSON.stringify(handoff));
   await act(async () => render(<MemoryRouter initialEntries={['/video/new-session']}><NavCanvasControlProvider><Routes><Route path="/video/:id" element={<VideoHome />} /></Routes></NavCanvasControlProvider></MemoryRouter>));
 };
+
+it('opens a preparing target directly and refreshes pending scenes with one session poll', async () => {
+  vi.useFakeTimers();
+  const preparing = session({ _id: 'new-session', remoteURL: null, isExpressGeneration: false,
+    layers: [], postProcessingPreparationPending: true });
+  const rendering = session({ _id: 'new-session', remoteURL: null, expressGenerationPending: true,
+    layers: [{ _id: 'copied-scene', duration: 4, imageSession: { generationStatus: 'PENDING', activeItemList: [] } }] });
+  axios.get.mockResolvedValue({ data: preparing });
+  axios.post.mockResolvedValue({ data: { status: 'PENDING', session: rendering } });
+  await mountPending(null);
+  expect(mock.header.isRenderPending).toBe(true);
+  expect(mock.editor.isExpressGeneration).toBe(true);
+  await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+  expect(mock.frame.layers[0]._id).toBe('copied-scene');
+  expect(axios.post.mock.calls.map(([url]) => url.split('/').pop())).toEqual([
+    'get_render_video_status', 'get_render_video_status',
+  ]);
+});
+
+it('shows copied scenes even when the separate queued-request status is temporarily unavailable', async () => {
+  vi.useFakeTimers();
+  const blank = session({ _id: 'new-session', remoteURL: null, layers: [] });
+  const copied = session({ _id: 'new-session', remoteURL: null });
+  axios.get.mockImplementation(async url => {
+    if (url.includes('/v2/status?')) throw new Error('Request status unavailable');
+    return { data: blank };
+  });
+  axios.post.mockResolvedValue({ data: { status: 'IDLE', session: copied } });
+  await mountPending();
+  await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+  expect(mock.frame.layers[0]._id).toBe('scene-1');
+  expect(mock.header.isRenderPending).toBe(true);
+});
+
+it.each(['render', 'layer'])('ignores an in-flight %s response after opening another project', async poll => {
+  vi.useFakeTimers();
+  const old = session({ _id: 'old', remoteURL: null, expressGenerationPending: poll === 'render',
+    layers: [{ _id: 'old-scene', duration: 4, imageSession: { generationStatus: 'PENDING', activeItemList: [] } }] });
+  const next = session({ _id: 'next' });
+  axios.get.mockImplementation(async url => ({ data: url.includes('id=next') ? next : old }));
+  let finishPoll;
+  axios.post.mockImplementationOnce(() => new Promise(resolve => { finishPoll = resolve; }));
+  await act(async () => render(<MemoryRouter initialEntries={['/video/old']}><NavCanvasControlProvider>
+    <Link to="/video/next">Next project</Link>
+    <Routes><Route path="/video/:id" element={<VideoHome />} /></Routes>
+  </NavCanvasControlProvider></MemoryRouter>));
+  await act(async () => { await vi.advanceTimersByTimeAsync(poll === 'render' ? 3000 : 1000); });
+  expect(axios.post.mock.calls[0][0]).toContain(poll === 'render' ? 'get_render_video_status' : 'refresh_session_layers');
+  await act(async () => { fireEvent.click(screen.getByRole('link', { name: 'Next project' })); });
+  expect(mock.editor.videoSessionDetails._id).toBe('next');
+  await act(async () => { finishPoll({ data: poll === 'render' ? { status: 'PENDING', session: old } : old }); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+  expect(mock.editor.videoSessionDetails._id).toBe('next');
+  expect(mock.header.isRenderPending).toBe(false);
+  expect(axios.post).toHaveBeenCalledTimes(1);
+});
 
 it('keeps the normal editor through queued preparation and polls new layers before render completion', async () => {
   vi.useFakeTimers();

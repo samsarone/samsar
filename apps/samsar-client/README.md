@@ -24,7 +24,9 @@ Product/API docs: [docs.samsar.one](https://docs.samsar.one)
 
 ## Quick Mental Model
 
-Open **Create** in the navigation or visit `/create` for a simple prompt-only entry. It creates a 30-second landscape video and opens VidGenie to show progress. New model defaults are Claude Opus 5.5, GPT Image 2.6, and Kling 4; saved account choices take priority. Change the defaults in account Settings. The API uses the stable `GPTIMAGE2.5` key for GPT Image 2.6. Draft prompts survive sign-in and failed requests.
+The app opens **Create** by default. When your latest video render is still in progress, opening the app returns you to its status view. After it finishes or fails, the app opens Create again. You can go directly to `/create` from the projects menu at any time.
+
+Create and VidGenie start with a one-minute duration unless you have saved another duration. On Create, choose the duration and aspect ratio, enter your prompt, and submit to see progress. New model defaults are Claude Opus 5.5, GPT Image 2.6, and Kling 4. Saved account choices take priority. Change the defaults in account Settings. The API uses the stable `GPTIMAGE2.5` key for GPT Image 2.6. Draft prompts survive sign-in and failed requests.
 
 Samsar builds a video as a structured session. A session contains scenes, visual layers, video layers, audio layers, text/subtitle items, hints, render settings, and generated media artifacts. VidGenie creates that session quickly. Studio opens the same session for detailed editing.
 
@@ -471,7 +473,8 @@ Reuse a stable SDK `idempotencyKey` or `client_request_id` for retries. Complete
 
 | Route | Component |
 | --- | --- |
-| `/` | Landing or redirect to generations |
+| `/` | Create or the status of the user's latest active video render |
+| `/create` | Create |
 | `/generations` | `GenerationsHome` |
 | `/video` | Studio landing |
 | `/video/:id` | Desktop or mobile Studio |

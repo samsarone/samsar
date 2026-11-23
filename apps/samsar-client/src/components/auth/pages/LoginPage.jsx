@@ -52,7 +52,6 @@ export default function LoginPage() {
     const redirect = consumeResolvedAuthRedirect(requestedRedirect);
     const destination = await resolvePostAuthDestination({
       user: resolvedUser,
-      isMobile,
       apiServer: PROCESSOR_SERVER,
       redirect,
       search: location.search,

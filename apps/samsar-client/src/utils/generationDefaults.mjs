@@ -6,6 +6,7 @@ export const DEFAULT_TEXT_MODEL = 'claude-opus-5.5';
 // GPT Image 2.6 uses the existing routing and pricing key.
 export const DEFAULT_IMAGE_MODEL = 'GPTIMAGE2.5';
 export const DEFAULT_VIDEO_MODEL = 'KLINGIMGTOVID4';
+export const DEFAULT_CREATE_DURATION = 60;
 export const CREATE_DURATION_OPTIONS = Object.freeze([10, 30, 60, 90, 120, 180]);
 export const CREATE_ASPECT_RATIOS = Object.freeze(['16:9', '9:16', '1:1']);
 
@@ -39,7 +40,7 @@ export function resolveCreateDefaults(user = {}) {
     imageModel: normalizeStoredGPTImageModelKey(saved.imageModel || legacy.imageModel),
     videoModel: normalizeKlingModelKey(saved.videoModel || legacy.videoModel),
     inferenceEffort: effort === 'xhigh' ? 'xhigh' : 'high',
-    duration: CREATE_DURATION_OPTIONS.includes(saved.duration) ? saved.duration : 30,
+    duration: CREATE_DURATION_OPTIONS.includes(saved.duration) ? saved.duration : DEFAULT_CREATE_DURATION,
     aspectRatio: CREATE_ASPECT_RATIOS.includes(saved.aspectRatio) ? saved.aspectRatio : '16:9',
     enableSubtitles: saved.enableSubtitles === true,
   };

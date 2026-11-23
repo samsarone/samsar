@@ -167,18 +167,6 @@ export default function TopNav(props) {
   const navShell =
     `border-b text-fg ${colorMode === 'dark' ? 'border-[#3a4050] bg-[#12141c]/92 shadow-[0_12px_36px_rgba(0,0,0,0.34)] backdrop-blur-xl' : 'bg-gradient-to-r from-[#e9edf7] via-[#dfe7f5] to-[#eef3fb] border-[#d7deef]'}`;
 
-  const resetSession = () => {
-    closeAlertDialog();
-    if (isAudioEditor) {
-      return;
-    }
-    if (isImageEditor) {
-      createNewImageSession();
-      return;
-    }
-    createNewSession();
-  };
-
   useEffect(() => {
     const queryParams = new URLSearchParams(location.search);
     const register = queryParams.get('register');
@@ -266,38 +254,12 @@ export default function TopNav(props) {
     };
   }, []);
 
-  const homeAlertDialogComponent = (
-    <div>
-      <div>{t("common.resetSessionConfirm")}</div>
-      <div className="mt-4 mb-4 m-auto">
-        <div className="inline-flex ml-2 mr-2">
-          <CommonButton
-            onClick={() => {
-              resetSession();
-            }}
-          >
-            {t("common.yes")}
-          </CommonButton>
-        </div>
-        <div className="inline-flex ml-2 mr-2">
-          <CommonButton
-            onClick={() => {
-              closeAlertDialog();
-            }}
-          >
-            {t("common.no")}
-          </CommonButton>
-        </div>
-      </div>
-    </div>
-  );
-
   const navigate = useNavigate();
 
   let userProfile = <span />;
 
   const gotoUserAccount = () => {
-    navigate('/account');
+    navigate(user?.isExternalUser ? '/external/studio' : '/account');
   };
 
   const gotoCreditsBilling = () => {
@@ -544,6 +506,10 @@ export default function TopNav(props) {
   };
 
   const gotoViewSessionsPage = () => {
+    if (user?.isExternalUser) {
+      navigate('/external/studio');
+      return;
+    }
     if (isImageEditor) {
       navigate('/image_sessions');
       return;
@@ -619,7 +585,7 @@ export default function TopNav(props) {
   let userCredits;
 
   if (user && user._id && !isReadOnlyShareView) {
-    if (!IS_STANDALONE_DEPLOYMENT) {
+    if (!IS_STANDALONE_DEPLOYMENT && !user.isExternalUser) {
       if (user.isPremiumUser) {
         let premiumUserType = uiText('Premium');
         if (user.premiumUserType) {
@@ -676,25 +642,6 @@ export default function TopNav(props) {
     );
   }
 
-  const gotoHome = () => {
-    if (user && user._id && !isImageEditor && !isAudioEditor && !isVideoEditor) {
-      navigate('/generations');
-      return;
-    }
-
-    const currentPath = location.pathname;
-    if (currentPath.includes('video')) {
-      openAlertDialog(homeAlertDialogComponent);
-    } else {
-      const lastActiveSession = localStorage.getItem('videoSessionId');
-      if (lastActiveSession) {
-        navigate(`/video/${lastActiveSession}`);
-      } else {
-        navigate('/');
-      }
-    }
-  };
-
   const showAddNewMovieMakerSession = () => {
     const headers = getHeaders();
     const payload = {
@@ -725,6 +672,7 @@ export default function TopNav(props) {
             key={location.pathname}
             createNewSession={isImageEditor ? createNewImageSession : createNewSession}
             gotoViewSessionsPage={gotoViewSessionsPage}
+            showProjectActions={!user.isExternalUser}
             addNewExpressSession={addNewExpressSession}
             addNewVidGPTSession={addNewVidGPTSession}
             showAddNewMovieMakerSession={showAddNewMovieMakerSession}
@@ -736,7 +684,7 @@ export default function TopNav(props) {
             openVideoEditor={openVideoEditor}
             openImageEditor={openImageEditor}
             openAudioEditor={openAudioEditor}
-            createPageHref={!user.isExternalUser ? '/create' : undefined}
+            createPageHref="/create"
             isCreatePage={location.pathname === '/create'}
             projectActionLabel={isImageEditor ? uiText("New image project") : (isAudioEditor && openAudioActions ? uiText("Audio actions") : (isStudioEditor && !isReadOnlyShareView ? uiText("New Studio project") : null))}
             onProjectAction={isAudioEditor ? openAudioActions : undefined}
@@ -757,7 +705,7 @@ export default function TopNav(props) {
   }
 
   let userCreditsDisplay = <span />;
-  if (user && user._id && !IS_STANDALONE_DEPLOYMENT) {
+  if (user && user._id && !IS_STANDALONE_DEPLOYMENT && !user.isExternalUser) {
     const creditsButtonClass = `border border-line-control text-fg ${colorMode === 'dark' ? 'bg-black/15 hover:border-[#f6c453]/60 hover:bg-[#20232e]' : 'bg-white/75 hover:border-slate-300 hover:bg-white'}`;
     const creditsLabelClass = 'text-fg-muted';
     const formattedCredits = formatCredits(userCredits);
@@ -917,7 +865,7 @@ export default function TopNav(props) {
       <div data-app-top-nav className={`${navShell} fixed top-0 inset-x-0 z-[1200] h-[76px]`}>
         <div className="grid h-full w-full grid-cols-[minmax(150px,0.8fr)_minmax(0,auto)_minmax(150px,0.8fr)] items-center gap-3 px-3 sm:px-4 lg:grid-cols-[minmax(190px,1fr)_auto_minmax(190px,1fr)] lg:px-6">
           <div className="flex h-full items-center justify-start">
-            <BrandLogo onClick={gotoHome} className="w-full max-w-[210px] lg:max-w-[250px]" />
+            <BrandLogo onClick={() => navigate('/')} className="w-full max-w-[210px] lg:max-w-[250px]" />
           </div>
           <div className="flex h-full items-center justify-center">
             {controlbarView}
@@ -945,7 +893,7 @@ export default function TopNav(props) {
     <div data-app-top-nav className={`${navShell} fixed top-0 inset-x-0 z-[1200] h-[56px]`}>
       <div className={`grid h-full w-full items-center gap-2 px-2 pr-3 ${isStudioEditor && isExpressGeneration ? "grid-cols-[minmax(80px,10%)_minmax(0,1fr)_auto] lg:gap-2 lg:pr-3" : "grid-cols-[minmax(132px,14%)_minmax(0,1fr)_auto] lg:gap-5 lg:pr-8"}`}>
         <div className="flex h-full items-center justify-center px-2">
-          <BrandLogo onClick={gotoHome} className="w-full max-w-[220px] px-2 lg:max-w-[260px] lg:px-4" />
+          <BrandLogo onClick={() => navigate('/')} className="w-full max-w-[220px] px-2 lg:max-w-[260px] lg:px-4" />
         </div>
         <div className="flex min-w-0 items-center justify-center h-full py-[2px] lg:justify-end lg:pr-1">
           <div className="flex h-full w-full min-w-0 items-center justify-center lg:justify-end">

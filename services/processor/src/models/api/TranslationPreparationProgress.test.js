@@ -109,6 +109,7 @@ test('uncertain timeout records a terminal session and global mapping without ra
     now: () => Date.parse('2026-11-23T06:42:00Z'),
   });
   const fields = writes[0].update.$set;
+  assert.equal(fields.postProcessingPreparationPending, false);
   assert.equal(fields.expressGenerationFailed, true);
   assert.equal(fields.expressGenerationPending, false);
   assert.equal(fields['expressGenerationStatus.status'], 'FAILED');

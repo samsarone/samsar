@@ -76,6 +76,7 @@ export async function markTranslationPreparationFailed({ sessionId, error, progr
   const result = await write(
     { _id: sessionId, expressGenerationCancelled: { $ne: true } },
     { $set: {
+      postProcessingPreparationPending: false,
       expressGenerationFailed: true,
       expressGenerationPending: false,
       expressGenerationError: message,

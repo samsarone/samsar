@@ -96,7 +96,7 @@ export default function OneshotEditorContainer({ initialSessionRequestRef } = {}
         setRouteError(
           isAuthenticated
             ? uiText("Unable to open VidGenie.")
-            : uiText("The sample project is unavailable. Log in to create in VidGenie.")
+            : uiText("This sample is no longer available. Log in to create in your own workspace.")
         );
         routeResolutionStartedRef.current = false;
       } catch {
@@ -104,7 +104,7 @@ export default function OneshotEditorContainer({ initialSessionRequestRef } = {}
         setRouteError(
           isAuthenticated
             ? uiText("Unable to open VidGenie.")
-            : uiText("The sample project is unavailable. Log in to create in VidGenie.")
+            : uiText("This sample is no longer available. Log in to create in your own workspace.")
         );
         routeResolutionStartedRef.current = false;
       }
@@ -130,7 +130,7 @@ export default function OneshotEditorContainer({ initialSessionRequestRef } = {}
           <button type="button" onClick={() => setRouteRetryAttempt(attempt => attempt + 1)} className="mt-4 mr-2 inline-flex min-h-10 items-center justify-center rounded-xl border border-line px-5 py-2 text-sm font-semibold">{uiText("Try again")}</button>
           <button
             type="button"
-            onClick={() => navigate('/login?redirect=%2Fvidgenie')}
+            onClick={() => navigate('/login')}
             className="mt-4 inline-flex min-h-10 items-center justify-center rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
           >{uiText("Log in to create")}</button>
         </div>

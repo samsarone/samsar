@@ -49,11 +49,11 @@ test('Create defaults persist for the authenticated account and survive a separa
   const initial = response();
   await route('GET')({ method: 'GET', headers }, initial);
   assert.equal(initial.body.createDefaults.inferenceModel, 'gpt-6.2-astra');
-  assert.equal(initial.body.createDefaults.duration, 30);
+  assert.equal(initial.body.createDefaults.duration, 60);
   assert.equal(saves, 0);
 
   const saved = response();
-  await route('PUT')({ method: 'PUT', headers, body: { userId: 'another-user', createDefaults: { ...SYSTEM_CREATE_DEFAULTS, duration: 60, aspectRatio: '9:16', enableSubtitles: true } } }, saved);
+  await route('PUT')({ method: 'PUT', headers, body: { userId: 'another-user', createDefaults: { ...SYSTEM_CREATE_DEFAULTS, duration: 30, aspectRatio: '9:16', enableSubtitles: true } } }, saved);
   assert.equal(saved.code, 200);
   assert.equal(saves, 1);
   assert.equal(stored.selectedInferenceModel, 'gpt-6.2-astra');
@@ -62,7 +62,7 @@ test('Create defaults persist for the authenticated account and survive a separa
   const reloaded = response();
   await route('GET')({ method: 'GET', headers }, reloaded);
   assert.deepEqual(reloaded.body, saved.body);
-  assert.equal(reloaded.body.createDefaults.duration, 60);
+  assert.equal(reloaded.body.createDefaults.duration, 30);
   assert.match(reloaded.headers['Cache-Control'], /no-store/);
 });
 

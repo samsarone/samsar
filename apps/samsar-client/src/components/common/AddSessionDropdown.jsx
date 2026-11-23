@@ -408,7 +408,7 @@ function AddSessionDropdown(props) {
                 </Link>
               )}
             </Menu.Item>
-            {showProjectActions && <div role="separator" className="my-1 border-t border-line" />}
+            {(showProjectActions || gotoViewSessionsPage) && <div role="separator" className="my-1 border-t border-line" />}
           </>}
           {showProjectActions && editorActions.map((action) => (
             <Menu.Item key={action.label}>
@@ -423,7 +423,7 @@ function AddSessionDropdown(props) {
               )}
             </Menu.Item>
           ))}
-          {showProjectActions && <Menu.Item>
+          {gotoViewSessionsPage && <Menu.Item>
             {({ active }) => (
               <button
                 type="button"

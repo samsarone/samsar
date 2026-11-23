@@ -75,6 +75,10 @@ const ImageSessionSchema = new Schema({
 
 const layerSchema = new Schema({
   imageSession: { type: ImageSessionSchema },
+  rerollPreview: { type: new Schema({
+    type: { type: String, enum: ['image', 'video'] },
+    url: String,
+  }, { _id: false }), default: undefined },
   prompt: String,
   videoGenerationPrompt: String,
   status: { type: String, default: "pending" },
@@ -134,6 +138,8 @@ const layerSchema = new Schema({
   aiLayerEndFrame: String,
   baseLayerStartFrame: String,
   baseLayerEndFrame: String,
+  aiVideoThumbnailPath: String,
+  thumbnailPath: String,
 
 
   refilterImageScore: { type: Number, default: 100 },
@@ -278,6 +284,7 @@ const videoSessionSchema = new Schema({
 
   isFrameGenerating: { type: Boolean, default: false },
   videoGenerationPending: { type: Boolean, default: false },
+  renderRequestedAt: Date,
   audioGenerationPending: { type: Boolean, default: false },
   transcriptGenerationPending: { type: Boolean, default: false },
   enableSubtitles: { type: Boolean, default: false },
@@ -436,6 +443,7 @@ const videoSessionSchema = new Schema({
   hostedAgentBilling: { type: Schema.Types.Mixed, default: undefined },
   postProcessingBilling: { type: Schema.Types.Mixed, default: undefined },
   postProcessingProgress: { type: Schema.Types.Mixed, default: undefined },
+  postProcessingPreparationPending: { type: Boolean, default: false },
   postProcessingPreferences: { type: Schema.Types.Mixed, default: undefined },
   legacyProvisionalRefund: { type: Schema.Types.Mixed, default: undefined },
   finalVideoDurationSeconds: { type: Number, default: undefined },
@@ -534,6 +542,7 @@ const videoSessionSchema = new Schema({
 
 }, { timestamps: true, strict: false });
 
+videoSessionSchema.index({ userId: 1 });
 videoSessionSchema.index({ shareToken: 1 }, { unique: true, sparse: true });
 videoSessionSchema.index({ editableShareToken: 1 }, { unique: true, sparse: true });
 

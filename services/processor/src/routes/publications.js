@@ -14,6 +14,9 @@ import User from '../schema/User.js';
 import { resolveRequestActorFromAuthHeaders } from '../models/external/User.js';
 import { isPublicPublicationMediaUrl } from '../models/AWS.js';
 import { normalizePublicationTranscript } from '../models/publication/Transcript.js';
+import { getLanguageCodeAliases } from '../consts/SupportedLanguages.js';
+import { getLanguageStringFromLanguageCode } from '../consts/LanguageCodes.js';
+import { supportsInferenceEffort } from '../inference/ReasoningModels.js';
 import { serializeInteractivePublication } from '../models/InteractivePublication.js';
 import {
   isBranchedVideoSession,
@@ -108,6 +111,39 @@ const normalizeOptionalString = (value) => {
   const trimmed = value.trim();
   return trimmed || null;
 };
+
+function getPublicationFeedFilters(query) {
+  const filters = [];
+  for (const kind of ['inference', 'video']) {
+    const field = `${kind}Model`;
+    const model = normalizeOptionalString(query[field]);
+    if (!model) continue;
+    const snapshot = `generationModels.${kind}`;
+    // Effort is a separate control. Older sessions encoded it in the model ID.
+    const base = model.replace(/-xhigh$/, '');
+    const match = kind === 'inference' && supportsInferenceEffort(model)
+      ? { $in: [base, `${base}-xhigh`] } : model;
+    filters.push({ $or: [
+      { [snapshot]: match },
+      { [`${snapshot}.0`]: { $exists: false }, [field]: match },
+    ] });
+  }
+
+  const language = normalizeOptionalString(query.language);
+  if (language && language.toLowerCase() !== 'auto') {
+    const aliases = getLanguageCodeAliases(language);
+    // Only validated ISO codes/aliases enter the pattern. Include regional
+    // tags such as en-US and legacy publications storing only a display name.
+    const values = aliases.length ? [
+      new RegExp(`^(?:${aliases.join('|')})(?:[-_][a-z0-9]+)*$`, 'i'),
+      getLanguageStringFromLanguageCode(aliases[0]),
+    ].filter(Boolean) : [language];
+    filters.push({ $or: ['sessionLanguage', 'language', 'languageString'].map((field) => (
+      { [field]: { $in: values } }
+    )) });
+  }
+  return filters;
+}
 
 const getPayloadValue = (payload = {}, keys = []) => {
   if (!payload || typeof payload !== 'object') {
@@ -687,8 +723,8 @@ router.get('/', async (req, res) => {
       { $or: [{ isDeleted: { $exists: false } }, { isDeleted: false }] },
     ];
 
-    const baseQuery = { $and: [...visibilityClauses] };
-    const paginatedQuery = { $and: [...visibilityClauses] };
+    const baseQuery = { $and: [...visibilityClauses, ...getPublicationFeedFilters(req.query)] };
+    const paginatedQuery = { $and: [...baseQuery.$and] };
 
     if (cursorId) {
       paginatedQuery.$and.push({ _id: { $lt: cursorId } });

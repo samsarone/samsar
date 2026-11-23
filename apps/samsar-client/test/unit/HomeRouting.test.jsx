@@ -60,6 +60,7 @@ vi.mock('../../src/components/audio/AudioStudioHome.jsx', () => ({ default: () =
 vi.mock('../../src/components/external/ExternalStudioDashboard.jsx', () => ({ default: () => <div>Page: external studio</div> }));
 vi.mock('../../src/components/generations/GenerationsHome.jsx', () => ({ default: () => <div>Page: generations</div> }));
 vi.mock('../../src/components/landing/CreateLanding.jsx', () => ({ default: () => <div>Page: simple create</div> }));
+vi.mock('../../src/components/landing/CreateLandingSkeleton.jsx', () => ({ default: () => <div data-loading-page="create">Loading Create page</div> }));
 vi.mock('../../src/components/oneshot_editor/VidgenieSkeletonLoader.jsx', () => ({ default: () => <div>Loading Vidgenie page</div> }));
 vi.mock('../../src/components/video/util/StudioSkeletonLoader.jsx', () => ({ default: () => <div>Loading Studio page</div> }));
 
@@ -100,8 +101,8 @@ beforeEach(() => {
   scenario.getUserAPI.mockReset().mockImplementation(async () => scenario.user);
   scenario.resetUser.mockReset().mockImplementation(() => { scenario.user = null; });
   scenario.persistAuthToken.mockReset();
-  scenario.resolvePostAuthDestination.mockReset().mockResolvedValue('/vidgenie/default-project');
-  scenario.resolvePostSignupDestination.mockReset().mockResolvedValue('/video/signup-project');
+  scenario.resolvePostAuthDestination.mockReset().mockResolvedValue('/create');
+  scenario.resolvePostSignupDestination.mockReset().mockReturnValue('/create');
   scenario.preload.mockReset().mockResolvedValue(undefined);
   axios.get.mockReset().mockResolvedValue({ data: {} });
   vi.stubGlobal('BroadcastChannel', vi.fn(function (name) {
@@ -112,7 +113,7 @@ beforeEach(() => {
 });
 
 describe('routing lifecycle and single-use handoff regressions', () => {
-  it.each([false, true])('opens the additional create landing directly for guests (standalone=%s)', async standalone => {
+  it.each([false, true])('opens the create landing directly for guests (standalone=%s)', async standalone => {
     scenario.standalone = standalone;
     await mount('/create');
     expect(location()).toBe('/create');
@@ -172,7 +173,7 @@ describe('routing lifecycle and single-use handoff regressions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     await settle();
     expect(scenario.getUserAPI).toHaveBeenCalledTimes(2);
-    expect(location()).toBe('/vidgenie/default-project');
+    expect(location()).toBe('/create');
   });
 
   it.each(['/video/project-123', '/vidgemie/project-123'])('preserves public options without forwarding credentials from %s', async (path) => {
@@ -184,7 +185,7 @@ describe('routing lifecycle and single-use handoff regressions', () => {
   it('resolves the authenticated root only once during Strict Mode effect replay', async () => {
     scenario.user = { _id: 'user-1' };
     await mount('/?source=library', { strict: true });
-    expect(location()).toBe('/vidgenie/default-project');
+    expect(location()).toBe('/create');
     expect(scenario.resolvePostAuthDestination).toHaveBeenCalledOnce();
     expect(scenario.resolvePostAuthDestination).toHaveBeenCalledWith(expect.objectContaining({ search: '?source=library' }));
   });
@@ -198,7 +199,7 @@ describe('routing lifecycle and single-use handoff regressions', () => {
     expect(scenario.getUserAPI).toHaveBeenCalledOnce();
     await act(async () => resolveUser({ _id: 'hydrated-user' }));
     await settle();
-    expect(location()).toBe('/vidgenie/default-project');
+    expect(location()).toBe('/create');
     expect(scenario.resolvePostAuthDestination).toHaveBeenCalledOnce();
     expect(scenario.resolvePostAuthDestination).toHaveBeenCalledWith(expect.objectContaining({ search: '?theme=watercolor' }));
   });
@@ -254,7 +255,7 @@ describe('routing lifecycle and single-use handoff regressions', () => {
     expect(location()).toBe('/vidgenie/account-b-project');
   });
 
-  it('reuses initial token-root session creation after its hydrated profile appears in context', async () => {
+  it('reuses the initial render lookup after its hydrated profile appears in context', async () => {
     let resolveUser;
     let resolvePath;
     scenario.authToken = 'existing-token';
@@ -272,9 +273,9 @@ describe('routing lifecycle and single-use handoff regressions', () => {
     await settle();
     expect(scenario.getUserAPI).toHaveBeenCalledOnce();
     expect(scenario.resolvePostAuthDestination).toHaveBeenCalledOnce();
-    await act(async () => resolvePath('/vidgenie/single-created-project'));
+    await act(async () => resolvePath('/vidgenie/current-render?view=preview'));
     await settle();
-    expect(location()).toBe('/vidgenie/single-created-project');
+    expect(location()).toBe('/vidgenie/current-render?view=preview');
   });
 
   it('does not navigate to an old root lookup result after the user has changed routes', async () => {
@@ -304,7 +305,7 @@ describe('routing lifecycle and single-use handoff regressions', () => {
     scenario.user = { _id: 'user-1' };
     scenario.resolvePostAuthDestination.mockRejectedValue(new Error('Workspace unavailable'));
     await mount('/?theme=watercolor&authToken=secret');
-    expect(location()).toBe('/vidgenie?theme=watercolor');
+    expect(location()).toBe('/create?theme=watercolor');
   });
 
   it('exchanges and hydrates a one-use token once during Strict Mode effect replay', async () => {
@@ -336,7 +337,7 @@ describe('routing lifecycle and single-use handoff regressions', () => {
     expect(axios.get).toHaveBeenCalledOnce();
     expect(scenario.persistAuthToken).toHaveBeenCalledExactlyOnceWith('new-auth-token');
     expect(scenario.resetUser).not.toHaveBeenCalled();
-    expect(location()).toBe('/vidgenie/default-project');
+    expect(location()).toBe('/create');
   });
 
   it('keeps a successful sign-in when workspace destination resolution fails', async () => {
@@ -347,7 +348,7 @@ describe('routing lifecycle and single-use handoff regressions', () => {
     });
     scenario.resolvePostAuthDestination.mockRejectedValue(new Error('Workspace unavailable'));
     await mount('/login?loginToken=one-use-token&theme=watercolor');
-    expect(location()).toBe('/vidgenie?theme=watercolor');
+    expect(location()).toBe('/create?theme=watercolor');
     expect(scenario.resetUser).not.toHaveBeenCalled();
   });
 
@@ -459,9 +460,9 @@ describe('client route mapping and device restrictions', () => {
     expect(screen.queryByText('Page: studio editor')).not.toBeInTheDocument();
   });
 
-  it.each(['/video', '/'])('uses the mobile landing for guests at %s', async (path) => {
+  it('keeps the explicit mobile video landing accessible at /video', async () => {
     scenario.mobile = true;
-    await mount(path);
+    await mount('/video');
     expect(screen.getByText('Page: mobile landing')).toBeInTheDocument();
   });
 
@@ -494,9 +495,14 @@ describe('client route mapping and device restrictions', () => {
 });
 
 describe('guest and external-user guards', () => {
-  it('keeps a hosted guest on the desktop landing', async () => {
-    await mount('/');
-    expect(screen.getByText('Page: studio landing')).toBeInTheDocument();
+  it.each([[false, false], [false, true], [true, false], [true, true]])('opens Create from the guest root (mobile=%s, standalone=%s)', async (mobile, standalone) => {
+    scenario.mobile = mobile;
+    scenario.standalone = standalone;
+    await mount('/?source=landing&authToken=do-not-forward');
+    expect(location()).toBe('/create?source=landing');
+    expect(screen.getByText('Page: simple create')).toBeVisible();
+    expect(axios.get).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
     expect(scenario.resolvePostAuthDestination).not.toHaveBeenCalled();
   });
 
@@ -506,7 +512,7 @@ describe('guest and external-user guards', () => {
     expect(screen.getByText('Page: login')).toBeInTheDocument();
   });
 
-  it.each(['/', '/register', '/video', '/video/share/shared', '/image/studio', '/generations'])
+  it.each(['/register', '/video', '/video/share/shared', '/image/studio', '/generations'])
     ('requires standalone authentication at %s', async (path) => {
       scenario.standalone = true;
       await mount(path);
@@ -528,10 +534,18 @@ describe('guest and external-user guards', () => {
       scenario[field] = value;
       await mount('/');
       expect(location()).toBe('/');
-      expect(screen.getByText('Loading Studio page')).toBeInTheDocument();
+      expect(screen.getByText('Loading Create page')).toBeInTheDocument();
     });
 
-  it('routes external users back to their dashboard while keeping verification reachable', async () => {
+  it('keeps the explicit Create page accessible for external users', async () => {
+    scenario.user = { _id: 'external-1', isExternalUser: true };
+    await mount('/create');
+    expect(location()).toBe('/create');
+    expect(screen.getByText('Page: simple create')).toBeVisible();
+    expect(scenario.resolvePostAuthDestination).not.toHaveBeenCalled();
+  });
+
+  it('routes external users back to their dashboard from the internal editor', async () => {
     scenario.user = { _id: 'external-1', isExternalUser: true };
     await mount('/video/project-1');
     expect(location()).toBe('/external/studio');
@@ -550,30 +564,31 @@ describe('authenticated root bootstrap', () => {
   it('preserves public query options and strips credentials before authenticated-root destination lookup', async () => {
     scenario.user = { _id: 'user-1' };
     await mount('/?authToken=do-not-forward&theme=watercolor');
-    expect(location()).toBe('/vidgenie/default-project');
+    expect(location()).toBe('/create');
     expect(scenario.resolvePostAuthDestination).toHaveBeenLastCalledWith(expect.objectContaining({
-      user: scenario.user, isMobile: false, search: '?theme=watercolor', createIfMissing: true,
+      user: scenario.user, search: '?theme=watercolor',
     }));
-    expect(scenario.preload).toHaveBeenCalled();
+    expect(scenario.preload).not.toHaveBeenCalled();
   });
 
   it('uses the hosted fallback and retains public query options if destination resolution returns no path', async () => {
     scenario.user = { _id: 'user-1' };
     scenario.resolvePostAuthDestination.mockResolvedValue(null);
     await mount('/?source=library&authToken=secret');
-    expect(location()).toBe('/vidgenie?source=library');
+    expect(location()).toBe('/create?source=library');
   });
 
-  it('uses Studio as the standalone desktop fallback', async () => {
+  it('uses Create as the standalone desktop fallback', async () => {
     scenario.standalone = true;
     scenario.user = { _id: 'user-1' };
     scenario.resolvePostAuthDestination.mockResolvedValue(null);
     await mount('/');
-    expect(location()).toBe('/video');
-    expect(screen.getByText('Page: studio landing')).toBeInTheDocument();
+    expect(location()).toBe('/create');
+    expect(screen.getByText('Page: simple create')).toBeVisible();
   });
 
-  it('hydrates an existing token before opening its resolved project', async () => {
+  it('hydrates an existing token before opening its pending render preview', async () => {
+    scenario.resolvePostAuthDestination.mockResolvedValue('/vidgenie/pending-video?view=preview');
     scenario.authToken = 'existing-token';
     scenario.userInitiated = false;
     scenario.getUserAPI.mockImplementation(async () => {
@@ -582,26 +597,33 @@ describe('authenticated root bootstrap', () => {
       return scenario.user;
     });
     await mount('/');
-    expect(location()).toBe('/vidgenie/default-project');
+    expect(location()).toBe('/vidgenie/pending-video?view=preview');
+    expect(scenario.preload).toHaveBeenCalledOnce();
     expect(scenario.getUserAPI).toHaveBeenCalledOnce();
     expect(scenario.resolvePostAuthDestination).toHaveBeenCalledWith(expect.objectContaining({ user: scenario.user }));
+    expect(axios.post).not.toHaveBeenCalled();
   });
 
-  it('returns an expired root token to login', async () => {
+  it('opens public Create when an expired root token is cleared', async () => {
     scenario.authToken = 'expired-token';
     scenario.userInitiated = false;
     scenario.getUserAPI.mockImplementation(async () => { scenario.authToken = null; return null; });
-    await mount('/');
-    expect(location()).toBe('/login');
+    await mount('/?authToken=expired&source=home');
+    expect(location()).toBe('/create?source=home');
     expect(scenario.resolvePostAuthDestination).not.toHaveBeenCalled();
   });
 
-  it('opens the external dashboard directly for a hydrated external account', async () => {
+  it.each([
+    ['/create', 'Page: simple create'],
+    ['/external/studio?request=external-render', 'Page: external studio'],
+  ])('opens the resolved external account destination %s', async (destination, page) => {
     scenario.authToken = 'external-token';
     scenario.user = { _id: 'external-user', isExternalUser: true };
+    scenario.resolvePostAuthDestination.mockResolvedValue(destination);
     await mount('/');
-    expect(location()).toBe('/external/studio');
-    expect(screen.getByText('Page: external studio')).toBeInTheDocument();
+    expect(location()).toBe(destination);
+    expect(screen.getByText(page)).toBeVisible();
+    expect(scenario.resolvePostAuthDestination).toHaveBeenCalledWith(expect.objectContaining({ user: scenario.user }));
   });
 });
 
@@ -646,9 +668,8 @@ describe('login token handoff', () => {
       scenario.userFetching = false;
       return scenario.user;
     });
-    scenario.resolvePostAuthDestination.mockResolvedValue('/video/default-project');
     await mount('/login?loginToken=handoff-token&redirect=%2Faccount');
-    expect(location()).toBe('/video/default-project');
+    expect(location()).toBe('/create');
     expect(scenario.resolvePostAuthDestination).toHaveBeenCalledWith(expect.objectContaining({ user: scenario.user }));
   });
 
@@ -707,18 +728,15 @@ describe('OAuth broadcast handoff', () => {
     expect(location()).toBe('/account/profile');
   });
 
-  it('creates a fresh signup project for a new OAuth user', async () => {
+  it('opens Create for a new OAuth user', async () => {
     scenario.mobile = true;
     await mount('/login');
     scenario.user = { _id: 'new-user' };
-    scenario.resolvePostSignupDestination.mockResolvedValue('/vidgenie/signup-project');
     await act(async () => { await activeChannel().onmessage({ data: { type: 'oauth_complete', isNewUser: true } }); });
     await settle();
-    expect(location()).toBe('/vidgenie/signup-project');
-    expect(scenario.resolvePostSignupDestination).toHaveBeenCalledWith({
-      isMobile: true,
-      apiServer: import.meta.env.VITE_PROCESSOR_API,
-    });
+    expect(location()).toBe('/create');
+    expect(scenario.resolvePostSignupDestination).toHaveBeenCalledOnce();
+    expect(axios.post).not.toHaveBeenCalled();
     expect(scenario.resolvePostAuthDestination).not.toHaveBeenCalled();
   });
 
@@ -727,7 +745,7 @@ describe('OAuth broadcast handoff', () => {
     scenario.user = { _id: 'oauth-user' };
     await act(async () => { await activeChannel().onmessage({ data: { type: 'oauth_complete' } }); });
     await settle();
-    expect(location()).toBe('/vidgenie/default-project');
+    expect(location()).toBe('/create');
     expect(scenario.resolvePostAuthDestination).toHaveBeenCalledWith(expect.objectContaining({ search: '?theme=watercolor' }));
   });
 
@@ -744,7 +762,7 @@ describe('page-specific lazy loading fallbacks', () => {
     render(getRouteLoadingFallback(path, false));
     expect(screen.getByText('Loading Vidgenie page')).toBeInTheDocument();
   });
-  it.each([['/create', 'create'], ['/quick_video/a', 'quick'], ['/image/studio/a', 'image'], ['/iamge/studio/a', 'image'], ['/audio/studio', 'audio'], ['/account/settings', 'account'], ['/my_sessions', 'projects'], ['/login', 'auth']])('matches the destination layout at %s', (path, layout) => {
+  it.each([['/', 'create'], ['/create', 'create'], ['/quick_video/a', 'quick'], ['/image/studio/a', 'image'], ['/iamge/studio/a', 'image'], ['/audio/studio', 'audio'], ['/account/settings', 'account'], ['/my_sessions', 'projects'], ['/login', 'auth']])('matches the destination layout at %s', (path, layout) => {
     const { container } = render(getRouteLoadingFallback(path, false));
     expect(container.querySelector('[data-loading-page]')).toHaveAttribute('data-loading-page', layout);
     expect(container.querySelector('.animate-spin')).toBeNull();

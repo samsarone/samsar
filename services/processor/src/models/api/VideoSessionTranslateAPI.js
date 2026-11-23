@@ -78,6 +78,15 @@ async function createNewBlankVideoSession(userId, sessionOverrides = {}) {
   return newSession._id.toString();
 }
 
+// Track accepted preparation separately from the flags that start generation workers.
+async function registerPostProcessingPreparation(mapping) {
+  await upsertGlobalSessionMapping(mapping);
+  await VideoSession.updateOne(
+    { _id: mapping.sessionId },
+    { $set: { postProcessingPreparationPending: true } },
+  );
+}
+
 function withNormalizedAssetPath(assetRelativePath, shouldHaveLeadingSlash) {
   if (!assetRelativePath || typeof assetRelativePath !== 'string') {
     return assetRelativePath;
@@ -1397,7 +1406,6 @@ function prepareSessionForSubtitleRemoval({
   clonedSession.sessionMessageGenerationPending = false;
   clonedSession.aiVideoGenerationPending = false;
   clonedSession.lipSyncGenerationPending = false;
-  // Ensure the express listener does not pick this up before layer flags are updated.
   clonedSession.expressGenerationPending = false;
   clonedSession.expressGenerationFailed = false;
   clearInheritedProviderNetworkFailure(clonedSession);
@@ -1827,6 +1835,7 @@ async function processTranslateVideoSessionJob({
 
   await reportProgress({ phase: 'queueing_speech', event: 'speech_queue_started' });
   if (latestProgress?.operation === 'translate_video') clonedSession.postProcessingProgress = latestProgress;
+  clonedSession.postProcessingPreparationPending = false;
   const activated = await VideoSession.updateOne(
     { _id: newSessionId, expressGenerationCancelled: { $ne: true } },
     { $set: clonedSession },
@@ -1946,7 +1955,7 @@ export async function translateVideoSessionAndQueueGeneration(userId, payload = 
     },
   });
 
-  await upsertGlobalSessionMapping({
+  await registerPostProcessingPreparation({
     sessionId: newSessionId,
     sessionType: 'video',
     requestId: newSessionId,
@@ -2188,7 +2197,7 @@ export async function removeSubtitlesAndQueueGeneration(userId, payload = {}) {
 
   await admitPostProcessing({ sessionId: newSessionId, userId, operation: 'remove_subtitles', mode: 'free' });
 
-  await upsertGlobalSessionMapping({
+  await registerPostProcessingPreparation({
     sessionId: newSessionId,
     sessionType: 'video',
     requestId: newSessionId,
@@ -2290,7 +2299,7 @@ export async function addSubtitlesAndQueueGeneration(userId, payload = {}) {
 
   await admitPostProcessing({ sessionId: newSessionId, userId, operation: 'add_subtitles', mode: 'free' });
 
-  await upsertGlobalSessionMapping({
+  await registerPostProcessingPreparation({
     sessionId: newSessionId,
     sessionType: 'video',
     requestId: newSessionId,
@@ -2354,10 +2363,11 @@ function scheduleAddSubtitlesSessionJob({
       });
       try {
         await VideoSession.updateOne(
-          { _id: newSessionId },
+          { _id: newSessionId, expressGenerationCancelled: { $ne: true } },
           {
             $set: {
               expressGenerationFailed: true,
+              postProcessingPreparationPending: false,
               expressGenerationPending: false,
               frameGenerationPending: false,
               expressGenerationError: message,
@@ -2392,10 +2402,11 @@ function scheduleRemoveSubtitlesSessionJob({ userId, oldSessionId, newSessionId,
       });
       try {
         await VideoSession.updateOne(
-          { _id: newSessionId },
+          { _id: newSessionId, expressGenerationCancelled: { $ne: true } },
           {
             $set: {
               expressGenerationFailed: true,
+              postProcessingPreparationPending: false,
               expressGenerationPending: false,
               frameGenerationPending: false,
               expressGenerationError: message,
@@ -2417,6 +2428,15 @@ function scheduleRemoveSubtitlesSessionJob({ userId, oldSessionId, newSessionId,
   }
 
   setTimeout(start, 0);
+}
+
+async function activatePreparedSubtitleSession(sessionId, clonedSession) {
+  // The prepared clone already contains its per-layer frame flags. Publish the
+  // timeline and enable rendering in the same write.
+  await VideoSession.updateOne(
+    { _id: sessionId, expressGenerationCancelled: { $ne: true } },
+    { $set: { ...clonedSession, postProcessingPreparationPending: false, expressGenerationPending: true } },
+  );
 }
 
 async function processRemoveSubtitlesSessionJob({ userId, oldSessionId, newSessionId, webhookUrl }) {
@@ -2454,19 +2474,7 @@ async function processRemoveSubtitlesSessionJob({ userId, oldSessionId, newSessi
     webhookUrl,
   });
 
-  await VideoSession.updateOne({ _id: newSessionId }, { $set: clonedSession });
-  await VideoSession.updateOne(
-    { _id: newSessionId },
-    {
-      $set: {
-        expressGenerationPending: true,
-        frameGenerationPending: true,
-        'layers.$[].frameGenerationPending': true,
-        'layers.$[].aiVideoFrameGenerationPending': false,
-        'layers.$[].frames': [],
-      },
-    },
-  );
+  await activatePreparedSubtitleSession(newSessionId, clonedSession);
 }
 
 async function processAddSubtitlesSessionJob({
@@ -2526,21 +2534,5 @@ async function processAddSubtitlesSessionJob({
     });
   }
 
-  await VideoSession.updateOne({ _id: newSessionId }, { $set: clonedSession });
-  await VideoSession.updateOne(
-    { _id: newSessionId },
-    {
-      $set: {
-        expressGenerationPending: true,
-        frameGenerationPending: true,
-        transcriptGenerationPending: true,
-        enableSubtitles: true,
-        hasSubtitles: true,
-        has_subtitles: true,
-        'layers.$[].frameGenerationPending': true,
-        'layers.$[].aiVideoFrameGenerationPending': false,
-        'layers.$[].frames': [],
-      },
-    },
-  );
+  await activatePreparedSubtitleSession(newSessionId, clonedSession);
 }

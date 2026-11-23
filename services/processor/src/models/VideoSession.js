@@ -1,6 +1,7 @@
 import { getVideoTimeline } from '../utils/VideoTimeline.js';
 import { frameCountToSeconds, secondsToFrameCount, getLayerFrameRange } from '../utils/FrameClock.js';
 import { captureSessionSceneReferences, resolveLayerSourceSceneReference } from './video/SceneIdentity.js';
+import { getPendingRerollPreview } from './api/StatusAPI.js';
 import { captureMovieResourceTimeline, synchronizeMovieResourceTimeline } from '../utils/MovieResourceTimeline.js';
 import { getDBConnectionString } from "./DBString.js";
 import VideoSession from "../schema/VideoSession.js";
@@ -2857,7 +2858,7 @@ function hydrateStudioActiveItemListForResponse(layer = {}, sessionPayload = {})
   }
 
   const baseImageSource = getLayerStudioBaseImageSource(layer);
-  if (!baseImageSource) {
+  if (!baseImageSource || getPendingRerollPreview(sessionPayload, layer)) {
     return serializeActiveItemListForResponse(activeItemList);
   }
 
@@ -5640,6 +5641,7 @@ export async function requestVideoGeneration(userId, sessionId, renderOptions = 
     videoSession.expressGenerationPending = false;
   }
   videoSession.generationError = null;
+  videoSession.renderRequestedAt = new Date();
   videoSession.expressGenerationFailed = false;
   videoSession.expressGenerationCancelled = false;
   videoSession.expressGenerationError = null;
@@ -5812,6 +5814,7 @@ export async function restartExpressPipelineFromCheckpoint(userId, payload = {})
   videoSession.expressGenerationCancelled = false;
   videoSession.expressGenerationFailed = false;
   videoSession.expressGenerationError = null;
+  videoSession.renderRequestedAt = new Date();
   videoSession.videoGenerationPending = false;
   videoSession.notifyOnCompletion = false;
   videoSession.notificationSent = false;
@@ -6272,7 +6275,7 @@ export async function updateFramesForLayer(payload) {
   }
 }
 
-export async function refreshLayersForSession(sessionId) {
+export async function refreshLayersForSession(sessionId, viewerUserId) {
   await getDBConnectionString();
   const session = await VideoSession.findOne({ _id: sessionId }).populate({
     path: 'layers.imageSession',
@@ -6281,7 +6284,7 @@ export async function refreshLayersForSession(sessionId) {
   if (!session) {
     throw new Error("Session not found");
   }
-  return sanitizeStudioSessionPayload(session);
+  return sanitizeStudioSessionPayload(session, { viewerUserId });
 }
 
 function clampNumber(value, min, max) {
@@ -6404,6 +6407,14 @@ async function buildStudioSessionPayload(session, options = {}) {
         ),
       };
       delete sanitizedLayer.frames;
+      delete sanitizedLayer.rerollPreview;
+      const preview = isSessionOwnerForViewer && getPendingRerollPreview(sessionPayload, layer);
+      if (preview) {
+        const url = preview.type === 'video'
+          ? buildStudioMediaDeliveryUrl(preview.url)
+          : buildStudioImageDeliveryUrl(preview.url);
+        if (url) sanitizedLayer.rerollPreview = { type: preview.type, url };
+      }
       return sanitizedLayer;
     })
     : [];
@@ -7834,6 +7845,12 @@ export async function getVideoRenderStatus(reqBody) {
     }
   }
 
+  if (session.postProcessingPreparationPending) {
+    return {
+      status: session.expressGenerationPaused ? 'PAUSED' : 'PENDING',
+      session: sanitizedSession,
+    };
+  }
   return {
     status: 'IDLE',
     session: sanitizedSession,
@@ -7848,14 +7865,23 @@ export async function cancelPendingRenderForSession(userId, payload = {}) {
 
   await getDBConnectionString();
 
-  const session = await requireVideoSessionForStudioAccess(userId, sessionId, payload, {
+  let session = await requireVideoSessionForStudioAccess(userId, sessionId, payload, {
     markEdited: true,
   });
 
-  session.videoGenerationPending = false;
-  session.expressGenerationPending = false;
-  session.expressGenerationPaused = false;
-  await session.save();
+  const stopped = {
+    videoGenerationPending: false, expressGenerationPending: false, expressGenerationPaused: false,
+    ...(session.expressGenerationStatus?.status === 'QUEUED' && { expressGenerationCancelled: true }),
+  };
+  if (session.postProcessingPreparationPending) {
+    // If the clone becomes ready concurrently, the same write still stops its render.
+    session = await VideoSession.findByIdAndUpdate(sessionId, { $set: {
+      ...stopped, postProcessingPreparationPending: false, expressGenerationCancelled: true,
+    } }, { new: true });
+  } else {
+    Object.assign(session, stopped);
+    await session.save();
+  }
 
   // Remove queued render requests that have not started.
   await VideoGeneration.deleteMany({ videoSessionId: sessionId, rowLocked: false });

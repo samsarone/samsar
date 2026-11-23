@@ -55,3 +55,10 @@ export function normalizeDetectedLanguageCode(code = '') {
 
   return /^[a-z]{2,3}$/.test(aliasedCode) ? aliasedCode : null;
 }
+
+export function getLanguageCodeAliases(language) {
+  const code = normalizeDetectedLanguageCode(language);
+  if (!code) return [];
+  const aliases = [...Object.keys(LANGUAGE_CODE_ALIASES), ...Object.keys(DETECTED_LANGUAGE_CODE_ALIASES)];
+  return [code, ...aliases.filter((alias) => normalizeDetectedLanguageCode(alias) === code)];
+}

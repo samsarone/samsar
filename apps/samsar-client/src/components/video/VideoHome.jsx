@@ -8,7 +8,7 @@ import { getUiLanguage } from '../../utils/localization.js';
 import { useAssistantRequestGuard } from '../../hooks/useAssistantRequestGuard.js';
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { translateText as uiText } from '../../utils/localization.js';
-import { resolveStudioLayerVideo, shouldSuppressStudioBaseImage } from './util/studioVideoLayers.mjs';
+import { resolveStudioLayerVideo, resolveStudioMediaUrl, shouldSuppressStudioBaseImage } from './util/studioVideoLayers.mjs';
 import { getRenderableImageUrl } from '../../utils/image.jsx';
 import { StudioFrameRateContext, resolveStudioFramesPerSecond } from './StudioFrameRateContext.jsx';
 import { useCallback, useContext, useEffect, useMemo, useState, useRef } from 'react';
@@ -92,6 +92,7 @@ const SCENE_PRELOAD_LOOKAHEAD = 2;
 
 function isSessionRenderPending(sessionDetails) {
   return Boolean(
+    sessionDetails?.postProcessingPreparationPending ||
     sessionDetails?.videoGenerationPending ||
     (sessionDetails?.isExpressGeneration && sessionDetails?.expressGenerationPending)
   );
@@ -815,7 +816,6 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
   const [sessionMessages, setSessionMessages] = useState([]);
   const [isCanvasDirty, setIsCanvasDirty] = useState(false);
   const [isAssistantQueryGenerating, setIsAssistantQueryGenerating] = useState(false);
-  const [polling, setPolling] = useState(false); // New state variable to track polling status
   const [displayZoomType, setDisplayZoomType] = useState('fit'); // fit or manual
   const [stageZoomScale, setStageZoomScale] = useState(1);
   const [canvasViewport, setCanvasViewport] = useState(null);
@@ -890,7 +890,8 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
   );
   const studioPostProcessingHandoffRef = useRef(null);
   studioPostProcessingHandoffRef.current = studioPostProcessingHandoff;
-  const isExpressStudioSession = Boolean(videoSessionDetails?.isExpressGeneration || studioPostProcessingHandoff);
+  const isExpressStudioSession = Boolean(videoSessionDetails?.isExpressGeneration
+    || videoSessionDetails?.postProcessingPreparationPending || studioPostProcessingHandoff);
 
   useEffect(() => {
     // Keep Express navigation available before the target session has its first scene.
@@ -1012,7 +1013,6 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
       clearInterval(layerPollTimerRef.current);
       layerPollTimerRef.current = null;
     }
-    setPolling(false);
   };
 
 
@@ -1050,7 +1050,6 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
     setGenerationImages([]);
     setLayerListRequestAdded(false);
     setIsCanvasDirty(false);
-    setPolling(false); // Reset polling status
     setDisplayZoomType('fit'); // Reset zoom mode
     setStageZoomScale(getFitZoomScale()); // Reset zoom scale
     setAspectRatio(null);
@@ -1441,7 +1440,6 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
     setGenerationImages([]);
     setLayerListRequestAdded(false);
     setIsCanvasDirty(false);
-    setPolling(false); // Reset polling status
   }, [id, isSharedSessionView]);
 
 
@@ -1706,7 +1704,7 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
 
       if (isSessionRenderPending(sessionDetails) || forceAdvancedEditPoll) {
         setIsVideoGenerating(true);
-        startVideoRenderPoll();
+        startVideoRenderPoll(resolvedSessionId);
       }
 
       const downloadLink = resolveCompletedSessionVideoUrl(sessionDetails);
@@ -1876,21 +1874,31 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
   }, [layers, currentLayer?._id]);
   const lookaheadImageSignature = lookaheadImageUrls.map(getStudioMediaIdentity).join('\n');
   useEffect(() => { void studioMediaPool.preload(lookaheadImageUrls); }, [studioMediaPool, lookaheadImageSignature]);
-  const previewVideo = resolveStudioLayerVideo(currentLayer, videoSessionDetails || {}, {
+  const studioMediaOptions = {
     processorApiUrl: PROCESSOR_API_URL, staticCdnUrl: import.meta.env.VITE_STATIC_CDN_URL,
-  });
-  const isPreviewVideoReady = Boolean(previewVideo.url
+  };
+  const layerVideo = resolveStudioLayerVideo(currentLayer, videoSessionDetails || {}, studioMediaOptions);
+  const rerollPreview = currentLayer?.rerollPreview;
+  const showRerollPreview = !layerVideo.url && rerollPreview?.url && !activeItemList.some(
+    item => item?.type === 'image' && !item.isHidden && getRenderableImageUrl(item, PROCESSOR_API_URL)
+  );
+  const rerollImageUrl = showRerollPreview && rerollPreview.type === 'image'
+    ? getRenderableImageUrl(rerollPreview.url, PROCESSOR_API_URL) : null;
+  const rerollVideoUrl = showRerollPreview && rerollPreview.type === 'video'
+    ? resolveStudioMediaUrl(rerollPreview.url, PROCESSOR_API_URL, studioMediaOptions) : null;
+  const previewVideoUrl = layerVideo.url || rerollVideoUrl;
+  const isPreviewVideoReady = Boolean(previewVideoUrl
     && visualReadiness.layerId === getSessionLayerId(currentLayer)
-    && visualReadiness.identity === getStudioMediaIdentity(previewVideo.url)
+    && visualReadiness.identity === getStudioMediaIdentity(previewVideoUrl)
     && visualReadiness.ready);
   // Match the canvas's working items, including unsaved visibility changes. A
   // decoded video replaces its base image; that unused image must not hold the
   // project clock (and therefore the video itself) waiting indefinitely.
   const activeImageUrls = useMemo(() => activeItemList
     .filter(item => item?.type === 'image' && !item.isHidden
-      && !shouldSuppressStudioBaseImage(item, previewVideo.url, isPreviewVideoReady ? previewVideo.url : ''))
+      && !shouldSuppressStudioBaseImage(item, previewVideoUrl, isPreviewVideoReady ? previewVideoUrl : ''))
     .map(item => getRenderableImageUrl(item, PROCESSOR_API_URL))
-    .filter(Boolean), [activeItemList, previewVideo.url, isPreviewVideoReady]);
+    .concat(rerollImageUrl).filter(Boolean), [activeItemList, previewVideoUrl, isPreviewVideoReady, rerollImageUrl]);
   const activeImageSignature = `${id}:${getSessionLayerId(currentLayer)}:${activeImageUrls.map(getStudioMediaIdentity).join('|')}`;
   const activeImageCredentialSignature = activeImageUrls.join('|');
   const [imageReadiness, setImageReadiness] = useState(null);
@@ -1902,7 +1910,7 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
     return () => { active = false; };
   }, [studioMediaPool, activeImageSignature, activeImageCredentialSignature]);
   const isVisualReady = (!activeImageUrls.length || (imageReadiness?.pool === studioMediaPool && imageReadiness?.signature === activeImageSignature))
-    && (!previewVideo.url || isPreviewVideoReady);
+    && (!previewVideoUrl || isPreviewVideoReady);
 
   const toggleHideItemInLayer = (itemId) => {
     const updatedActiveItemList = activeItemList.map(item => {
@@ -1918,10 +1926,10 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
   }
 
   useEffect(() => {
-    if (isLayerGenerationPending) {
+    if (isLayerGenerationPending && !isVideoGenerating) {
       pollForLayersUpdate();
     }
-  }, [isLayerGenerationPending]);
+  }, [isLayerGenerationPending, isVideoGenerating]);
 
   useEffect(() => {
     if (currentLayer && currentLayer.imageSession && currentLayer.imageSession.generationStatus === 'PENDING') {
@@ -1973,18 +1981,21 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
   };
 
   const pollForLayersUpdate = () => {
-    if (polling || layerPollTimerRef.current) return; // Check if already polling
-    setPolling(true); // Set polling status to true
+    // The render poll already returns the whole timeline, including pending images.
+    if (isReadOnlyShareView || renderPollTimerRef.current || layerPollTimerRef.current) return;
 
     const headers = getHeaders();
     if (!headers) {
       showLoginDialog();
-      setPolling(false);
       return;
     }
 
+    let inFlight = false;
     const timer = setInterval(() => {
+      if (inFlight) return;
+      inFlight = true;
       axios.post(`${PROCESSOR_API_URL}/video_sessions/refresh_session_layers`, { id: id }, headers).then((dataRes) => {
+        if (layerPollTimerRef.current !== timer || sessionIdRef.current !== id) return;
         const incomingFrameResponse = dataRes.data;
         const incomingLayerIds = new Set(
           (Array.isArray(incomingFrameResponse?.layers) ? incomingFrameResponse.layers : [])
@@ -2036,7 +2047,9 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
           }
         }
       }).catch(() => {
-        stopLayerPolling();
+        if (layerPollTimerRef.current === timer && sessionIdRef.current === id) stopLayerPolling();
+      }).finally(() => {
+        inFlight = false;
       });
     }, 1000);
 
@@ -2069,7 +2082,8 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
     return true;
   };
 
-  const startVideoRenderPoll = () => {
+  const startVideoRenderPoll = (targetSessionId = id) => {
+    stopLayerPolling();
     setRenderCompletedThisSession(false);
     renderPollFailureCountRef.current = 0;
     if (isReadOnlyShareView) {
@@ -2090,6 +2104,7 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
 
         try {
           const dataRes = await axios.get(`${PROCESSOR_API_URL}/video_sessions/share/${encodeURIComponent(shareToken)}`, getHeaders() || undefined);
+          if (renderPollTimerRef.current !== timer) return;
           const sessionData = normalizeGuestSessionForStudio(dataRes.data);
           if (!sessionData) {
             stopRenderPollAfterFailureLimit(
@@ -2134,6 +2149,7 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
             setIsVideoGenerating(false);
           }
         } catch {
+          if (renderPollTimerRef.current !== timer) return;
           stopRenderPollAfterFailureLimit(
             timer,
             uiText("Unable to confirm render status after several attempts. Refresh the session before trying again.")
@@ -2170,29 +2186,10 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
       isStatusRequestInFlight = true;
 
       try {
-        const dataRes = await axios.post(`${PROCESSOR_API_URL}/video_sessions/get_render_video_status`, { id: id }, headers);
+        const dataRes = await axios.post(`${PROCESSOR_API_URL}/video_sessions/get_render_video_status`, { id: targetSessionId }, headers);
+        if (renderPollTimerRef.current !== timer || sessionIdRef.current !== targetSessionId) return;
         const renderData = dataRes.data || {};
         let renderStatus = renderData.status;
-        if (postProcessingHandoff) {
-          if (sessionIdRef.current !== id || renderPollTimerRef.current !== timer) return;
-          // Subtitle/retranslation requests create a blank session before their
-          // background job copies the layers. The request can be queued while
-          // get_render_video_status still returns IDLE for that session.
-          if (renderStatus === 'IDLE') {
-            const requestId = postProcessingHandoff.requestId || id;
-            const { data: requestStatus } = await axios.get(
-              `${PROCESSOR_API_URL}/v2/status?request_id=${encodeURIComponent(requestId)}`, headers
-            );
-            if (sessionIdRef.current !== id || renderPollTimerRef.current !== timer) return;
-            const status = String(requestStatus?.status || '').toUpperCase();
-            if (['PENDING', 'INIT', 'QUEUED', 'PROCESSING', 'RUNNING', 'IN_PROGRESS', 'COMPLETED', 'SUCCESS'].includes(status)) {
-              renderStatus = 'PENDING';
-            } else if (['FAILED', 'ERROR', 'CANCELLED', 'CANCELED', 'PAUSED'].includes(status)) {
-              renderStatus = status === 'ERROR' ? 'FAILED' : status === 'CANCELED' ? 'CANCELLED' : status;
-              renderData.generationError = resolveVideoGenerationErrorMessage(requestStatus);
-            }
-          }
-        }
         const sessionData = renderData.session;
 
         if (sessionData) {
@@ -2228,6 +2225,23 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
           setIsLayerGenerationPending(
             hasPendingFrameOrLayerGeneration(refreshedSession.sessionDetails)
           );
+        }
+
+        // Older queued targets can report IDLE until their copy worker starts.
+        // Apply available scenes before checking this secondary request status.
+        if (renderStatus === 'IDLE' && postProcessingHandoff) {
+          const requestId = postProcessingHandoff.requestId || targetSessionId;
+          const { data: requestStatus } = await axios.get(
+            `${PROCESSOR_API_URL}/v2/status?request_id=${encodeURIComponent(requestId)}`, headers
+          );
+          if (renderPollTimerRef.current !== timer || sessionIdRef.current !== targetSessionId) return;
+          const status = String(requestStatus?.status || '').toUpperCase();
+          if (['PENDING', 'INIT', 'QUEUED', 'PROCESSING', 'RUNNING', 'IN_PROGRESS', 'COMPLETED', 'SUCCESS'].includes(status)) {
+            renderStatus = 'PENDING';
+          } else if (['FAILED', 'ERROR', 'CANCELLED', 'CANCELED', 'PAUSED'].includes(status)) {
+            renderStatus = status === 'ERROR' ? 'FAILED' : status === 'CANCELED' ? 'CANCELLED' : status;
+            renderData.generationError = resolveVideoGenerationErrorMessage(requestStatus);
+          }
         }
 
         if (renderStatus === 'PENDING') {
@@ -2294,11 +2308,13 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
 
           return {
             ...prev,
+            postProcessingPreparationPending: false,
             videoGenerationPending: false,
             expressGenerationPending: false,
           };
         });
       } catch {
+        if (renderPollTimerRef.current !== timer || sessionIdRef.current !== targetSessionId) return;
         stopRenderPollAfterFailureLimit(
           timer,
           uiText("Unable to confirm render status after several attempts. Refresh the session before trying again.")
@@ -2497,7 +2513,9 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
     axios
       .post(`${PROCESSOR_API_URL}/video_sessions/cancel_pending_render`, { id }, headers)
       .then((response) => {
+        if (sessionIdRef.current !== id) return;
         stopVideoRenderPoll();
+        clearAdvancedVideoEditPendingSession(id);
         setIsVideoGenerating(false);
         if (response?.data?.session) {
           setVideoSessionDetails(response.data.session);
@@ -2506,6 +2524,7 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
             if (!prev) return prev;
             return {
               ...prev,
+              postProcessingPreparationPending: false,
               videoGenerationPending: false,
               expressGenerationPending: false,
             };
@@ -2746,7 +2765,7 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
       }
       stopVideoRenderPoll();
     };
-  }, []);
+  }, [routeSessionId, shareToken, editableShareToken]);
 
   const setNewSeek = (newSeek) => {
     setCurrentLayerSeek(newSeek);
@@ -3736,6 +3755,7 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
 
     if (requestInfo?.status === 'CANCELLED') {
       stopVideoRenderPoll();
+      clearAdvancedVideoEditPendingSession(id);
       setIsVideoGenerating(false);
       setVideoSessionDetails((prevDetails) => {
         if (!prevDetails) {
@@ -3744,6 +3764,7 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
 
         return {
           ...prevDetails,
+          postProcessingPreparationPending: false,
           videoGenerationPending: false,
           expressGenerationPending: false,
           expressGenerationCancelled: true,
@@ -4409,6 +4430,10 @@ export default function VideoHome({ initialSessionRequestRef } = {}) {
     <div className='h-full min-h-0'>
       <VideoEditorContainer
         onAssistantViewChange={setAssistantToolView}
+        isPreparingCopiedScenes={layers.length === 0 && isVideoRenderPending &&
+          Boolean(studioPostProcessingHandoff || videoSessionDetails.postProcessingPreparationPending)}
+        rerollImageUrl={rerollImageUrl}
+        rerollVideoUrl={rerollVideoUrl}
         selectedLayerIndex={selectedLayerIndex}
         layers={layers}
         currentLayerSeek={currentLayerSeek}

@@ -7,7 +7,7 @@ import { normalizeRerollLayerIndexes, getRerollCandidateLayers, getRerollLocalCr
 import { vidgenieAssistantContext } from '../../utils/assistantContext.js';
 import { getUiLanguage } from '../../utils/localization.js';
 import { normalizeKlingModelKey } from '../../utils/KlingModel.mjs';
-import { DEFAULT_TEXT_MODEL, DEFAULT_VIDEO_MODEL, DEFAULT_IMAGE_MODEL, resolvePreferredGenerationModelOption } from '../../utils/generationDefaults.mjs';
+import { DEFAULT_CREATE_DURATION, DEFAULT_TEXT_MODEL, DEFAULT_VIDEO_MODEL, DEFAULT_IMAGE_MODEL, resolveCreateDefaults, resolvePreferredGenerationModelOption } from '../../utils/generationDefaults.mjs';
 import { useAssistantRequestGuard } from '../../hooks/useAssistantRequestGuard.js';
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { translateText as uiText } from '../../utils/localization.js';
@@ -147,6 +147,8 @@ import { getHydratedInferenceEffortPreferenceUpdate } from './vidgenieInferenceE
 import 'react-tooltip/dist/react-tooltip.css';
 import 'react-toastify/dist/ReactToastify.css';
 import './mobileStyles.css';
+
+const CreatePublishedGallery = lazy(() => import('../landing/CreatePublishedGallery.jsx'));
 
 const LazyAceEditor = lazy(async () => {
   const [aceModule, reactAceModule] = await Promise.all([
@@ -894,10 +896,10 @@ function buildDefaultJsonModeInput({
 
   return JSON.stringify(
     {
-      prompt: 'A 30 second launch teaser for a new travel app',
+      prompt: 'A launch teaser for a new travel app',
       image_model: imageModel || '',
       video_model: normalizedVideoModel,
-      duration: duration || 30,
+      duration: duration ?? DEFAULT_CREATE_DURATION,
       tone: 'grounded',
       aspect_ratio: normalizedAspectRatio,
       ...languageFields,
@@ -2147,25 +2149,20 @@ function extractVideoResultUrl(data) {
   );
 }
 
-function isStepStatusRequestingProcessNext(data) {
-  const step = data?.step || {};
-  return Boolean(
-    data?.requires_user_action ||
-    data?.requiresUserAction ||
-    data?.can_process_next ||
-    data?.canProcessNext ||
-    step.requires_user_action ||
-    step.requiresUserAction ||
-    step.can_process_next ||
-    step.canProcessNext
-  );
-}
-
 function isStepStatusWaitingForApproval(data, activeStepMode) {
-  if (normalizeGenerationStepMode(activeStepMode) !== GENERATION_STEP_MODE_TWO_STEP) {
-    return false;
-  }
-  return isStepStatusRequestingProcessNext(data);
+  if (!data) return false;
+  const step = data.step || data;
+  const requiresAction = data.requires_user_action || data.requiresUserAction ||
+    data.can_process_next || data.canProcessNext || step.requires_user_action || step.requiresUserAction ||
+    step.can_process_next || step.canProcessNext || step.waiting_for_process_next || step.waitingForProcessNext;
+  if (!requiresAction) return false;
+
+  // The server records manual checkpoints on the request, including when
+  // this browser has never submitted or opened the project before.
+  const nextStep = step.next_step || step.nextStep || data.next_step;
+  const manualStages = step.manual_step_stages || step.manualStepStages || data.manual_step_stages;
+  if (nextStep && Array.isArray(manualStages)) return manualStages.includes(nextStep);
+  return Boolean(nextStep || activeStepMode === GENERATION_STEP_MODE_TWO_STEP);
 }
 
 function normalizeGenerationStatus(status) {
@@ -2266,19 +2263,34 @@ function hasStartedGenerationLayer(layer) {
     hasMeaningfulGenerationArrayValue(imageSession.activeItemList);
 }
 
+function hasGenerationRequest(session) {
+  // New sessions can already carry a type and expressGenerationPending.
+  // An admitted request or actual stage progress distinguishes a prior render.
+  return Boolean(
+    session.videoGenerationPending || (session.isExpressGeneration && session.expressGenerationPending) ||
+    session.isStepVideoGeneration || session.expressGenerationCreated || session.quickSessionCreatedAt ||
+    session.expressGenerationPaused
+  );
+}
+
+function hasRecordedRender(session) {
+  return isPlainObject(session) && Boolean(
+    hasGenerationRequest(session) || resolveTerminalVideoGenerationStatus(session) ||
+    session.expressGenerationError || session.expressGenerationBuilder?.status ||
+    session.request_id || session.requestId || isCompletedGenerationStatus(session.status) ||
+    hasExpressGenerationStatusProgress(session.expressGenerationStatus || session.stages)
+  );
+}
+
 function hasStartedGenerationSession(data) {
   if (!isPlainObject(data)) {
     return false;
   }
 
   if (
-    Boolean(data.expressGenerationPaused) ||
-    Boolean(data.expressGenerationCreated) ||
-    Boolean(data.quickSessionCreatedAt) ||
-    Boolean(data.isStepVideoGeneration) ||
+    hasGenerationRequest(data) ||
     hasTextValue(data.inputPrompt) ||
     hasTextValue(data.expressInputPrompt) ||
-    hasTextValue(data.expressGenerationType) ||
     hasMeaningfulGenerationArrayValue(data.textList) ||
     hasMeaningfulGenerationArrayValue(data.image_urls) ||
     hasMeaningfulGenerationArrayValue(data.imageUrls) ||
@@ -2287,11 +2299,12 @@ function hasStartedGenerationSession(data) {
     return true;
   }
 
-  if (isPlainObject(data.session) && hasStartedGenerationSession(data.session)) {
-    return true;
-  }
+  return hasStartedGenerationSession(data.session) || hasExpressGenerationStatusProgress(data.expressGenerationStatus);
+}
 
-  return hasExpressGenerationStatusProgress(data.expressGenerationStatus);
+function isQuickPreparationQueued(session) {
+  return !session?.videoGenerationPending && !session?.expressGenerationPending &&
+    normalizeGenerationStatus(session?.expressGenerationStatus?.status) === 'QUEUED';
 }
 
 function isSessionGenerationPending(data, forcePending = false) {
@@ -2309,7 +2322,12 @@ function isSessionGenerationPending(data, forcePending = false) {
     return false;
   }
 
-  return Boolean(forcePending || backendPending);
+  // Quick prepares layers before setting worker flags. Manual checkpoints also
+  // clear those flags while waiting for approval.
+  const waitingForApproval = isStepStatusWaitingForApproval(data.expressStepGeneration);
+  return Boolean(forcePending || backendPending || (
+    (isQuickPreparationQueued(data) || waitingForApproval) && !resolveTerminalVideoGenerationStatus(data)
+  ));
 }
 
 function buildStandaloneAnonymousSessionDetailsFromStatus(data) {
@@ -2380,7 +2398,7 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
   const showLoginDialog = useCallback(() => {
     const redirectTo = user?._id
       ? `${location.pathname}${location.search || ''}`
-      : '/vidgenie';
+      : '/';
     openAlertDialog(<AuthContainer redirectTo={redirectTo} />, undefined, false, AUTH_DIALOG_OPTIONS);
   }, [location.pathname, location.search, openAlertDialog, user]);
 
@@ -3578,23 +3596,23 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
     ],
     [uiLanguage, t]
   );
-  const [selectedDurationOption, setSelectedDurationOption] = useState(() => {
-    const saved = parseInt(localStorage.getItem('defaultVidGPTDuration') || '', 10);
-    const found = durationOptions.find((d) => d.value === saved);
-    if (found) {
-      return found;
-    }
-    const defaultOption = durationOptions.find((d) => d.value === 30);
-    return defaultOption || durationOptions[0];
-  });
-  useEffect(() => {
-    setSelectedDurationOption((prev) => {
-      const saved = parseInt(localStorage.getItem('defaultVidGPTDuration') || '', 10);
-      const targetValue = prev?.value || saved;
-      const found = durationOptions.find((d) => d.value === targetValue);
-      return found || durationOptions[0];
-    });
-  }, [durationOptions]);
+  const [durationPreference, setDurationPreference] = useState(() => ({
+    sessionId: null,
+    value: Number(localStorage.getItem('defaultVidGPTDuration')),
+  }));
+  const sessionDuration = Number(sessionDetails?.session?.expressGenerationRequestedDurationSeconds
+    ?? sessionDetails?.expressGenerationRequestedDurationSeconds);
+  const preferredDuration = durationOptions.some((option) => option.value === durationPreference.value)
+    ? durationPreference.value : resolveCreateDefaults(user).duration;
+  const durationSeconds = durationPreference.sessionId !== id && sessionDuration >= 10 && sessionDuration <= 240
+    ? sessionDuration : preferredDuration;
+  const selectedDurationOption = durationOptions.find((option) => option.value === durationSeconds)
+    || { value: durationSeconds, label: uiText('{seconds} seconds', { seconds: durationSeconds }) };
+
+  const handleDurationChange = (option) => {
+    setDurationPreference({ sessionId: id, value: option.value });
+    localStorage.setItem('defaultVidGPTDuration', String(option.value));
+  };
 
   // ─────────────────────────────────────────────────────────
   //  Persist selections to localStorage
@@ -3623,12 +3641,6 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
       localStorage.setItem('defaultVidGPTAspectRatio', selectedAspectRatioOption.value);
     }
   }, [selectedAspectRatioOption]);
-
-  useEffect(() => {
-    if (selectedDurationOption?.value) {
-      localStorage.setItem('defaultVidGPTDuration', selectedDurationOption.value.toString());
-    }
-  }, [selectedDurationOption]);
 
   useEffect(() => {
     persistVidgeniePreferences({
@@ -4316,9 +4328,8 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
 
         setIsPaused(false);
 
-        const currentStepMode = normalizeGenerationStepMode(activeRequestStepModeRef.current);
-        const isWaitingForApproval = isStepStatusWaitingForApproval(data, currentStepMode);
-        if (isWaitingForApproval) {
+        if (isStepStatusWaitingForApproval(data, activeRequestStepModeRef.current)) {
+          activeRequestStepModeRef.current = GENERATION_STEP_MODE_TWO_STEP;
           continuePolling = false;
           setIsGenerationPending(false);
           setIsGenerationWaitingForApproval(true);
@@ -5685,7 +5696,7 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
       mode: generationMode,
       imageModel: selectedImageModel?.value || '',
       videoModel: selectedVideoModel?.value || '',
-      duration: selectedDurationOption?.value || 30,
+      duration: selectedDurationOption.value,
       aspectRatio: selectedAspectRatioOption?.value || '16:9',
       language: resolveLanguageCode(jsonModeLanguageValue, 'en'),
       enableSubtitles: subtitleGenerationEnabled,
@@ -5780,6 +5791,7 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
   }, [jsonCopyStatus]);
 
   const jsonEditorErrorMessage = isJsonMode ? (jsonModeValidation.error || '') : '';
+  const jsonPublicationInput = jsonModeValidation.payload?.input ?? jsonModeValidation.payload;
   const jsonEditorAnnotations = useMemo(() => {
     if (!jsonEditorErrorMessage) {
       return [];
@@ -5813,6 +5825,10 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
     if (canRetryFailedImages) return 'failed';
     return 'idle';
   }, [canRetryFailedImages, isGenerationPending, isGenerationWaitingForApproval, isPaused, videoLink]);
+  const showPublicationGallery = !isStandaloneDeployment && !isStandaloneModelFilteringEnabled &&
+    !isSubmitting && !showResultDisplay && renderState === 'idle' &&
+    ![sessionDetails, sessionDetails?.session].some(hasRecordedRender) &&
+    (!isJsonMode || Boolean(jsonPublicationInput));
   useEffect(() => {
     // Save only layout metadata for this exact project; live state always wins.
     const loadedId = String(sessionDetails?._id?.$oid || sessionDetails?._id || sessionDetails?.id || '');
@@ -6191,6 +6207,9 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
   }
 
   if (isFocusedPreview) {
+    const canPauseRender = isGenerationPending && !isQuickPreparationQueued(sessionDetails) &&
+      !sessionDetails?.videoLink && !sessionDetails?.remoteURL && !resolveTerminalVideoGenerationStatus(sessionDetails);
+    const showRenderControl = !isGuestPreview && sessionDetails?.isExpressGeneration && (isPaused || canPauseRender);
     const hasFailed = Boolean(errorMessage?.error && !isGenerationPending && !isPaused && !videoLink);
     const heading = videoLink
       ? uiText('Your video is ready')
@@ -6230,7 +6249,7 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
         />
         <footer className="mt-5 flex flex-wrap items-center justify-between gap-3 px-1">
           <div className="flex flex-wrap gap-2">
-            {(isGenerationPending || isPaused) && !isGuestPreview && (
+            {showRenderControl && (
               <button type="button" onClick={isPaused ? handleResumeRender : handlePauseRender} disabled={isRenderPauseResumePending} className={`${actionClass} border border-line text-fg hover:bg-surface-raised`}>
                 {isRenderPauseResumePending ? <FaSpinner aria-hidden="true" className="animate-spin" /> : isPaused ? <FaPlay aria-hidden="true" /> : <FaPause aria-hidden="true" />}
                 {isPaused ? uiText('Resume render') : uiText('Pause render')}
@@ -6664,7 +6683,7 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
                 <div className={`relative z-10 w-full rounded-lg p-0 transition-transform duration-200 group-hover:translate-y-[-1px] group-hover:z-50 focus-within:z-50 ${controlShell}`}>
                   <SingleSelect
                     value={selectedDurationOption}
-                    onChange={setSelectedDurationOption}
+                    onChange={handleDurationChange}
                     options={durationOptions}
                     isDisabled={isFormDisabled}
                     compactLayout
@@ -7521,6 +7540,16 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
       </form>
       )}
       {shouldShowOriginalRequestInputs && renderState !== 'failed' && renderSubmitButton()}
+
+      {showPublicationGallery && (
+        <Suspense fallback={null}>
+          <CreatePublishedGallery
+            inferenceModel={isJsonMode ? jsonPublicationInput.inference_model : selectedInferenceModel?.value}
+            videoModel={isJsonMode ? jsonPublicationInput.video_model : selectedVideoModel?.value}
+            language={isJsonMode ? jsonPublicationInput.language : selectedLanguageOption?.value}
+          />
+        </Suspense>
+      )}
 
       {/* ───────── Assistant Chat ───────── */}
       {shouldShowOriginalRequestInputs && (
