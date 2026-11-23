@@ -11,7 +11,9 @@ vi.mock('../../src/hooks/useDeploymentModelAvailability.js', () => ({ useDeploym
 vi.mock('../../src/hooks/useInferenceModelAvailability.js', () => ({ useInferenceModelAvailability: () => scenario.inference }));
 vi.mock('../../src/components/common/OverflowContainer.tsx', () => ({ default: ({ children }) => <div>{children}</div> }));
 vi.mock('../../src/utils/environment.jsx', () => ({ get IS_STANDALONE_DEPLOYMENT() { return scenario.standalone; } }));
-vi.mock('../../src/components/landing/CreatePublishedGallery.jsx', () => ({ default: () => <section aria-label="Published videos" /> }));
+vi.mock('../../src/components/landing/CreatePublishedGallery.jsx', () => ({
+  default: ({ inferenceModel, videoModel, language }) => <section aria-label="Published videos">{[inferenceModel, videoModel, language].join(' · ')}</section>,
+}));
 vi.mock('../../src/components/oneshot_editor/OneshotEditorContainer.jsx', () => ({ preloadOneshotEditor: vi.fn().mockResolvedValue(undefined) }));
 import CreateLanding from '../../src/components/landing/CreateLanding.jsx';
 
@@ -41,9 +43,9 @@ describe('simple create landing', () => {
     mount();
     expect(screen.getByRole('heading', { name: 'Create video' })).toBeVisible();
     expect(screen.getAllByRole('textbox')).toHaveLength(1);
-    expect(screen.getByRole('combobox', { name: 'Duration' })).toHaveValue('30');
+    expect(screen.getByRole('combobox', { name: 'Duration' })).toHaveValue('60');
     expect(screen.getByRole('combobox', { name: 'Aspect ratio' })).toHaveValue('16:9');
-    expect(screen.getByRole('status', { name: 'Render estimate' })).toHaveTextContent('1,080 credits');
+    expect(screen.getByRole('status', { name: 'Render estimate' })).toHaveTextContent('2,160 credits');
     expect(screen.getByRole('button', { name: 'About Create defaults' })).toBeVisible();
     expect(screen.queryByRole('link', { name: 'Claude Opus 5.5' })).toBeNull();
     expect(screen.queryByRole('checkbox')).toBeNull();
@@ -68,7 +70,7 @@ describe('simple create landing', () => {
     await waitFor(() => expect(screen.getByLabelText('Current route')).toHaveTextContent('/vidgenie/new-video?view=preview'));
     expect(axios.post).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('/v2/video/step/text_to_video'), { input: {
       prompt: 'A quiet city waking up', inference_model: 'claude-opus-5.5', image_model: 'GPTIMAGE2.5',
-      video_model: 'KLINGIMGTOVID4', duration: 30, aspect_ratio: '16:9', language: 'auto',
+      video_model: 'KLINGIMGTOVID4', duration: 60, aspect_ratio: '16:9', language: 'auto',
       enable_subtitles: false, generation_step_mode: 'one_step', auto_render_full_video: true,
       manual_step_stages: [], effort: 'high',
     } }, scenario.headers);
@@ -76,9 +78,35 @@ describe('simple create landing', () => {
     expect(sessionStorage.getItem('samsarCreatePrompt')).toBeNull();
   });
 
+  it('submits partner renders with their scoped account and opens that request’s status', async () => {
+    scenario.user.user = { _id: 'partner', isExternalUser: true, generationCredits: 10000 };
+    axios.post.mockResolvedValueOnce({ data: { request_id: 'partner/request', session_id: 'internal' } });
+    localStorage.setItem('videoSessionId', 'previous');
+    mount();
+    expect(screen.getByRole('link', { name: 'External Studio' })).toHaveAttribute('href', '/external/studio');
+    enterPrompt();
+    submit();
+    await waitFor(() => expect(screen.getByLabelText('Current route')).toHaveTextContent('/external/studio?request=partner%2Frequest'));
+    expect(axios.post).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('/v1/external_users/text_to_video'), {
+      input: expect.objectContaining({ prompt: 'A quiet city waking up', duration: 60 }),
+    }, scenario.headers);
+    expect(axios.post.mock.calls[0][1].input).not.toHaveProperty('generation_step_mode');
+    expect(localStorage.getItem('videoSessionId')).toBe('previous');
+  });
+
+  it('links partner accounts with insufficient credits to their own recharge form', () => {
+    scenario.user.user = { _id: 'partner', isExternalUser: true, generationCredits: 0 };
+    mount();
+    expect(screen.getByRole('link', { name: 'Purchase credits' })).toHaveAttribute('href', '/external/studio#credits');
+    enterPrompt();
+    expect(screen.getByRole('button', { name: 'Create video' })).toBeDisabled();
+  });
+
   it('honors model and language preferences saved in account settings', async () => {
     scenario.user.user = { _id: 'user', selectedInferenceModel: 'gpt-6.1-sol', selectedInferenceEffort: 'xhigh', agentImageModel: 'SEEDREAM', agentVideoModel: 'VEO3.1I2V', preferredLanguage: 'ja' };
-    mount(); enterPrompt(); submit();
+    mount();
+    expect(await screen.findByRole('region', { name: 'Published videos' })).toHaveTextContent('gpt-6.1-sol · VEO3.1I2V · ja');
+    enterPrompt(); submit();
     await waitFor(() => expect(axios.post).toHaveBeenCalled());
     expect(axios.post.mock.calls[0][1].input).toMatchObject({ inference_model: 'gpt-6.1-sol', effort: 'xhigh', image_model: 'SEEDREAM', video_model: 'VEO3.1I2V', language: 'ja' });
   });
@@ -92,11 +120,17 @@ describe('simple create landing', () => {
     expect(screen.getByRole('textbox')).toHaveValue('A quiet city waking up');
   });
 
-  it('keeps failed prompts editable and lets the user retry a failed request', async () => {
-    axios.post.mockRejectedValueOnce({ response: { status: 402, data: { message: 'Insufficient credits.' } } });
+  it('links a rejected render to billing using the server quote and keeps the draft for an affordable retry', async () => {
+    scenario.user.user.generationCredits = 3000;
+    axios.post.mockRejectedValueOnce({ response: { status: 402, data: { message: 'Insufficient credits.', requiredCredits: 2160, availableCredits: 1100 } } });
     mount(); enterPrompt(); submit();
-    expect(await screen.findByRole('alert')).toHaveTextContent('Insufficient credits.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('This render needs 2,160 credits. Your balance is 1,100.');
+    expect(screen.getByRole('link', { name: 'Purchase credits' })).toHaveAttribute('href', '/account/billing');
     expect(screen.getByRole('textbox')).toHaveValue('A quiet city waking up');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Duration' }), { target: { value: '90' } });
+    expect(screen.getByRole('alert')).toHaveTextContent('This render needs 3,240 credits. Your balance is 1,100.');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Duration' }), { target: { value: '30' } });
+    expect(screen.queryByRole('link', { name: 'Purchase credits' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Create video' })).toBeEnabled();
     submit();
     await waitFor(() => expect(screen.getByLabelText('Current route')).toHaveTextContent('/vidgenie/new-video'));
@@ -105,12 +139,17 @@ describe('simple create landing', () => {
   it('prevents duplicate submissions while a request is pending', async () => {
     let resolve;
     axios.post.mockReturnValue(new Promise(done => { resolve = done; }));
-    mount(); enterPrompt();
+    mount();
+    await screen.findByRole('region', { name: 'Published videos' });
+    enterPrompt();
     const form = screen.getByRole('button', { name: 'Create video' }).closest('form');
     fireEvent.submit(form); fireEvent.submit(form);
     expect(axios.post).toHaveBeenCalledOnce();
     expect(screen.getByRole('button', { name: 'Creating your video...' })).toBeDisabled();
+    expect(screen.queryByRole('region', { name: 'Published videos' })).toBeNull();
     await act(async () => resolve({ data: { session_id: 'new-video' } }));
+    // The outgoing composer can remain mounted while the preview route loads.
+    expect(screen.queryByRole('region', { name: 'Published videos' })).toBeNull();
   });
 
   it('keeps the draft when the server does not return a session', async () => {
@@ -149,9 +188,26 @@ it('uses persisted Create defaults and forwards a duration override with the cho
 
 it('shows provider billing instead of an invented credit estimate in standalone deployments', () => {
   scenario.deployment = { isStandaloneDeployment: true, isLoading: false };
+  scenario.user.user.generationCredits = 0;
   mount();
   expect(screen.getByRole('status', { name: 'Render estimate' })).toHaveTextContent('API charge');
-  expect(screen.getByRole('status', { name: 'Render estimate' })).not.toHaveTextContent('1,080');
+  expect(screen.queryByRole('link', { name: 'Purchase credits' })).toBeNull();
+});
+
+it('shows a purchase link only when the selected duration and model cost more than the hosted balance', async () => {
+  scenario.user.user = { _id: 'user', generationCredits: 1800, createDefaults: { videoModel: 'SEEDANCE2.5I2V', duration: 60 } };
+  mount();
+  enterPrompt();
+  expect(screen.getByRole('alert')).toHaveTextContent('This render needs 3,600 credits. Your balance is 1,800.');
+  expect(screen.getByRole('link', { name: 'Purchase credits' })).toHaveAttribute('href', '/account/billing');
+  expect(screen.getByRole('button', { name: 'Create video' })).toBeDisabled();
+  submit();
+  expect(axios.post).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByRole('combobox', { name: 'Duration' }), { target: { value: '30' } });
+  expect(screen.queryByRole('link', { name: 'Purchase credits' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Create video' })).toBeEnabled();
+  submit();
+  await waitFor(() => expect(axios.post).toHaveBeenCalledOnce());
 });
 
 it('hydrates saved defaults with the profile and resets overrides when the account changes', () => {
@@ -232,6 +288,7 @@ it.each(['profile', 'models'])('shows a composer skeleton until %s defaults reso
   expect(status.querySelectorAll('button, input, select, textarea, a')).toHaveLength(0);
   expect(screen.queryByRole('textbox')).toBeNull();
   expect(screen.queryByRole('status', { name: 'Render estimate' })).toBeNull();
+  expect(screen.queryByRole('region', { name: 'Published videos' })).toBeNull();
   scenario.user = { user: { _id: 'user', createDefaults: { duration: 60, aspectRatio: '9:16' } }, userInitiated: true, userFetching: false };
   scenario.deployment.isLoading = false;
   view.rerender(<MemoryRouter><CreateLanding /><CurrentRoute /></MemoryRouter>);

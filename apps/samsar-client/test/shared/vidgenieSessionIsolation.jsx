@@ -8,6 +8,7 @@ import { persistAuthToken } from '../../src/utils/web.jsx';
 import OneshotEditor from '../../src/components/oneshot_editor/OneshotEditor.jsx';
 
 const harness = vi.hoisted(() => ({ session: null, status: null, nextSession: null, inferenceAvailability: null }));
+const nativeFetch = globalThis.fetch;
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 vi.mock('../../src/contexts/UserContext.jsx', () => ({
   useUser: () => ({ user: { _id: 'owner', generationCredits: 2000 }, userInitiated: true, userFetching: false, getUserAPI: vi.fn() }),
@@ -39,6 +40,12 @@ function deferred() {
 }
 
 beforeEach(() => {
+  vi.spyOn(globalThis, 'fetch').mockImplementation((input, options) => {
+    if (!String(input).includes('/publication?')) return nativeFetch.call(globalThis, input, options);
+    return Promise.resolve(new Response(JSON.stringify({ items: [{
+      id: 'example', title: 'Published example', videoUrl: 'https://media.example/example.mp4', aspectRatio: '9:16',
+    }], hasMore: false })));
+  });
   harness.session = { _id: 'previous', layers: [], audioLayers: [], inputPrompt: '' };
   harness.status = { status: 'PENDING', session_id: 'previous' };
   harness.nextSession = { _id: 'new-project', layers: [], audioLayers: [], inputPrompt: '' };
@@ -263,6 +270,30 @@ async function openNewSession() {
   await waitFor(() => expect(promptInput()).toBeEnabled());
   fireEvent.change(promptInput(), { target: { value: 'New story with its own CTA' } });
 }
+
+it('loads the filtered mosaic for a new VidGenie draft and unmounts it when the render is submitted', async () => {
+  harness.session = { ...harness.session, inputPrompt: 'Running project', expressGenerationPending: true, isStepVideoGeneration: true };
+  localStorage.setItem('defaultVIdGPTVideoGenerationModel', 'RUNWAYML');
+  localStorage.setItem('vidgeniePreferencesV1', JSON.stringify({ audioLanguage: 'ja' }));
+  const feedReads = () => globalThis.fetch.mock.calls.filter(([url]) => String(url).includes('/publication?'));
+  await mount();
+  expect(screen.getByLabelText('Generation progress')).toBeVisible();
+  expect(feedReads()).toHaveLength(0);
+  await openNewSession();
+  const example = await screen.findByRole('button', { name: 'Play Published example' });
+  await waitFor(() => expect(example).toBeVisible());
+  const [[url, options]] = feedReads();
+  expect(Object.fromEntries(new URL(url, 'http://localhost').searchParams)).toMatchObject({
+    inferenceModel: 'claude-opus-5.5', videoModel: 'RUNWAYML', language: 'ja',
+  });
+  const submission = deferred();
+  axios.post.mockReturnValueOnce(submission.promise);
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Submit', exact: true })); });
+  expect(screen.queryByRole('button', { name: 'Play Published example' })).toBeNull();
+  expect(options.signal.aborted).toBe(true);
+  await act(async () => submission.resolve({ data: { request_id: 'new-project' } }));
+  expect(feedReads()).toHaveLength(1);
+});
 function editCta() {
   fireEvent.click(screen.getByRole('button', { name: 'Advanced', exact: true }));
   fireEvent.click(screen.getByRole('checkbox', { name: 'Generate CTA outro' }));

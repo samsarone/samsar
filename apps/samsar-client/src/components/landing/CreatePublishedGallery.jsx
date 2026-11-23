@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/react';
 import { MdChevronLeft, MdChevronRight, MdClose, MdPlayArrow, MdVideocam } from 'react-icons/md';
-import { useMediaQuery } from 'react-responsive';
 import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { IS_STANDALONE_DEPLOYMENT } from '../../utils/environment.jsx';
 import { translateText as uiText } from '../../utils/localization.js';
 import { IMAGE_GENERAITON_MODEL_TYPES, VIDEO_GENERATION_MODEL_TYPES, INFERENCE_MODEL_TYPES } from '../../constants/Types.ts';
+import { SUPPORTED_LANGUAGES } from '../../constants/supportedLanguages.js';
 import CreatePublishedGallerySkeleton from './CreatePublishedGallerySkeleton.jsx';
+import PublicationMosaic, { usePublicationLayout } from './PublicationMosaic.jsx';
 
 const API_SERVER = (import.meta.env.VITE_PROCESSOR_API || 'http://localhost:3002').replace(/\/$/, '');
-const PAGE_SIZE = 12;
+const PAGE_SIZE = 32;
 const FEED_TIMEOUT_MS = 12000;
 const text = (value) => typeof value === 'string' ? value.trim() : '';
 
@@ -75,6 +76,20 @@ function modelLabel(value, options) {
   return option?.name || option?.label || value;
 }
 
+function PublishedVideoCard({ video, onSelect }) {
+  const title = video.title || uiText('Untitled video');
+  return (
+    <button type="button" onClick={() => onSelect(video)} aria-label={uiText('Play {title}', { title })} className="create-publication-card group relative block w-full overflow-hidden rounded-lg border border-line/40 bg-surface-muted text-left outline-none hover:border-accent/40 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-canvas sm:rounded-xl" style={{ aspectRatio: video.aspectRatio }}>
+      <MdVideocam aria-hidden="true" className="absolute left-1/2 top-1/2 size-7 -translate-x-1/2 -translate-y-1/2 text-fg-muted/40" />
+      {video.posterUrl && <img src={video.posterUrl} alt="" loading="lazy" decoding="async" width={Math.round(video.aspectRatio * 600)} height="600" className="create-publication-poster absolute inset-0 size-full object-contain group-hover:opacity-95" onError={(event) => { event.currentTarget.hidden = true; }} />}
+      <span aria-hidden="true" className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-gradient-to-t from-black/80 to-transparent p-2 pt-6 text-white">
+        <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-colors group-hover:bg-white/35 motion-reduce:transition-none sm:size-6"><MdPlayArrow className="size-4" /></span>
+        <span className="min-w-0 truncate text-xs font-medium">{title}</span>
+      </span>
+    </button>
+  );
+}
+
 function PublishedVideoDialog({ video, onClose }) {
   const videoRef = useRef(null);
   useEffect(() => () => {
@@ -127,34 +142,25 @@ function PublishedVideoDialog({ video, onClose }) {
   );
 }
 
-function PublishedGallery() {
-  useUiLanguage();
+function PublishedGallery({ feedQuery, subtitle }) {
   const [request, setRequest] = useState({ cursor: null, attempt: 0 });
-  const [page, setPage] = useState({ items: [], loading: true, error: false, nextCursor: null, hasMore: true });
+  const [page, setPage] = useState({ batches: [], loading: true, error: false, nextCursor: null, hasMore: true });
   const [selectedVideo, setSelectedVideo] = useState(null);
   const sentinelRef = useRef(null);
   const carouselRef = useRef(null);
   const [activeSlide, setActiveSlide] = useState(0);
   const requestPendingRef = useRef(true);
   const completedCursorsRef = useRef(new Set());
-  const wideScreen = useMediaQuery({ minWidth: 1024 });
-  const mediumScreen = useMediaQuery({ minWidth: 640 });
-  const columnCount = wideScreen ? 4 : mediumScreen ? 3 : 2;
-  const slides = useMemo(() => {
-    const result = [];
-    const itemsPerSlide = columnCount * 2;
-    for (let offset = 0; offset < page.items.length; offset += itemsPerSlide) {
-      const columns = Array.from({ length: columnCount }, () => []);
-      const heights = Array(columnCount).fill(0);
-      for (const item of page.items.slice(offset, offset + itemsPerSlide)) {
-        const column = heights.indexOf(Math.min(...heights));
-        columns[column].push(item);
-        heights[column] += 1 / item.aspectRatio;
-      }
-      result.push(columns);
+  const layout = usePublicationLayout();
+  // A cursor can arrive while someone is watching the last, partly filled
+  // slide. Pack new batches independently so their current tiles stay put.
+  const slides = useMemo(() => page.batches.flatMap((batch) => {
+    const batchSlides = [];
+    for (let offset = 0; offset < batch.length; offset += layout.itemsPerSlide) {
+      batchSlides.push(batch.slice(offset, offset + layout.itemsPerSlide));
     }
-    return result;
-  }, [columnCount, page.items]);
+    return batchSlides;
+  }), [layout, page.batches]);
 
   const moveToSlide = useCallback((index) => {
     const carousel = carouselRef.current;
@@ -184,7 +190,7 @@ function PublishedGallery() {
     // Restart at the first mosaic page when a breakpoint changes the page size.
     setActiveSlide(0);
     if (carouselRef.current) carouselRef.current.scrollLeft = 0;
-  }, [columnCount]);
+  }, [layout]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -192,7 +198,7 @@ function PublishedGallery() {
     let active = true;
     requestPendingRef.current = true;
     setPage((previous) => ({ ...previous, loading: true, error: false }));
-    const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
+    const params = new URLSearchParams(feedQuery);
     if (request.cursor) params.set('cursor', request.cursor);
     async function load() {
       try {
@@ -206,9 +212,10 @@ function PublishedGallery() {
         const nextCursor = text(payload.nextCursor) || null;
         const hasMore = payload.hasMore !== false && Boolean(nextCursor) && !completedCursorsRef.current.has(nextCursor);
         setPage((previous) => {
-          const ids = new Set(previous.items.map((item) => item.id));
+          const ids = new Set(previous.batches.flatMap((batch) => batch.map((item) => item.id)));
           const additions = incoming.filter((item) => { if (ids.has(item.id)) return false; ids.add(item.id); return true; });
-          return { items: [...previous.items, ...additions], loading: false, error: false, nextCursor, hasMore };
+          const batches = additions.length ? [...previous.batches, additions] : previous.batches;
+          return { batches, loading: false, error: false, nextCursor, hasMore };
         });
       } catch (error) {
         if (active) setPage((previous) => ({ ...previous, loading: false, error: true }));
@@ -219,13 +226,19 @@ function PublishedGallery() {
     }
     void load();
     return () => { active = false; clearTimeout(timeout); controller.abort(); };
-  }, [request]);
+  }, [request, feedQuery]);
 
   const loadMore = useCallback(() => {
     if (requestPendingRef.current || page.loading || page.error || !page.hasMore || !page.nextCursor) return;
     requestPendingRef.current = true;
     setRequest({ cursor: page.nextCursor, attempt: 0 });
   }, [page.error, page.hasMore, page.loading, page.nextCursor]);
+
+  // A page may contain only unavailable media while its next cursor still
+  // leads to public videos. There is no visible sentinel until a card exists.
+  useEffect(() => {
+    if (!slides.length) loadMore();
+  }, [slides.length, loadMore]);
 
   useEffect(() => {
     if (!sentinelRef.current || selectedVideo || page.loading || page.error || !page.hasMore || typeof IntersectionObserver === 'undefined') return undefined;
@@ -237,16 +250,16 @@ function PublishedGallery() {
   }, [loadMore, page.error, page.hasMore, page.loading, selectedVideo]);
 
   const closeVideo = useCallback(() => setSelectedVideo(null), []);
-  if (page.loading && !page.items.length) return <CreatePublishedGallerySkeleton />;
+  if (page.loading && !slides.length) return <CreatePublishedGallerySkeleton />;
   // A finished empty or unavailable optional feed leaves the composer calm.
-  if (!page.items.length) return null;
+  if (!slides.length) return null;
 
   return (
     <section aria-labelledby="create-gallery-heading" aria-roledescription="carousel" className="mt-12 min-w-0 pb-8 sm:mt-16">
       <div className="mb-5 flex items-center justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <h2 id="create-gallery-heading" className="text-lg font-semibold tracking-tight text-fg">{uiText('Made with Samsar')}</h2>
-          <p className="mt-1 text-sm text-fg-muted">{uiText('Explore the latest published videos.')}</p>
+          <p className="mt-1 break-words text-sm text-fg-muted">{subtitle}</p>
         </div>
         {slides.length > 0 && <div className="flex shrink-0 items-center gap-2">
           <button type="button" aria-label={uiText('Previous videos')} aria-controls="create-gallery-carousel" disabled={activeSlide === 0} onClick={() => moveToSlide(activeSlide - 1)} className="inline-flex size-10 items-center justify-center rounded-full border border-line bg-surface text-fg-secondary transition duration-150 hover:bg-surface-hover active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-35 motion-reduce:scale-100 motion-reduce:transition-none">
@@ -264,20 +277,10 @@ function PublishedGallery() {
         if (event.key === 'Home') { event.preventDefault(); moveToSlide(0); }
         if (event.key === 'End') { event.preventDefault(); moveToSlide(slides.length - 1); }
       }} className="relative flex snap-x snap-mandatory items-start gap-4 overflow-x-auto overscroll-x-contain rounded-2xl pb-3 outline-none [scrollbar-width:thin] focus-visible:ring-2 focus-visible:ring-focus">
-        {slides.map((columns, slideIndex) => <div key={slideIndex} data-gallery-slide={slideIndex} role="group" aria-roledescription="slide" aria-label={uiText('Page {current} of {total}', { current: slideIndex + 1, total: slides.length })} className="grid w-full shrink-0 snap-start grid-cols-2 items-start gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          {columns.map((column, columnIndex) => <div key={columnIndex} className="flex min-w-0 flex-col gap-3" data-gallery-column={columnIndex}>
-            {column.map((video) => {
-              const title = video.title || uiText('Untitled video');
-              return <button key={video.id} type="button" onClick={() => setSelectedVideo(video)} aria-label={uiText('Play {title}', { title })} className="create-publication-card group relative block w-full overflow-hidden rounded-2xl border border-line/40 bg-surface-muted text-left outline-none hover:border-accent/40 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-canvas" style={{ aspectRatio: video.aspectRatio }}>
-                <MdVideocam aria-hidden="true" className="absolute left-1/2 top-1/2 size-7 -translate-x-1/2 -translate-y-1/2 text-fg-muted/40" />
-                {video.posterUrl && <img src={video.posterUrl} alt="" loading="lazy" decoding="async" width={Math.round(video.aspectRatio * 600)} height="600" className="create-publication-poster absolute inset-0 size-full object-contain group-hover:opacity-95" onError={(event) => { event.currentTarget.hidden = true; }} />}
-                <span aria-hidden="true" className="absolute inset-x-0 bottom-0 flex items-end gap-2 bg-gradient-to-t from-black/80 via-black/25 to-transparent px-3 pb-3 pt-12 text-white">
-                  <span className="mb-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-colors group-hover:bg-white/35 motion-reduce:transition-none"><MdPlayArrow className="size-5" /></span>
-                  <span className="min-w-0 truncate pb-1 text-xs font-medium">{title}</span>
-                </span>
-              </button>;
-            })}
-          </div>)}
+        {slides.map((items, slideIndex) => <div key={slideIndex} data-gallery-slide={slideIndex} role="group" aria-roledescription="slide" aria-label={uiText('Page {current} of {total}', { current: slideIndex + 1, total: slides.length })} className="w-full min-w-0 shrink-0 snap-start">
+          <PublicationMosaic items={items} layout={layout} renderTile={(video) => (
+            <PublishedVideoCard key={video.id} video={video} onSelect={setSelectedVideo} />
+          )} />
         </div>)}
         <div ref={sentinelRef} aria-hidden="true" className="h-px w-px shrink-0" />
       </div>
@@ -293,6 +296,25 @@ function PublishedGallery() {
   );
 }
 
-export default function CreatePublishedGallery() {
-  return IS_STANDALONE_DEPLOYMENT ? null : <PublishedGallery />;
+export default function CreatePublishedGallery({ inferenceModel, videoModel, language }) {
+  useUiLanguage();
+  if (IS_STANDALONE_DEPLOYMENT) return null;
+  const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
+  const labels = [];
+  if (text(inferenceModel)) {
+    params.set('inferenceModel', text(inferenceModel));
+    labels.push(modelLabel(text(inferenceModel), INFERENCE_MODEL_TYPES));
+  }
+  if (text(videoModel)) {
+    params.set('videoModel', text(videoModel));
+    labels.push(modelLabel(text(videoModel), VIDEO_GENERATION_MODEL_TYPES));
+  }
+  const selectedLanguage = text(language).toLowerCase();
+  if (selectedLanguage && selectedLanguage !== 'auto') {
+    params.set('language', selectedLanguage);
+    const name = SUPPORTED_LANGUAGES.find((entry) => entry.code === selectedLanguage)?.name;
+    labels.push(name ? uiText(name) : selectedLanguage);
+  }
+  const feedQuery = params.toString();
+  return <PublishedGallery key={feedQuery} feedQuery={feedQuery} subtitle={labels.join(' · ') || uiText('Explore the latest published videos.')} />;
 }

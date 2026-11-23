@@ -36,7 +36,7 @@ import { model } from "mongoose";
 
 
 
-let InitExpressGenerationStatus = {
+const InitExpressGenerationStatus = {
   'prompt_generation': 'PENDING',
   'image_generation': 'PENDING',
   'audio_generation': 'PENDING',
@@ -84,11 +84,17 @@ export async function createNewBlankQuickSession(userId, initialState = {}) {
 }
 
 
-export async function setSessionQuickGenerationPending(userId, payload) {
+export async function setSessionQuickGenerationPending(userId, payload, { awaitingPreparation = false } = {}) {
   await getDBConnectionString();
   const { sessionId } = payload;
 
-  const sessionData = await VideoSession.findOne({ _id: sessionId });
+  const sessionData = await VideoSession.findOne({ _id: sessionId, userId });
+  if (!sessionData) throw new Error('Session not found');
+  if (awaitingPreparation && (sessionData.videoGenerationPending ||
+    (sessionData.isExpressGeneration && sessionData.expressGenerationPending) ||
+    sessionData.expressGenerationStatus?.status === 'QUEUED')) {
+    throw new Error('Generation already in progress');
+  }
 
   const userData = await User.findById(userId);
 
@@ -140,19 +146,36 @@ export async function setSessionQuickGenerationPending(userId, payload) {
   await AudioGeneration.deleteMany({ sessionId: sessionId, rowLocked: false });
   await FrameGeneration.deleteMany({ sessionId: sessionId, rowLocked: false });
 
-  if (sessionData.expressGenerativeVideoRequired) {
-    InitExpressGenerationStatus['ai_video_generation'] = 'INIT';
-  }
-  // Update session data using updateOne
-  const generationStatus = await VideoSession.updateOne({ _id: sessionId }, {
+  const renderRequestedAt = new Date();
+  await VideoSession.updateOne({ _id: sessionId, userId }, {
     videoLink: null,
-    expressGenerationStatus: InitExpressGenerationStatus,
+    renderRequestedAt,
+    expressGenerationStatus: awaitingPreparation ? { ...InitExpressGenerationStatus, status: 'QUEUED' } : InitExpressGenerationStatus,
+    ...(awaitingPreparation && {
+      remoteURL: null, generationError: null, expressGenerationError: null,
+      expressGenerationFailed: false, expressGenerationCancelled: false, expressGenerationPaused: false,
+      // Preparation sets the worker-facing pending flags once it has built the layers.
+      expressGenerationPending: false,
+    }),
     frameGenerationPending: false,
     audioGenerationPending: false,
     videoGenerationPending: false,
   }, { new: true });
+  return renderRequestedAt;
 }
 
+export function markQuickPreparationFailed(userId, sessionId, renderRequestedAt, error) {
+  const moderated = error?.message === 'Content moderation failed';
+  return VideoSession.updateOne({
+    _id: sessionId, userId, renderRequestedAt, expressGenerationCancelled: { $ne: true },
+    expressGenerationPaused: { $ne: true },
+  }, { $set: {
+    expressGenerationFailed: true, expressGenerationPending: false, videoGenerationPending: false,
+    expressGenerationError: moderated ? error.message : 'Unable to prepare this video.',
+    'expressGenerationStatus.status': 'FAILED', 'expressGenerationStatus.video_generation': 'FAILED',
+    ...(moderated && { 'expressGenerationStatus.prompt_generation': 'FAILED' }),
+  } });
+}
 
 export async function splitTextIntoLineItems(lineItems) {
 
@@ -174,7 +197,7 @@ export async function splitTextIntoLineItems(lineItems) {
 
 
 
-export async function createQuickSession(userId, payload) {
+export async function createQuickSession(userId, payload, renderRequestedAt) {
   await getDBConnectionString();
 
   let { lineItems, sessionId, duration, animation, 
@@ -634,6 +657,7 @@ export async function createQuickSession(userId, payload) {
     setAutoDurationPerScene: setAutoDurationPerScene || false,
     'expressGenerationStatus.prompt_generation': 'COMPLETED',
     expressGenerationCreated: new Date(),
+    ...(renderRequestedAt && { 'expressGenerationStatus.status': 'PENDING' }),
 
   };
 
@@ -645,7 +669,10 @@ export async function createQuickSession(userId, payload) {
 
   updatePayload = { ...updatePayload, ...themeAddPayload };
 
-  await VideoSession.updateOne({ _id: payload.sessionId }, updatePayload, { new: true });
+  const requestFilter = { _id: sessionId, ...(renderRequestedAt && { renderRequestedAt,
+    expressGenerationCancelled: { $ne: true }, expressGenerationPaused: { $ne: true } }) };
+  const prepared = await VideoSession.updateOne(requestFilter, updatePayload);
+  if (!prepared.matchedCount) return;
 
   const sessionSaveResponse = await VideoSession.findOne({ _id: payload.sessionId });
 
@@ -871,9 +898,7 @@ export async function createQuickSession(userId, payload) {
     notificationEmail = userData.email;
   }
 
-  await VideoSession.updateOne({
-    _id: sessionId,
-  }, {
+  await VideoSession.updateOne(requestFilter, {
     expressGenerationPending: true,
     expressGenerationPaused: false,
     // videoGenerationPending: true,
@@ -1004,7 +1029,7 @@ export async function getQuickSessionGenerationStatus(sessionId) {
     }
   }
 
-  if (expressGenerationPending || videoGenerationPending) {
+  if (expressGenerationPending || videoGenerationPending || expressGenerationStatus?.status === 'QUEUED') {
     return {
       status: 'PENDING',
       provider,

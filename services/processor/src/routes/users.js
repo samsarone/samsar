@@ -375,8 +375,7 @@ router.post('/docker_setup_admin', async (req, res) => {
     }
 
     const { loginToken, expiresInSeconds, expiresAt } = createLoginTokenForUser(user._id.toString());
-    const redirectParam = encodeURIComponent('/vidgenie');
-    const loginUrl = `${CLIENT_APP}/verify?loginToken=${encodeURIComponent(loginToken)}&redirect=${redirectParam}`;
+    const loginUrl = `${CLIENT_APP}/verify?loginToken=${encodeURIComponent(loginToken)}`;
 
     res.send({
       user: formatUserClientProfile(user),

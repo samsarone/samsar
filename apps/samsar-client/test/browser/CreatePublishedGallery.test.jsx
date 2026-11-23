@@ -15,7 +15,7 @@ import '../../src/index.css';
 
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 vi.mock('../../src/contexts/UserContext.jsx', () => ({ useUser: () => ({
-  user: { _id: 'creator', email: 'creator@example.com', generationCredits: 2000 }, userInitiated: true, userFetching: false,
+  user: { _id: 'creator', email: 'creator@example.com', preferredLanguage: 'en', generationCredits: 5000 }, userInitiated: true, userFetching: false,
 }) }));
 vi.mock('../../src/utils/web.jsx', async (importOriginal) => ({ ...await importOriginal(), getHeaders: () => ({ headers: { Authorization: 'Bearer test' } }) }));
 vi.mock('../../src/hooks/useDeploymentModelAvailability.js', () => ({ useDeploymentModelAvailability: () => ({ isStandaloneDeployment: false, isLoading: false }) }));
@@ -24,6 +24,7 @@ vi.mock('../../src/components/oneshot_editor/OneshotEditorContainer.jsx', () => 
 
 const nativeFetch = window.fetch;
 let feedRequests;
+let cursorReady;
 function videos(start, count) {
   return Array.from({ length: count }, (_, index) => ({
     id: `video-${start + index}`, title: `Published video ${start + index}`,
@@ -31,9 +32,33 @@ function videos(start, count) {
     splashImage: new URL('/q2.png', window.location.origin).href,
     aspectRatio: ['16:9', '9:16', '1:1', '4:3'][index % 4],
     originalPrompt: 'A quiet city waking up in soft morning light.',
-    inferenceModel: 'claude-opus-5.5', imageModel: 'GPTIMAGE2.5', videoModel: 'KLINGIMGTOVID4',
+    inferenceModel: 'claude-opus-5.5', imageModel: 'GPTIMAGE2.5', videoModel: 'KLINGIMGTOVID4', sessionLanguage: 'en',
   }));
 }
+
+function expectPackedSlide(slide) {
+  const frame = slide.getBoundingClientRect();
+  const tiles = Array.from(slide.querySelectorAll('button'), (card) => card.getBoundingClientRect());
+
+  // Inflate every tile by half a gutter on each side. In a packed mosaic these
+  // rectangles meet without overlapping and exactly cover the expanded slide.
+  let gutter = Infinity;
+  for (const [index, tile] of tiles.entries()) {
+    expect(tile.left).toBeGreaterThanOrEqual(frame.left - 0.5);
+    expect(tile.top).toBeGreaterThanOrEqual(frame.top - 0.5);
+    expect(tile.right).toBeLessThanOrEqual(frame.right + 0.5);
+    expect(tile.bottom).toBeLessThanOrEqual(frame.bottom + 0.5);
+    for (const other of tiles.slice(index + 1)) {
+      const separation = Math.max(tile.left - other.right, other.left - tile.right, tile.top - other.bottom, other.top - tile.bottom);
+      gutter = Math.min(gutter, separation);
+    }
+  }
+  expect(gutter).toBeGreaterThan(0);
+  const tileArea = tiles.reduce((sum, tile) => sum + (tile.width + gutter) * (tile.height + gutter), 0);
+  const frameArea = (frame.width + gutter) * (frame.height + gutter);
+  expect(tileArea / frameArea).toBeCloseTo(1, 2);
+}
+
 function mount(theme) {
   localStorage.setItem('colorMode', theme);
   return render(<MemoryRouter initialEntries={['/create']}>
@@ -47,14 +72,17 @@ function mount(theme) {
 
 beforeEach(() => {
   feedRequests = [];
+  cursorReady = Promise.resolve();
   vi.stubEnv('VITE_PROCESSOR_API', '/api');
   setUiLanguage('en');
   axios.get.mockReset(); axios.post.mockReset();
-  vi.spyOn(window, 'fetch').mockImplementation((input, options) => {
+  vi.spyOn(window, 'fetch').mockImplementation(async (input, options) => {
     if (!String(input).includes('/publication?')) return nativeFetch.call(window, input, options);
     feedRequests.push(String(input));
     const secondPage = new URL(input, window.location.origin).searchParams.has('cursor');
-    return Promise.resolve(new Response(JSON.stringify({ items: videos(secondPage ? 13 : 1, secondPage ? 4 : 12), hasMore: !secondPage, nextCursor: secondPage ? null : 'page-two' }), { headers: { 'Content-Type': 'application/json' } }));
+    if (secondPage) await cursorReady;
+    const items = secondPage ? [{ ...videos(33, 1)[0], aspectRatio: '9:16' }] : videos(1, 32);
+    return new Response(JSON.stringify({ items, hasMore: !secondPage, nextCursor: secondPage ? null : 'page-two' }), { headers: { 'Content-Type': 'application/json' } });
   });
 });
 
@@ -71,7 +99,12 @@ for (const theme of ['light', 'dark']) {
       const view = mount(theme);
       const firstCard = page.getByRole('button', { name: 'Play Published video 1', exact: true });
       await expect.element(firstCard).toBeVisible();
-      expect(feedRequests[0]).toBe('/api/publication?limit=12');
+      const feed = new URL(feedRequests[0], window.location.origin);
+      expect(feed.pathname).toBe('/api/publication');
+      expect(Object.fromEntries(feed.searchParams)).toEqual({
+        limit: '32', inferenceModel: 'claude-opus-5.5', videoModel: 'KLINGIMGTOVID4', language: 'en',
+      });
+      await expect.element(page.getByText('Claude Opus 5.5 · Kling 4 Img2Vid · English')).toBeVisible();
       expect(view.container.querySelectorAll('video')).toHaveLength(0);
       expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
       const heading = page.getByRole('heading', { name: 'Made with Samsar', exact: true }).element();
@@ -114,31 +147,77 @@ for (const theme of ['light', 'dark']) {
   }
 }
 
-it('navigates mosaic pages and loads the next cursor without moving existing cards', async () => {
-  await page.viewport(1280, 800);
+it.each([[375, 8], [820, 12], [1280, 16]])('packs the mosaic at %i px edge-to-edge with %i videos', async (width, pageSize) => {
+  await page.viewport(width, 850);
+  const view = mount('light');
+  await expect.element(page.getByRole('button', { name: 'Play Published video 1', exact: true })).toBeVisible();
+  const slide = view.container.querySelector('[data-gallery-slide="0"]');
+  const cards = [...slide.querySelectorAll('button')];
+  expect(cards).toHaveLength(pageSize);
+  // Packing may reorder publications within a slide, but every one stays visible.
+  const expected = new Map(videos(1, pageSize).map((video) => {
+    const [w, h] = video.aspectRatio.split(':').map(Number);
+    return [`Play ${video.title}`, w / h];
+  }));
+  const titles = cards.map((card) => card.getAttribute('aria-label'));
+  expect([...titles].sort()).toEqual([...expected.keys()].sort());
+  for (const card of cards) {
+    const bounds = card.getBoundingClientRect();
+    expect(bounds.width / bounds.height).toBeCloseTo(expected.get(card.getAttribute('aria-label')), 2);
+  }
+  await waitFor(() => expectPackedSlide(slide));
+  expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+});
+
+it.each([[820, 8], [1280, 16]])('keeps the visible slide stable when another cursor arrives at %i px', async (width, lastSlideCount) => {
+  await page.viewport(width, 800);
+  let releaseCursor;
+  cursorReady = new Promise((resolve) => { releaseCursor = resolve; });
   mount('light');
   const firstCard = page.getByRole('button', { name: 'Play Published video 1', exact: true });
   await expect.element(firstCard).toBeVisible();
-  expect(feedRequests).toHaveLength(1);
-  const original = firstCard.element();
-  const originalColumn = original.parentElement;
-  const originalPosition = original.offsetTop;
   const carousel = page.getByRole('group', { name: 'Published videos', exact: true }).element();
-  expect(carousel.scrollWidth).toBeGreaterThan(carousel.clientWidth);
+  const initialSlides = [...carousel.querySelectorAll('[data-gallery-slide]')];
+  const visibleSlide = initialSlides.at(-1);
   const next = page.getByRole('button', { name: 'Next videos', exact: true });
   next.element().scrollIntoView({ block: 'center' });
-  await next.click();
-  await waitFor(() => expect(carousel.scrollLeft).toBeGreaterThan(carousel.clientWidth / 2));
-  await expect.element(page.getByRole('button', { name: 'Play Published video 13', exact: true })).toBeInTheDocument();
-  expect(feedRequests).toHaveLength(2);
+  for (const slide of initialSlides.slice(1)) {
+    expect(feedRequests).toHaveLength(1);
+    await next.click();
+    await waitFor(() => expect(Math.abs(carousel.scrollLeft - slide.offsetLeft)).toBeLessThan(2));
+  }
+  await waitFor(() => expect(feedRequests).toHaveLength(2));
   expect(feedRequests[1]).toContain('cursor=page-two');
-  expect(firstCard.element()).toBe(original);
-  expect(firstCard.element().parentElement).toBe(originalColumn);
-  expect(firstCard.element().offsetTop).toBe(originalPosition);
+  const originalCards = [...visibleSlide.querySelectorAll('button')];
+  expect(originalCards).toHaveLength(lastSlideCount);
+  function positions() {
+    const frame = visibleSlide.getBoundingClientRect();
+    return originalCards.map((card) => {
+      const rect = card.getBoundingClientRect();
+      return [rect.left - frame.left, rect.top - frame.top, rect.width, rect.height];
+    });
+  }
+  const originalPositions = positions();
+  releaseCursor();
+  const finalCard = page.getByRole('button', { name: 'Play Published video 33', exact: true });
+  await expect.element(finalCard).toBeInTheDocument();
+  expect(Math.abs(carousel.scrollLeft - visibleSlide.offsetLeft)).toBeLessThan(2);
+  const currentCards = [...visibleSlide.querySelectorAll('button')];
+  expect(currentCards).toHaveLength(originalCards.length);
+  currentCards.forEach((card, index) => expect(card).toBe(originalCards[index]));
+  for (const [index, position] of positions().entries()) {
+    position.forEach((value, coordinate) => expect(value).toBeCloseTo(originalPositions[index][coordinate], 0));
+  }
+  const lastSlide = finalCard.element().closest('[data-gallery-slide]');
+  expect(lastSlide.querySelectorAll('button')).toHaveLength(1);
+  const portrait = finalCard.element().getBoundingClientRect();
+  expect(portrait.width / portrait.height).toBeCloseTo(9 / 16, 2);
+  expect(portrait.width).toBeLessThan(lastSlide.clientWidth / 2);
+  expect(portrait.height).toBeLessThanOrEqual(initialSlides[0].clientHeight);
   expect(document.querySelectorAll('video')).toHaveLength(0);
   carousel.focus();
   await userEvent.keyboard('{Home}');
-  await waitFor(() => expect(carousel.scrollLeft).toBeLessThan(2));
+  await waitFor(() => expect(carousel.scrollLeft).toBeLessThan(2), { timeout: 2000 });
   await expect.element(page.getByRole('button', { name: 'Previous videos', exact: true })).toBeDisabled();
 });
 

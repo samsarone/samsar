@@ -85,7 +85,9 @@ it('plays image-only scenes with a source-less image placeholder', async () => {
 
 
 it('previews generated scenes while an Express render is pending', async () => {
-  const { container } = await mount([layer('one', 0), layer('two', 2)], { isExpressGeneration: true, expressGenerationPending: true });
+  const first = layer('one', 0);
+  first.imageSession.generationStatus = 'PENDING';
+  const { container } = await mount([first, layer('two', 2)], { isExpressGeneration: true, expressGenerationPending: true });
   await waitFor(() => expect(activeVideo(container)?.readyState).toBeGreaterThanOrEqual(2));
   await page.getByRole('button', { name: 'Play', exact: true }).click();
   await waitFor(() => expect(boundary.timeline.currentLayerSeek).toBeGreaterThan(1));
@@ -94,6 +96,33 @@ it('previews generated scenes while an Express render is pending', async () => {
   const pausedFrame = boundary.timeline.currentLayerSeek;
   fireEvent.keyDown(window, { code: 'Space', key: ' ' });
   await waitFor(() => expect(boundary.timeline.currentLayerSeek).toBeGreaterThan(pausedFrame));
+});
+
+it.each(['image', 'video'])('shows the copied %s during a reroll and switches to the replacement on the next poll', async type => {
+  const previewUrl = type === 'image' ? imageUrl : clipUrl + '?take=copied';
+  const pending = { ...layer('rerolled', 0, [], false), rerollPreview: { type, url: previewUrl },
+    imageSession: { generationStatus: 'PENDING', activeItemList: [] } };
+  const unchanged = layer('unchanged', 2);
+  const replacement = layer('rerolled', 0);
+  if (type === 'video') delete replacement.imageSession;
+  axios.post.mockResolvedValue({ data: { status: 'PENDING', session: { _id: 'preview', aspectRatio: '16:9',
+    isExpressGeneration: true, expressGenerationPending: true, layers: [replacement, unchanged], audioLayers: [] } } });
+  const { container } = await mount([pending, unchanged], { isExpressGeneration: true, expressGenerationPending: true });
+  const stage = container.querySelector('#samsar-konva-stage');
+  if (type === 'image') {
+    const image = stage.parentElement.querySelector('img');
+    await waitFor(() => expect(image?.naturalWidth).toBeGreaterThan(0));
+  } else {
+    await waitFor(() => expect(activeVideo(container)?.src).toContain('take=copied'));
+    await waitFor(() => expect(activeVideo(container)?.readyState).toBeGreaterThanOrEqual(2));
+  }
+  expect(getComputedStyle(stage).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+  expect(screen.queryByRole('button', { name: 'Remove video from layer' })).toBeNull();
+  expect(boundary.timeline.layers.map(item => item._id)).toEqual(['rerolled', 'unchanged']);
+  expect(boundary.timeline.layers[0].imageSession.activeItemList).toEqual([]);
+  await waitFor(() => expect(activeVideo(container)?.src).toContain('scene=rerolled'), { timeout: 5000 });
+  expect(stage.parentElement.querySelector('img')).toBeNull();
+  expect(boundary.timeline.isRenderPending).toBe(true);
 });
 
 it('keeps the normal Studio workspace and plays arriving target scenes during post-processing', async () => {
@@ -106,6 +135,7 @@ it('keeps the normal Studio workspace and plays arriving target scenes during po
   const { container } = render(<NavCanvasControlProvider><VideoHome /></NavCanvasControlProvider>);
   await waitFor(() => expect(container.querySelector('[data-studio-workspace]')).toBeTruthy());
   const workspace = container.querySelector('[data-studio-workspace]');
+  expect(screen.getByRole('status', { name: 'Preparing copied scenes' })).toBeVisible();
   expect(container.querySelector('video')).toBeNull();
   expect(boundary.timeline.layers).toEqual([]);
   expect(boundary.timeline.isRenderPending).toBe(true);
@@ -114,6 +144,7 @@ it('keeps the normal Studio workspace and plays arriving target scenes during po
     layers: [layer('new-one', 0), layer('new-two', 2)], audioLayers: [] } } });
   await waitFor(() => expect(activeVideo(container)?.readyState).toBeGreaterThanOrEqual(2), { timeout: 4500 });
   expect(container.querySelector('[data-studio-workspace]')).toBe(workspace);
+  expect(screen.queryByRole('status', { name: 'Preparing copied scenes' })).toBeNull();
   expect(activeVideo(container).src).toContain('scene=new-one');
   expect(boundary.timeline.layers[0]._id).toBe('new-one');
   expect(boundary.timeline.isRenderPending).toBe(true);

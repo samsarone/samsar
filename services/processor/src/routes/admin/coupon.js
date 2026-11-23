@@ -11,9 +11,13 @@ const router = express.Router();
 
 
 router.post('/create', async function(req, res) {
-  const payload = req.body;
-  const newCoupon = await createCoupon(payload);
-  res.json(newCoupon);
+  try {
+    const newCoupon = await createCoupon(req.body);
+    res.json(newCoupon);
+  } catch (error) {
+    console.error('Error in /admin/coupon/create:', error);
+    res.status(500).json({ error: 'Unable to create the coupon.' });
+  }
 });
 
 

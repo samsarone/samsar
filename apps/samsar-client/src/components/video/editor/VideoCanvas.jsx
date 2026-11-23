@@ -119,7 +119,7 @@ const VideoCanvas = forwardRef((props, ref) => {
     shapeSelectToolbarPosition, enableSegmentationMask, segmentationData, isExpressGeneration, currentLayerSeek, isVideoPreviewPlaying, removeVideoLayer, aspectRatio, isAIVideoGenerationPending,
     canvasDimensions: canvasDimensionsProp,
     toggleStageZoom, stageZoomScale, displayZoomType, onCanvasViewportChange, requestRegenerateSubtitles, aiVideoLayer,
-    nextAiVideoLayer, nextAiVideoLayerType,
+    nextAiVideoLayer, nextAiVideoLayerType, rerollImageUrl, rerollVideoUrl,
     requestRegenerateAnimations, removeSelectedItem, requestRealignLayers, totalDuration,
     updateTargetTextActiveLayerConfig, createTextLayer, updateTargetImageActiveLayerConfig,
     downloadCurrentFrame, requestRealignToAiVideoAndLayers,
@@ -168,7 +168,8 @@ const VideoCanvas = forwardRef((props, ref) => {
 
 
   const [showOverlayPromptGenerator, setShowOverlayPromptGenerator] = useState(true);
-  const isBlankCanvas = isBlankStudioCanvas(activeItemList, aiVideoLayer);
+  const displayedVideoUrl = aiVideoLayer || rerollVideoUrl;
+  const isBlankCanvas = !rerollImageUrl && isBlankStudioCanvas(activeItemList, displayedVideoUrl);
   const canvasLayerKey = resolveStudioCanvasLayerKey(
     currentLayer,
     selectedFrameId || sessionId
@@ -211,7 +212,7 @@ const VideoCanvas = forwardRef((props, ref) => {
 
   const [videoLayerControlPosition, setVideoLayerControlPosition] = useState(null);
   const [readyVideoLayerSrc, setReadyVideoLayerSrc] = useState('');
-  const normalizedVideoLayerSrc = typeof aiVideoLayer === 'string' ? aiVideoLayer.trim() : '';
+  const normalizedVideoLayerSrc = typeof displayedVideoUrl === 'string' ? displayedVideoUrl.trim() : '';
   const isCurrentVideoLayerReady = isStudioVideoSourceReady(
     normalizedVideoLayerSrc,
     readyVideoLayerSrc
@@ -832,7 +833,7 @@ const VideoCanvas = forwardRef((props, ref) => {
 
   let canvasVideoUnderlay = (
     <div className='absolute inset-0'>
-      <VideoUnderlay aiVideoLayer={aiVideoLayer} currentLayerSeek={currentRelateiveTimeStamp}
+      <VideoUnderlay aiVideoLayer={displayedVideoUrl} currentLayerSeek={currentRelateiveTimeStamp}
         canvasDimensions={canvasDimensions}
         aiVideoLayerType={aiVideoLayerType}
         nextAiVideoLayer={nextAiVideoLayer}
@@ -1175,6 +1176,10 @@ const VideoCanvas = forwardRef((props, ref) => {
         }}
       >
         {canvasVideoUnderlay}
+        {rerollImageUrl && (
+          <img src={rerollImageUrl} alt="" draggable={false} onError={() => props.onVideoError?.(rerollImageUrl)}
+            className="pointer-events-none absolute inset-0 h-full w-full object-contain" />
+        )}
         {canvasGridOverlay}
         <Stage width={canvasDimensions.width} height={canvasDimensions.height} ref={ref} id="samsar-konva-stage"
           onMouseMove={debouncedHandleMouseOver} onClick={handleCanvasClick}
@@ -1183,7 +1188,7 @@ const VideoCanvas = forwardRef((props, ref) => {
             boxSizing: 'border-box',
             padding: 0,
             margin: 0,
-            backgroundColor: isCurrentVideoLayerReady ? 'transparent' : bgCanvasColor,
+            backgroundColor: isCurrentVideoLayerReady || rerollImageUrl ? 'transparent' : bgCanvasColor,
           }}
         >
           <Layer onMouseDown={handleLayerMouseDown} onMouseMove={handleLayerMouseMove}
@@ -1304,7 +1309,7 @@ const VideoCanvas = forwardRef((props, ref) => {
           <button onClick={handleRemoveButtonClick}>{uiText("Remove")}</button>
         </div>
       )}
-      {isAIVideoGenerationPending && (
+      {isAIVideoGenerationPending && !(isExpressGeneration && props.isRenderPending && !isBlankCanvas) && (
         <div className="animation-overlay flex items-center justify-center">
           <MinimalTaskSkeleton
             title={pendingVideoTaskTitle}

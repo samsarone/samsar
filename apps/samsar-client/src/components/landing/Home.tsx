@@ -11,6 +11,7 @@ import 'react-tooltip/dist/react-tooltip.css';
 
 
 import { getAuthToken, persistAuthToken } from '../../utils/web.jsx';
+import { DEFAULT_APP_PATH } from '../../utils/defaultRoutes.js';
 import { appendRouteSearch } from '../../utils/vidgenieRouting.js';
 import {
   buildLoginPathForRedirect,
@@ -62,6 +63,7 @@ const CreateLanding = lazy(() => import('./CreateLanding.jsx'));
 
 const PROCESSOR_SERVER = import.meta.env.VITE_PROCESSOR_API;
 const STANDALONE_PUBLIC_AUTH_PATHS = new Set([
+  '/',
   '/create',
   '/login',
   '/forgot_password',
@@ -84,14 +86,14 @@ function getSanitizedRouteSearch(search) {
 
 export function getRouteLoadingFallback(pathname, isMobile) {
   const route = pathname.split('/')[1];
-  if (route === 'create') return <CreateLandingSkeleton />;
+  if (!route || route === 'create') return <CreateLandingSkeleton />;
   if (isMobile && /^\/video\/(share|collab)\//.test(pathname)) return <RouteLoadingScreen />;
   if (['vidgenie', 'vidgpt', 'videogpt', 'vidgemie'].includes(route)
-      || (isMobile && ['', 'video', 'quick_video'].includes(route))) {
+      || (isMobile && ['video', 'quick_video'].includes(route))) {
     return <VidgenieSkeletonLoader />;
   }
   if (route === 'quick_video') return <PageSkeletonLoader page="quick" />;
-  if (route === 'video' || route === '') return <StudioSkeletonLoader />;
+  if (route === 'video') return <StudioSkeletonLoader />;
   if (['image', 'iamge'].includes(route)) return <PageSkeletonLoader page="image" />;
   if (route === 'audio') return <PageSkeletonLoader page="audio" />;
   if (route === 'account') return <PageSkeletonLoader page="account" />;
@@ -101,9 +103,13 @@ export function getRouteLoadingFallback(pathname, isMobile) {
   return <RouteLoadingScreen />;
 }
 
-function DefaultEntrySkeleton({ isMobile }) {
-  return IS_STANDALONE_DEPLOYMENT && !isMobile
-    ? <StudioSkeletonLoader /> : <VidgenieSkeletonLoader />;
+async function getDefaultDestination(user, search) {
+  const fallback = appendRouteSearch(DEFAULT_APP_PATH, search);
+  try {
+    return (await resolvePostAuthDestination({ user, apiServer: PROCESSOR_SERVER, search })) || fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function SharedVideoDesktopOnlyMessage() {
@@ -138,27 +144,19 @@ function MobileStudioSessionRedirect() {
   return <Navigate to={appendRouteSearch(id ? `/vidgenie/${id}` : '/vidgenie', getSanitizedRouteSearch(search))} replace />;
 }
 
-function DefaultAuthenticatedRoute({ user, isMobile, search }) {
+function DefaultAuthenticatedRoute({ user, search }) {
   useUiLanguage();
   const [destination, setDestination] = useState(null);
   const resolutionRef = useRef(null);
-  const resolutionKey = JSON.stringify([user?._id, Boolean(user?.isExternalUser), isMobile, search]);
+  const resolutionKey = JSON.stringify([user?._id, Boolean(user?.isExternalUser), getAuthToken(), search]);
 
   useEffect(() => {
     if (!user?._id) return undefined;
 
     if (resolutionRef.current?.key !== resolutionKey) {
-      const fallbackPath = IS_STANDALONE_DEPLOYMENT && !isMobile ? '/video' : '/vidgenie';
       resolutionRef.current = {
         key: resolutionKey,
-        promise: Promise.resolve().then(() => resolvePostAuthDestination({
-          user,
-          isMobile,
-          apiServer: PROCESSOR_SERVER,
-          search,
-          createIfMissing: true,
-        })).then((path) => path || appendRouteSearch(fallbackPath, search))
-          .catch(() => appendRouteSearch(fallbackPath, search)),
+        promise: getDefaultDestination(user, search),
       };
     }
 
@@ -171,13 +169,13 @@ function DefaultAuthenticatedRoute({ user, isMobile, search }) {
       setDestination({ key: resolutionKey, path });
     });
     return () => { cancelled = true; };
-  }, [isMobile, resolutionKey, search, user]);
+  }, [resolutionKey, search, user]);
 
   if (destination?.key === resolutionKey) {
     return <Navigate to={destination.path} replace />;
   }
 
-  return <DefaultEntrySkeleton isMobile={isMobile} />;
+  return <CreateLandingSkeleton />;
 }
 
 export default function Home() {
@@ -276,7 +274,7 @@ export default function Home() {
     if (!userInitiated || userFetching) return;
     if (location.pathname === '/') return;
     if (isExternalUser) {
-      if (location.pathname !== '/external/studio' && location.pathname !== '/verify') {
+      if (!['/external/studio', '/create', '/verify'].includes(location.pathname)) {
         navigate('/external/studio', { replace: true });
       }
       return;
@@ -308,19 +306,12 @@ export default function Home() {
   ]);
 
   const navigateToDefaultAuthenticatedView = useCallback(async (resolvedUser = user) => {
-    const targetPath = await resolvePostAuthDestination({
-      user: resolvedUser,
-      isMobile,
-      apiServer: PROCESSOR_SERVER,
-      search: sanitizedRouteSearch,
-      createIfMissing: true,
-    });
+    const targetPath = await getDefaultDestination(resolvedUser, sanitizedRouteSearch);
     if (targetPath?.startsWith('/vidgenie')) {
       void preloadVidgenieEditor().catch(() => undefined);
     }
-    const fallbackPath = IS_STANDALONE_DEPLOYMENT && !isMobile ? '/video' : '/vidgenie';
-    navigate(targetPath || appendRouteSearch(fallbackPath, sanitizedRouteSearch), { replace: true });
-  }, [isMobile, navigate, sanitizedRouteSearch, user]);
+    navigate(targetPath, { replace: true });
+  }, [navigate, sanitizedRouteSearch, user]);
 
   useEffect(() => {
     if (!shouldResolveInitialAuthenticatedRoot || initialAuthenticatedRootStatus !== 'pending') {
@@ -333,7 +324,7 @@ export default function Home() {
     }
 
     const authToken = getAuthToken();
-    const routeKey = JSON.stringify([sanitizedRouteSearch, isMobile, IS_STANDALONE_DEPLOYMENT, authToken]);
+    const routeKey = JSON.stringify([sanitizedRouteSearch, authToken]);
     const accountId = user?._id?.toString?.() || null;
     let operation = initialRootResolutionRef.current;
     if (operation?.routeKey !== routeKey || operation?.accountId !== accountId) {
@@ -354,35 +345,18 @@ export default function Home() {
           }
           resolvedUser = await initialRootHydrationRef.current.promise;
         }
-        // Hydrating the same account can rerender Home before its destination
-        // resolves. Adopt that identity before creating a project so this
-        // profile update reuses the lookup; account switches invalidate it.
+        // Hydration can rerender Home mid-lookup. Reuse that lookup for the
+        // hydrated account and invalidate it when the account changes.
         operation.accountId = resolvedUser?._id?.toString?.() || null;
         if (!operation.active) return null;
 
         if (!resolvedUser?._id) {
           // An unreachable profile endpoint leaves credentials intact. Keep
           // this route available for retry instead of redirecting as a guest.
-          return getAuthToken() ? null : '/login';
+          return getAuthToken() ? null : appendRouteSearch(DEFAULT_APP_PATH, sanitizedRouteSearch);
         }
 
-        if (resolvedUser.isExternalUser) {
-          return '/external/studio';
-        }
-
-        const fallbackPath = IS_STANDALONE_DEPLOYMENT && !isMobile ? '/video' : '/vidgenie';
-        try {
-          const targetPath = await resolvePostAuthDestination({
-            user: resolvedUser,
-            isMobile,
-            apiServer: PROCESSOR_SERVER,
-            search: sanitizedRouteSearch,
-            createIfMissing: true,
-          });
-          return targetPath || appendRouteSearch(fallbackPath, sanitizedRouteSearch);
-        } catch {
-          return appendRouteSearch(fallbackPath, sanitizedRouteSearch);
-        }
+        return getDefaultDestination(resolvedUser, sanitizedRouteSearch);
       })().catch(() => '/login');
     }
 
@@ -405,7 +379,6 @@ export default function Home() {
     authRetryAttempt,
     userLoadFailed,
     initialAuthenticatedRootStatus,
-    isMobile,
     location.pathname,
     navigate,
     sanitizedRouteSearch,
@@ -428,15 +401,12 @@ export default function Home() {
       if (isOAuthComplete) {
         const resolvedUser = await getUserAPI();
         if (event.data?.isNewUser === true) {
-          const destination = await resolvePostSignupDestination({
-            isMobile,
-            apiServer: PROCESSOR_SERVER,
-          });
+          const destination = resolvePostSignupDestination();
           navigate(destination, { replace: true });
           return;
         }
         const redirectTarget = consumeResolvedAuthRedirect();
-        if (redirectTarget && !IS_STANDALONE_DEPLOYMENT) {
+        if (redirectTarget && (!IS_STANDALONE_DEPLOYMENT || redirectTarget === DEFAULT_APP_PATH)) {
           navigate(redirectTarget, { replace: true });
           return;
         }
@@ -447,7 +417,7 @@ export default function Home() {
     return () => {
       channel.close();
     };
-  }, [getUserAPI, isMobile, navigate, navigateToDefaultAuthenticatedView]);
+  }, [getUserAPI, navigate, navigateToDefaultAuthenticatedView]);
 
   useEffect(() => {
     const queryParams = new URLSearchParams(location.search);
@@ -508,20 +478,8 @@ export default function Home() {
           if (!operation.destination) {
             operation.destination = (async () => {
               const redirectTarget = consumeResolvedAuthRedirect(getRedirectParam(location));
-              if (redirectTarget && !IS_STANDALONE_DEPLOYMENT) return redirectTarget;
-              const fallbackPath = IS_STANDALONE_DEPLOYMENT && !isMobile ? '/video' : '/vidgenie';
-              try {
-                const targetPath = await resolvePostAuthDestination({
-                  user: resolvedUser,
-                  isMobile,
-                  apiServer: PROCESSOR_SERVER,
-                  search: sanitizedRouteSearch,
-                  createIfMissing: true,
-                });
-                return targetPath || appendRouteSearch(fallbackPath, sanitizedRouteSearch);
-              } catch {
-                return appendRouteSearch(fallbackPath, sanitizedRouteSearch);
-              }
+              if (redirectTarget && (!IS_STANDALONE_DEPLOYMENT || redirectTarget === DEFAULT_APP_PATH)) return redirectTarget;
+              return getDefaultDestination(resolvedUser, sanitizedRouteSearch);
             })();
           }
           const destination = await operation.destination;
@@ -549,7 +507,6 @@ export default function Home() {
     location.search,
     getUserAPI,
     navigate,
-    isMobile,
     sanitizedRouteSearch,
     resetUser,
   ]);
@@ -561,7 +518,6 @@ export default function Home() {
   } else {
     bodyBGColor = "bg-[#f7f9fc] text-slate-900";
   }
-  const rootAuthenticatedSearch = sanitizedRouteSearch;
   const routeLoadingFallback = getRouteLoadingFallback(location.pathname, isMobile);
   const shouldRequireStandaloneLogin =
     IS_STANDALONE_DEPLOYMENT &&
@@ -586,13 +542,13 @@ export default function Home() {
   if (initialAuthenticatedRootStatus === 'pending') {
     return (
       <div className={bodyBGColor}>
-        <DefaultEntrySkeleton isMobile={isMobile} />
+        <CreateLandingSkeleton />
       </div>
     );
   }
 
   if (hasPendingLoginToken) {
-    return <div className={bodyBGColor}>{location.pathname === "/" ? <DefaultEntrySkeleton isMobile={isMobile} /> : routeLoadingFallback}</div>;
+    return <div className={bodyBGColor}>{routeLoadingFallback}</div>;
   }
 
   if (shouldRequireStandaloneLogin) {
@@ -610,12 +566,10 @@ export default function Home() {
             path="/"
             element={
               !userInitiated || userFetching
-                ? (getAuthToken() ? <DefaultEntrySkeleton isMobile={isMobile} /> : routeLoadingFallback)
+                ? routeLoadingFallback
                 : user && user._id
-                  ? <DefaultAuthenticatedRoute user={user} isMobile={isMobile} search={rootAuthenticatedSearch} />
-                  : isMobile
-                    ? <MobileVideoLandingHome />
-                    : <VideoEditorLandingHome />
+                  ? <DefaultAuthenticatedRoute user={user} search={sanitizedRouteSearch} />
+                  : <Navigate to={appendRouteSearch(DEFAULT_APP_PATH, sanitizedRouteSearch)} replace />
             }
           />
           <Route path="/generations" element={<GenerationsHome />} />

@@ -93,6 +93,7 @@ export async function cancelVideoSessionRender(userId, payload = {}, dependencie
   );
 
   const controlFields = {
+    postProcessingPreparationPending: false,
     expressGenerationPending: false,
     expressGenerationPaused: false,
     expressGenerationCancelled: true,

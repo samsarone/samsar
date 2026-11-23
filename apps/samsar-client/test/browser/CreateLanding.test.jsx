@@ -60,7 +60,7 @@ function mount(theme) {
 
 beforeEach(() => {
   scenario.user = {
-    user: { _id: 'creator', email: 'creator@example.com', generationCredits: 2000 },
+    user: { _id: 'creator', email: 'creator@example.com', generationCredits: 5000 },
     userInitiated: true,
     userFetching: false,
   };
@@ -92,6 +92,10 @@ for (const theme of ['light', 'dark']) {
       await userEvent.keyboard('{Escape}');
       expect(view.container.querySelectorAll('textarea')).toHaveLength(1);
       expect(view.container.querySelectorAll('select')).toHaveLength(2);
+      for (const label of view.container.querySelectorAll('label[for="create-duration"], label[for="create-aspect-ratio"]')) {
+        expect(label.getBoundingClientRect().height).toBeGreaterThan(12);
+        expect(label.control.offsetHeight).toBeGreaterThanOrEqual(44);
+      }
       expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
       expect(document.querySelector('[data-app-top-nav]').scrollWidth).toBeLessThanOrEqual(width);
       const promptBounds = prompt.element().getBoundingClientRect();
@@ -113,7 +117,7 @@ for (const theme of ['light', 'dark']) {
       await help.click();
       const guidance = page.getByRole('dialog', { name: 'Create defaults', exact: true });
       await expect.element(guidance).toBeVisible();
-      await expect.element(guidance).toHaveTextContent('Saved defaults: 30s · 16:9');
+      await expect.element(guidance).toHaveTextContent('Saved defaults: 60s · 16:9');
       await expect.element(guidance).toHaveTextContent('Duration and aspect ratio changes here apply only to this video.');
       await expect.element(page.getByRole('link', { name: 'Change defaults', exact: true })).toHaveAttribute('href', '/account/settings/defaults');
       const guidanceBounds = guidance.element().getBoundingClientRect();
@@ -142,7 +146,7 @@ it('submits the defaults from the visible form and opens the video progress rout
       effort: 'high',
       image_model: 'GPTIMAGE2.5',
       video_model: 'KLINGIMGTOVID4',
-      duration: 30,
+      duration: 60,
       aspect_ratio: '16:9',
       language: 'auto',
       enable_subtitles: false,
@@ -154,6 +158,20 @@ it('submits the defaults from the visible form and opens the video progress rout
   );
   expect(localStorage.getItem('videoSessionId')).toBe('created-video');
   expect(sessionStorage.getItem('samsarCreatePrompt')).toBeNull();
+});
+
+it('takes an underfunded user to billing and retains their video prompt', async () => {
+  await page.viewport(375, 812);
+  scenario.user.user.generationCredits = 100;
+  mount('light');
+  await page.getByRole('textbox', { name: 'Describe your video', exact: true }).fill('A city at sunrise');
+  const alert = page.getByRole('alert');
+  await expect.element(alert).toHaveTextContent('This render needs 2,160 credits. Your balance is 100.');
+  await expect.element(page.getByRole('button', { name: 'Create video', exact: true })).toBeDisabled();
+  await alert.getByRole('link', { name: 'Purchase credits', exact: true }).click();
+  await expect.element(page.getByLabelText('Current route')).toHaveTextContent('/account/billing');
+  expect(sessionStorage.getItem('samsarCreatePrompt')).toBe('A city at sunrise');
+  expect(axios.post).not.toHaveBeenCalled();
 });
 
 it('keeps the draft and saved options intact through the loading skeleton', async () => {

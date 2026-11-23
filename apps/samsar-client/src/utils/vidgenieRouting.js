@@ -1,7 +1,7 @@
-import { boundedGet } from './deduplicatedGet.mjs';
+import { boundedGet, deduplicatedGet } from './deduplicatedGet.mjs';
 import axios from 'axios';
 import { rememberSessionLoadingLayout } from './sessionLoadingLayout.js';
-import { getDefaultAuthenticatedPath } from './defaultRoutes.js';
+import { DEFAULT_APP_PATH } from './defaultRoutes.js';
 import { IS_STANDALONE_DEPLOYMENT } from './environment.jsx';
 import { createBlankVidgenieSession } from './vidgenieSessionApi.js';
 
@@ -165,24 +165,33 @@ export async function resolveVidgenieEntryPath({
   return sessionId ? appendRouteSearch(`/vidgenie/${sessionId}`, search) : null;
 }
 
-export async function resolveAuthenticatedEntryPath({
-  user,
-  isMobile = false,
-  apiServer,
-  headers,
-  search = '',
-  createIfMissing = true,
-  defaultPath: requestedDefaultPath,
-} = {}) {
-  const defaultPath = requestedDefaultPath || getDefaultAuthenticatedPath(user, { isMobile });
-  if (defaultPath !== '/vidgenie') {
-    return appendRouteSearch(defaultPath, search);
+const ACTIVE_EXTERNAL_RENDER_STATUSES = new Set(['INIT', 'PENDING', 'PROCESSING', 'IN_PROGRESS', 'QUEUED', 'RUNNING', 'PAUSED']);
+
+export function isExternalRenderActive(status) {
+  return typeof status === 'string' && ACTIVE_EXTERNAL_RENDER_STATUSES.has(status.trim().toUpperCase());
+}
+
+export function externalRenderPath(requestId, search = '') {
+  const params = new URLSearchParams(search);
+  params.set('request', requestId);
+  return `/external/studio?${params}`;
+}
+
+export async function resolveAuthenticatedEntryPath({ user, apiServer, headers, search = '' } = {}) {
+  const createPath = appendRouteSearch(DEFAULT_APP_PATH, search);
+  if (!user?._id || !apiServer || !headers) return createPath;
+
+  if (user.isExternalUser) {
+    const { data } = await deduplicatedGet(axios, `${apiServer}/v1/external_users/requests`, {
+      ...headers, params: { limit: 1 },
+    });
+    const latest = data?.requests?.[0];
+    return isExternalRenderActive(latest?.status) && latest.request_id ? externalRenderPath(latest.request_id, search) : createPath;
   }
 
-  return resolveVidgenieEntryPath({
-    apiServer,
-    headers,
-    search,
-    createIfMissing,
-  });
+  const { data } = await deduplicatedGet(axios, `${apiServer}/video_sessions/latest_render`, headers);
+  if (!data?.sessionId || !['pending', 'paused'].includes(data.status)) return createPath;
+  const params = new URLSearchParams(search);
+  params.set('view', 'preview');
+  return `/vidgenie/${encodeURIComponent(data.sessionId)}?${params}`;
 }

@@ -381,6 +381,7 @@ async function initializeVideoSession(
   await videoSessionModel.findByIdAndUpdate(sessionId, {
     $set: {
       interactiveVideoRequestId: requestId,
+      renderRequestedAt: new Date(),
       narrativeType: 'branched',
       sourceNarrativeType: 'branched',
       isExpressGeneration: true,

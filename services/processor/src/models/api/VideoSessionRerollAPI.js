@@ -9,6 +9,7 @@ import { getDBConnectionString } from '../DBString.js';
 import { upsertGlobalSessionMapping } from '../GlobalSession.js';
 import { addImageGeneratorRequest } from '../Images.js';
 import { copyVideoSession } from './VideoSessionCloneAPI.js';
+import { getRerollLayerVisual } from './StatusAPI.js';
 import { buildMovieResourceListVisualPrompts } from '../movie_session/TranscriptMovieGenerator.js';
 import { prepareImageRequestBilling } from './ImageRequestBilling.js';
 import { resolveEffectiveInferenceSettings } from './RequestModelOverrides.js';
@@ -581,6 +582,8 @@ function resetLayerForReroll(sessionData, layer, layerIndex, promptInfo, sourceS
     ? layer.imageSession.activeItemList
     : [];
   const imageItemsBeforeReset = activeItemsBeforeReset.filter((item) => item?.type === 'image').length;
+  const copiedVisual = getRerollLayerVisual(layer);
+  layer.rerollPreview = copiedVisual || undefined;
   const previousRetryState = {
     layerFailureRetryCount: Number(layer?.failureRetryCount) || 0,
     layerFilterRetryCount: Number(layer?.filterRetryCount) || 0,
@@ -625,6 +628,10 @@ function resetLayerForReroll(sessionData, layer, layerIndex, promptInfo, sourceS
   layer.aiVideoRemoteLink = null;
   layer.aiLayerStartFrame = null;
   layer.aiLayerEndFrame = null;
+  layer.baseLayerStartFrame = null;
+  layer.baseLayerEndFrame = null;
+  layer.aiVideoThumbnailPath = null;
+  layer.thumbnailPath = null;
   layer.frameGenerationPending = false;
   layer.initFramesGenerated = false;
   layer.aiVideoFrameGenerationPending = false;
@@ -687,6 +694,8 @@ function resetLayerForReroll(sessionData, layer, layerIndex, promptInfo, sourceS
   layer.imageSession.activeSelectedImage = '';
   layer.imageSession.activeEditedImage = '';
   layer.imageSession.activeImageRemoteLink = '';
+  layer.imageSession.videoRenderStartFrameImage = '';
+  layer.imageSession.videoRenderEndFrameImage = '';
   layer.imageSession.activeImageDescription = '';
   layer.imageSession.activeItemList = Array.isArray(layer.imageSession.activeItemList)
     ? layer.imageSession.activeItemList.filter((item) => item?.type !== 'image')
@@ -921,6 +930,7 @@ export async function rerollVideoSessionLayersAndQueueGeneration(userId, {
   sessionData.generationStatus = 'PENDING';
   sessionData.videoLink = null;
   sessionData.remoteURL = null;
+  sessionData.isExpressGeneration = true;
   sessionData.expressGenerationPending = true;
   sessionData.expressGenerativeVideoRequired = true;
   sessionData.expressGenerationPaused = false;

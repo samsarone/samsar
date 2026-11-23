@@ -2,10 +2,9 @@ import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useMediaQuery } from 'react-responsive';
 import { persistAuthToken } from '../../utils/web';
 import { useUser } from '../../contexts/UserContext.jsx';
-import VidgenieSkeletonLoader from '../oneshot_editor/VidgenieSkeletonLoader.jsx';
+import CreateLandingSkeleton from '../landing/CreateLandingSkeleton.jsx';
 import {
   buildLoginPathForRedirect,
   consumeResolvedAuthRedirect,
@@ -20,7 +19,6 @@ export default function VerificationHome() {
   useUiLanguage();
   const navigate = useNavigate();
   const location = useLocation();
-  const isMobile = useMediaQuery({ query: '(max-width: 767px)' });
   const { getUserAPI } = useUser();
 
   const query = new URLSearchParams(location.search);
@@ -56,13 +54,9 @@ export default function VerificationHome() {
       }
 
       const destination = isNewUser
-        ? await resolvePostSignupDestination({
-            isMobile,
-            apiServer: PROCESSOR_SERVER,
-          })
+        ? resolvePostSignupDestination()
         : await resolvePostAuthDestination({
             user: resolvedUser,
-            isMobile,
             apiServer: PROCESSOR_SERVER,
             redirect: redirectTarget,
           });
@@ -94,7 +88,7 @@ export default function VerificationHome() {
 
       void exchangeLoginToken();
     }
-  }, [authToken, getUserAPI, isMobile, isNewUser, location.search, loginToken, navigate, safeRedirect]);
+  }, [authToken, getUserAPI, isNewUser, location.search, loginToken, navigate, safeRedirect]);
 
-  return <VidgenieSkeletonLoader />;
+  return <CreateLandingSkeleton />;
 }

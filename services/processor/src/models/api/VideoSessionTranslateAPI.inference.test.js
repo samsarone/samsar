@@ -3,15 +3,70 @@ import test from 'node:test';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { __testOnly__, getTranslateVideoBillingPreview, translateVideoSessionAndQueueGeneration } from './VideoSessionTranslateAPI.js';
+import { __testOnly__, addSubtitlesAndQueueGeneration, getTranslateVideoBillingPreview,
+  removeSubtitlesAndQueueGeneration, translateVideoSessionAndQueueGeneration } from './VideoSessionTranslateAPI.js';
 import mongoose from 'mongoose';
 import User from '../../schema/User.js';
 import VideoSession from '../../schema/VideoSession.js';
 import AudioGeneration from '../../schema/AudioGeneration.js';
+import GlobalSession from '../../schema/GlobalSession.js';
+import { applyUpdate, query } from '../../test_helpers/BillingMemoryModel.js';
 import { rewriteNarrativeSpeechItemToFitScene } from '../agent/MovieCreatorAgent.js';
 import { __testOnly__ as mediaStorage } from '../AWS.js';
 import { publishClonedAiVideoMedia } from './ClonedAiVideoMedia.js';
 import { createTranslationProgressReporter } from './TranslationPreparationProgress.js';
+
+for (const [operation, submit] of [
+  ['add_subtitles', addSubtitlesAndQueueGeneration],
+  ['remove_subtitles', removeSubtitlesAndQueueGeneration],
+]) {
+  for (const failed of [false, true]) {
+    test(`${operation} marks preparation pending until the copy ${failed ? 'fails' : 'is ready to render'}`, async (t) => {
+      const sourceId = '507f191e810c19729de860aa';
+      const targetId = '507f191e810c19729de860bb';
+      const source = {
+        _id: sourceId, userId: 'owner', sessionLanguage: 'en', aspectRatio: '16:9',
+        remoteURL: 'https://media.example/original-render.mp4',
+        layers: [{ _id: 'scene', duration: 4, imageSession: { activeGeneratedImage: 'https://media.example/scene.png' } }],
+      };
+      let target;
+      let resolveFinished;
+      const finished = new Promise(resolve => { resolveFinished = resolve; });
+      t.mock.method(mongoose, 'connect', async () => mongoose);
+      t.mock.method(User, 'findById', () => query({}));
+      t.mock.method(GlobalSession, 'findOneAndUpdate', async () => ({}));
+      t.mock.method(VideoSession, 'create', async fields => (target = { _id: targetId, ...fields }));
+      t.mock.method(VideoSession, 'findById', () => query(target));
+      // The endpoint reads source metadata. Its scheduled job reads the full document.
+      t.mock.method(VideoSession, 'findOne', () => ({
+        select: () => query(source),
+        then: resolve => resolve(failed ? null : { toObject: () => structuredClone(source) }),
+      }));
+      t.mock.method(VideoSession, 'updateOne', async (filter, update) => {
+        assert.equal(filter._id, targetId);
+        applyUpdate(target, update);
+        if (update.$set?.postProcessingPreparationPending === false) resolveFinished();
+        return { matchedCount: 1 };
+      });
+      await submit('owner', { session_id: sourceId });
+      assert.equal(target.postProcessingPreparationPending, true);
+      assert.equal(target.expressGenerationPending, false);
+      assert.equal(target.layers, undefined);
+      assert.equal(target.remoteURL, undefined);
+      await finished;
+      assert.equal(target.postProcessingPreparationPending, false);
+      assert.equal(target.expressGenerationPending, !failed);
+      if (failed) {
+        assert.equal(target.expressGenerationFailed, true);
+      } else {
+        assert.equal(target.remoteURL, null);
+        assert.equal(target.layers[0]._id, 'scene');
+        assert.equal(target.layers[0].frameGenerationPending, true);
+        assert.equal(target.layers[0].imageSession.activeGeneratedImage, 'https://media.example/scene.png');
+      }
+    });
+  }
+}
 
 test('translation persists preparation before inference and hands off only once after completion', async (t) => {
   mockSession(t);
@@ -52,6 +107,7 @@ test('translation persists preparation before inference and hands off only once 
   release();
   await running;
   assert.equal(activate.mock.callCount(), 1);
+  assert.equal(activate.mock.calls[0].arguments[1].$set.postProcessingPreparationPending, false);
   assert.equal(queued.mock.callCount(), 1);
   assert.equal(progress.at(-1).postProcessingProgress.status, 'COMPLETED');
   assert.equal(progress.at(-1).postProcessingProgress.phase, 'ready');

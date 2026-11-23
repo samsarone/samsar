@@ -891,13 +891,13 @@ router.post('/create_login_token', authenticateExternalRequest, async (req, res)
     const redirectPathRaw = normalizeOptionalString(req.body?.redirect || req.body?.input?.redirect);
     const redirectPath = redirectPathRaw && redirectPathRaw.startsWith('/') && !redirectPathRaw.startsWith('//')
       ? redirectPathRaw
-      : req.authType === 'auth_token'
-        ? '/'
-        : '/external/studio';
+      : null;
     const loginTokenData = req.authType === 'auth_token'
       ? createLoginTokenForUser(req.userId)
       : createExternalLoginTokenForUser(externalUser);
-    const loginUrl = `${clientAppBase}/verify?loginToken=${encodeURIComponent(loginTokenData.loginToken)}&redirect=${encodeURIComponent(redirectPath)}`;
+    const params = new URLSearchParams({ loginToken: loginTokenData.loginToken });
+    if (redirectPath) params.set('redirect', redirectPath);
+    const loginUrl = `${clientAppBase}/verify?${params.toString()}`;
 
     return res.status(200).json({
       ...loginTokenData,

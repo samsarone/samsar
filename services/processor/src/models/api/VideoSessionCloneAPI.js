@@ -885,6 +885,7 @@ function clearLayerCopyTransientState(layer) {
   }
 
   const frameGenerationPending = Boolean(layer.frameGenerationPending);
+  delete layer.rerollPreview;
   markLayerGenerationComplete(layer);
   layer.frameGenerationPending = frameGenerationPending;
   layer.userVideoUploadTaskId = null;
@@ -912,6 +913,7 @@ function prepareCopiedSessionForStudio({ clonedSession, userId }) {
   clonedSession.isGuestSession = false;
   clonedSession.isIntroSession = false;
   clonedSession.isFrameGenerating = false;
+  delete clonedSession.renderRequestedAt;
   clonedSession.videoGenerationPending = false;
   clonedSession.audioGenerationPending = false;
   clonedSession.transcriptGenerationPending = false;

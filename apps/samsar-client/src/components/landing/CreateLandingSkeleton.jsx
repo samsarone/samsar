@@ -25,9 +25,11 @@ export function CreateComposerSkeleton() {
           <SkeletonBlock className="h-3 w-56 max-w-[70%]" />
           <SkeletonBlock className="h-3 w-16" />
         </div>
-        <div className="mt-4 flex gap-2">
-          <SkeletonBlock className="h-9 w-28" />
-          <SkeletonBlock className="h-9 w-36" />
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:max-w-md">
+          {[0, 1].map((field) => <div key={field} className="space-y-1.5">
+            <SkeletonBlock className="h-4 w-20" />
+            <SkeletonBlock className="h-11 w-full rounded-lg" />
+          </div>)}
         </div>
         <div className="mt-4 flex justify-between gap-3 border-t border-line pt-4">
           <SkeletonBlock className="h-9 w-20" />

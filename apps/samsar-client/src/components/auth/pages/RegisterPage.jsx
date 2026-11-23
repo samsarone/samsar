@@ -31,9 +31,6 @@ export default function RegisterPage() {
     return <Navigate to={{ pathname: '/login', search: location.search }} replace />;
   }
 
-  // No-op if you don't need a dialog close
-  const closeAlertDialog = () => { };
-
   const handleViewChange = (view) => {
     const targetPath = view === 'register' ? '/register' : '/login';
     if (location.pathname !== targetPath) {
@@ -56,14 +53,6 @@ export default function RegisterPage() {
     });
   };
 
-  const navigateAfterSignup = async () => {
-    const destination = await resolvePostSignupDestination({
-      isMobile,
-      apiServer: PROCESSOR_SERVER,
-    });
-    navigate(destination, { replace: true });
-  };
-
   // Register with email, same as AuthContainer
   const registerUserWithEmail = async (payload, onError = () => {}) => {
     let userData;
@@ -79,15 +68,10 @@ export default function RegisterPage() {
     const authToken = userData.authToken;
     persistAuthToken(authToken);
     setUser(userData);
-    closeAlertDialog(); // no-op here
     localStorage.setItem(PURCHASE_CREDITS_PROMPT_STORAGE_KEY, 'true');
     localStorage.setItem('setShowSetPaymentFlow', 'true');
 
-    try {
-      await navigateAfterSignup();
-    } catch {
-      onError(uiText("Your account was created, but a new project could not be opened."));
-    }
+    navigate(resolvePostSignupDestination(), { replace: true });
   };
 
   return (
@@ -96,9 +80,6 @@ export default function RegisterPage() {
         <Register
           registerWithGoogle={registerWithGoogle}
           registerUserWithEmail={registerUserWithEmail}
-          setUser={setUser}
-          getOrCreateUserSession={navigateAfterSignup}
-          closeAlertDialog={closeAlertDialog}
           setCurrentLoginView={handleViewChange}
           showLoginButton={false}
         />

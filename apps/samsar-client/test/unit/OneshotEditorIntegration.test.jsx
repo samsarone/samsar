@@ -25,6 +25,9 @@ vi.mock('../../src/components/assistant/AssistantHome.jsx', () => ({ default: ({
 vi.mock('../../src/components/video/advanced/VideoEditAdvancedDialog.jsx', () => ({ default: () => <div>Advanced edit dialog</div> }));
 vi.mock('../../src/components/video/toolbars/frame_toolbar/PublishOptionsDialog.jsx', () => ({ default: () => <div>Publish options</div> }));
 vi.mock('../../src/components/oneshot_editor/VidgenieSkeletonLoader.jsx', () => ({ default: () => <div role="status">Loading project</div> }));
+vi.mock('../../src/components/landing/CreatePublishedGallery.jsx', () => ({
+  default: (filters) => <output aria-label="Publication filters">{JSON.stringify(filters)}</output>,
+}));
 vi.mock('../../src/components/oneshot_editor/ProgressIndicator.jsx', () => ({
   default: ({ isGenerationPending, isGenerationPaused, isGenerationWaitingForApproval, videoLink, errorMessage, onProcessNextStep }) => <section aria-label="Generation progress">
     <output>{isGenerationPaused ? 'Paused project' : isGenerationWaitingForApproval ? 'Review images' : isGenerationPending ? 'Generating project' : videoLink ? 'Video ready' : 'Generation idle'}</output>
@@ -84,6 +87,64 @@ async function submitPrompt(prompt = 'A river flowing through an ancient city.')
 }
 
 describe('VidGenie project loading and wizard requests', () => {
+  it('shows publications matching the editable request and removes them as soon as submission starts', async () => {
+    harness.user.selectedInferenceModel = 'gemini-4-neon';
+    Object.assign(harness.session, { expressGenerationType: 'TEXT_TO_VIDEO', expressGenerationPending: true });
+    await mountEditor();
+    const filters = () => JSON.parse(screen.getByLabelText('Publication filters').textContent);
+    expect(filters()).toEqual({ inferenceModel: 'gemini-4-neon', videoModel: 'KLINGIMGTOVID4', language: 'en' });
+    const videoControl = screen.getByText('Video Model', { selector: 'p' }).parentElement;
+    fireEvent.keyDown(within(videoControl).getByRole('combobox'), { key: 'ArrowDown' });
+    fireEvent.click(screen.getByRole('option', { name: 'RunwayML Gen 4.5' }));
+    const languageControl = screen.getByText('Audio language').parentElement;
+    fireEvent.keyDown(within(languageControl).getByRole('combobox'), { key: 'ArrowDown' });
+    fireEvent.click(screen.getByRole('option', { name: 'Japanese' }));
+    expect(filters()).toEqual({ inferenceModel: 'gemini-4-neon', videoModel: 'RUNWAYML', language: 'ja' });
+    let finish;
+    axios.post.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    await submitPrompt();
+    expect(screen.queryByLabelText('Publication filters')).toBeNull();
+    await act(async () => finish({ data: { request_id: 'request-1' } }));
+    expect(screen.queryByLabelText('Publication filters')).toBeNull();
+  });
+
+  it.each([
+    { isExpressGeneration: true, expressGenerationPending: true },
+    { session: { isStepVideoGeneration: true, expressGenerationPending: false } },
+    { session: { expressGenerationCancelled: true } },
+    { session: { expressGenerationFailed: true } },
+  ])('omits publications for a previously submitted project with status %j', async (status) => {
+    Object.assign(harness.session, status);
+    await mountEditor();
+    expect(screen.queryByLabelText('Publication filters')).toBeNull();
+  });
+
+  it.each([
+    ['default', null, null, null, 60],
+    ['account preset', 120, null, null, 120],
+    ['existing VidGenie preference', 120, '30', null, 30],
+    ['saved session request', 120, '30', 90, 90],
+  ])('uses the %s duration in the wizard and its JSON draft', async (_source, account, stored, session, expected) => {
+    if (account) harness.user.createDefaults = { duration: account };
+    if (stored) localStorage.setItem('defaultVidGPTDuration', stored);
+    if (session) harness.session.expressGenerationRequestedDurationSeconds = session;
+    await mountEditor();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'JSON mode' })));
+    expect(JSON.parse(screen.getByRole('textbox', { name: 'JSON request' }).value).duration).toBe(expected);
+    expect(localStorage.getItem('defaultVidGPTDuration')).toBe(stored);
+  });
+
+  it('saves a new explicit duration and uses it for the current render', async () => {
+    harness.session.expressGenerationRequestedDurationSeconds = 90;
+    await mountEditor();
+    const control = screen.getByText('Max Duration').parentElement;
+    fireEvent.keyDown(within(control).getByRole('combobox'), { key: 'ArrowDown' });
+    fireEvent.click(screen.getByRole('option', { name: '30 Secs' }));
+    expect(localStorage.getItem('defaultVidGPTDuration')).toBe('30');
+    await submitPrompt();
+    expect(axios.post.mock.calls[0][1].input.duration).toBe(30);
+  });
+
   it('focuses create-origin renders on progress while preserving pause, resume and the full editor route', async () => {
     harness.session = { ...harness.session, inputPrompt: 'A quiet city waking up', generationType: 'TEXT_TO_VIDEO', expressGenerationPending: true, isExpressGeneration: true };
     await mountEditor({ path: '/vidgenie/project-1?ref=create&view=preview#render' });
@@ -103,6 +164,7 @@ describe('VidGenie project loading and wizard requests', () => {
     await act(async () => fireEvent.click(editorLink));
     expect(screen.getByLabelText('Current route')).toHaveTextContent('/vidgenie/project-1?ref=create#render');
     expect(promptInput()).toBeVisible();
+    expect(screen.queryByLabelText('Publication filters')).toBeNull();
     expect(axios.get.mock.calls.filter(([url]) => url.includes('session_details'))).toHaveLength(sessionReads);
   });
 
@@ -146,6 +208,7 @@ describe('VidGenie project loading and wizard requests', () => {
     await mountEditor({ initialSessionRequestRef });
     expect(screen.getByText('Video ready')).toBeVisible();
     expect(screen.getByRole('link', { name: 'Preview result' })).toHaveAttribute('href', session.videoLink);
+    expect(screen.queryByLabelText('Publication filters')).toBeNull();
     expect(axios.get).not.toHaveBeenCalled();
     expect(initialSessionRequestRef.current).toBeNull();
   });
@@ -205,7 +268,7 @@ describe('VidGenie project loading and wizard requests', () => {
     await submitPrompt('  A river story.  ');
     expect(axios.post).toHaveBeenCalledExactlyOnceWith(expect.stringMatching(/\/v2\/video\/step\/text_to_video$/), expect.objectContaining({ input: expect.objectContaining({
       session_id: 'project-1', prompt: 'A river story.', image_model: 'GPTIMAGE2.5', video_model: 'KLINGIMGTOVID4',
-      inference_model: 'claude-opus-5.5',
+      inference_model: 'claude-opus-5.5', duration: 60,
       aspect_ratio: '16:9', tone: 'grounded', auto_render_full_video: true,
     }) }), expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer integration-token' }) }));
     expect(axios.get).toHaveBeenCalledWith(expect.stringMatching(/\/request-1\/status_detailed$/), expect.any(Object));
@@ -491,7 +554,7 @@ describe('VidGenie generation lifecycle', () => {
     expect(promptInput()).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Log in to create' }));
     expect(harness.openAlertDialog).toHaveBeenCalledOnce();
-    expect(harness.openAlertDialog.mock.calls[0][0].props.redirectTo).toBe('/vidgenie');
+    expect(harness.openAlertDialog.mock.calls[0][0].props.redirectTo).toBe('/');
   });
 
   it('cancels scheduled generation polls when leaving the editor', async () => {
@@ -589,6 +652,13 @@ describe('VidGenie image-list requests and JSON editor validation', () => {
     const payload = axios.post.mock.calls[0][1];
     expect(payload.endpoint).toBeUndefined();
     expect(payload.input).toMatchObject({ aspect_ratio: '9:16', enable_subtitles: true, subtitle_language: 'th', session_id: 'project-1' });
+  });
+
+  it('filters publications by the models and audio language entered in JSON mode', async () => {
+    await openJson({ input: { ...validJson(), inferenceModel: 'gemini-4-neon', language: 'JP', subtitleLanguage: 'English' } });
+    expect(JSON.parse(screen.getByLabelText('Publication filters').textContent)).toEqual({
+      inferenceModel: 'gemini-4-neon', videoModel: 'RUNWAYML', language: 'ja',
+    });
   });
 
   it('preserves English subtitle selection with Japanese speech in JSON mode', async () => {

@@ -1,14 +1,13 @@
 
 import express from 'express';
 import {
-  createQuickSession, getQuickSessionGenerationStatus,
+  createQuickSession, getQuickSessionGenerationStatus, markQuickPreparationFailed,
   getQuickSessionDetails, setSessionQuickGenerationPending, setQuickGenerationTheme,
   updateQuickGenerationTheme, updatePrimaryJsonTheme, updateDerivedJsonTheme,
   setQuickGenerationPaused,
 
 } from '../models/QuickSession.js';
 import { verifyUserAuth } from '../models/Auth.js';
-import { markNarrativeModerationFailure } from '../models/moderation/ModerationFailureState.js';
 
 const router = express.Router();
 
@@ -26,18 +25,14 @@ router.post('/create', async function (req, res) {
 
 
   try {
-   await setSessionQuickGenerationPending(userId, payload);
+    const renderRequestedAt = await setSessionQuickGenerationPending(userId, payload, { awaitingPreparation: true });
 
-    void createQuickSession(userId, payload).catch(async (error) => {
+    void createQuickSession(userId, payload, renderRequestedAt).catch(async (error) => {
       console.error(`Quick session generation failed for session ${payload?.sessionId || 'unknown'}`, error);
-      if (error?.message === 'Content moderation failed') {
-        try {
-          await markNarrativeModerationFailure(payload?.sessionId, {
-            message: error.message,
-          });
-        } catch (markError) {
-          console.error(`Failed to mark quick session ${payload?.sessionId || 'unknown'} as failed`, markError);
-        }
+      try {
+        await markQuickPreparationFailed(userId, payload.sessionId, renderRequestedAt, error);
+      } catch (markError) {
+        console.error(`Failed to mark quick session ${payload.sessionId} as failed`, markError);
       }
     });
     res.json({});

@@ -1,28 +1,14 @@
-function firstText(values) {
-  return values.find((value) => typeof value === 'string' && value.trim())?.trim() || '';
+function getRecordId(record) {
+  return record?._id?.toString?.() || record?.id?.toString?.() || null;
 }
 
-function getLayerId(layer = {}) {
-  return layer?._id?.toString?.() || layer?._id || layer?.id?.toString?.() || layer?.id || null;
-}
+const imageSourceFields = [
+  'previewUrl', 'preview_url', 'signedUrl', 'signed_url', 'displayUrl', 'display_url',
+  'url', 'imageUrl', 'image_url', 'src', 'image',
+];
 
 function hasRenderableImageItemUrl(item = {}) {
-  const candidate = firstText([
-    item.previewUrl,
-    item.signedUrl,
-    item.displayUrl,
-    item.url,
-    item.imageUrl,
-    item.src,
-    item.image,
-  ]);
-  return Boolean(
-    candidate && (
-      /^(https?:|data:|blob:)/i.test(candidate) ||
-      candidate.startsWith('/') ||
-      candidate.includes('/')
-    )
-  );
+  return imageSourceFields.some(field => typeof item[field] === 'string' && item[field].trim());
 }
 
 export function hasHydratedStudioLayers(sessionDetails) {
@@ -43,6 +29,36 @@ export function hasHydratedStudioLayers(sessionDetails) {
   });
 }
 
+function restoreMissingLayerMedia(incoming, previous) {
+  const previousItems = previous?.imageSession?.activeItemList;
+  if (!Array.isArray(previousItems)) return incoming;
+  const items = incoming?.imageSession?.activeItemList;
+  if (!Array.isArray(items)) {
+    // An ID-only projection has no changes to apply.
+    const hasLayerFields = Object.keys(incoming).some(key => !['_id', 'id', 'imageSession'].includes(key));
+    if (!hasLayerFields && !Object.keys(incoming.imageSession || {}).length) return previous;
+    return { ...incoming, imageSession: { ...incoming.imageSession, activeItemList: previousItems } };
+  }
+
+  // Respect the incoming item order, removals and explicitly cleared sources.
+  // Only restore omitted URL fields from the same item in the same scene.
+  let restoredItems = items;
+  for (const [index, item] of items.entries()) {
+    if (item?.type !== 'image' || imageSourceFields.some(field => Object.hasOwn(item, field))) continue;
+    const itemId = getRecordId(item);
+    const oldItem = itemId && previousItems.find(old => old?.type === 'image' && getRecordId(old) === itemId);
+    if (!oldItem || !hasRenderableImageItemUrl(oldItem)) continue;
+    const media = {};
+    for (const field of imageSourceFields) {
+      if (Object.hasOwn(oldItem, field)) media[field] = oldItem[field];
+    }
+    if (restoredItems === items) restoredItems = items.slice();
+    restoredItems[index] = { ...item, ...media };
+  }
+  return restoredItems === items ? incoming
+    : { ...incoming, imageSession: { ...incoming.imageSession, activeItemList: restoredItems } };
+}
+
 export function mergeStudioSessionRefresh(
   previousSessionDetails,
   incomingSessionDetails,
@@ -51,6 +67,9 @@ export function mergeStudioSessionRefresh(
   if (!previousSessionDetails || !incomingSessionDetails) {
     return incomingSessionDetails || previousSessionDetails;
   }
+  const previousId = getRecordId(previousSessionDetails);
+  const incomingId = getRecordId(incomingSessionDetails);
+  if (previousId && incomingId && previousId !== incomingId) return incomingSessionDetails;
 
   const previousLayers = Array.isArray(previousSessionDetails.layers)
     ? previousSessionDetails.layers
@@ -58,18 +77,18 @@ export function mergeStudioSessionRefresh(
   const incomingLayers = Array.isArray(incomingSessionDetails.layers)
     ? incomingSessionDetails.layers
     : [];
-  const previousLayerIds = new Set(previousLayers.map(getLayerId).filter(Boolean));
-  const incomingLayerIds = new Set(incomingLayers.map(getLayerId).filter(Boolean));
+  const previousById = new Map(previousLayers.map(layer => [getRecordId(layer), layer]));
+  const incomingLayerIds = new Set(incomingLayers.map(getRecordId).filter(Boolean));
   const isMissingRequiredLocalLayer = requiredLayerIds.some((layerId) => {
     const normalizedLayerId = layerId?.toString?.() || layerId;
     return normalizedLayerId
-      && previousLayerIds.has(normalizedLayerId)
+      && previousById.has(normalizedLayerId)
       && !incomingLayerIds.has(normalizedLayerId);
   });
 
   if (
     previousLayers.length > 0
-    && (!hasHydratedStudioLayers(incomingSessionDetails) || isMissingRequiredLocalLayer)
+    && (!Array.isArray(incomingSessionDetails.layers) || isMissingRequiredLocalLayer)
   ) {
     return {
       ...previousSessionDetails,
@@ -78,7 +97,17 @@ export function mergeStudioSessionRefresh(
     };
   }
 
-  return incomingSessionDetails;
+  if (!previousLayers.length || !incomingLayers.length || hasHydratedStudioLayers(incomingSessionDetails)) {
+    return incomingSessionDetails;
+  }
+  const layers = incomingLayers.map(layer => {
+    const id = getRecordId(layer);
+    return id ? restoreMissingLayerMedia(layer, previousById.get(id)) : layer;
+  });
+  if (layers.every((layer, index) => layer === incomingLayers[index])) return incomingSessionDetails;
+  const retainedPreviousLayers = layers.length === previousLayers.length
+    && layers.every((layer, index) => layer === previousLayers[index]);
+  return { ...incomingSessionDetails, layers: retainedPreviousLayers ? previousLayers : layers };
 }
 
 export function resolveStudioSessionRefresh({
@@ -95,7 +124,7 @@ export function resolveStudioSessionRefresh({
   );
   const layers = Array.isArray(sessionDetails?.layers) ? sessionDetails.layers : [];
   const matchingLayerIndex = currentLayerId
-    ? layers.findIndex((layer) => getLayerId(layer) === currentLayerId)
+    ? layers.findIndex((layer) => getRecordId(layer) === currentLayerId)
     : -1;
   const fallbackIndex = Number.isInteger(selectedLayerIndex)
     ? Math.min(Math.max(selectedLayerIndex, 0), Math.max(layers.length - 1, 0))

@@ -1,9 +1,17 @@
 import { translateText as uiText } from '../../utils/localization.js';
+import PublicationMosaic, { usePublicationLayout } from './PublicationMosaic.jsx';
 import './CreatePublishedGallery.css';
 
-const placeholderColumns = [[16 / 9, 1], [9 / 16], [1, 16 / 9], [4 / 3, 1]];
+const placeholderRatios = [16 / 9, 9 / 16, 1, 4 / 3];
 
 export default function CreatePublishedGallerySkeleton({ compact = false }) {
+  const layout = usePublicationLayout();
+  const count = compact ? layout.itemsPerSlide / 4 : layout.itemsPerSlide;
+  const placeholders = Array.from({ length: count }, (_, index) => ({
+    id: index,
+    aspectRatio: compact ? 16 / 9 : placeholderRatios[index % placeholderRatios.length],
+  }));
+
   return (
     <div role="status" aria-label={uiText('Loading videos...')} aria-busy="true" className={compact ? 'w-full py-5' : 'mt-12 pb-8 sm:mt-16'}>
       <span className="sr-only">{uiText('Loading videos...')}</span>
@@ -11,10 +19,10 @@ export default function CreatePublishedGallerySkeleton({ compact = false }) {
         <div className="create-gallery-skeleton-block h-5 w-40 rounded-md bg-surface-muted" />
         <div className="create-gallery-skeleton-block h-3 w-56 max-w-full rounded-md bg-surface-muted" />
       </div>}
-      <div aria-hidden="true" className="grid grid-cols-2 items-start gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {placeholderColumns.map((ratios, index) => <div key={index} className={`space-y-3 ${index === 2 ? 'hidden sm:block' : index === 3 ? 'hidden lg:block' : ''}`}>
-          {(compact ? [16 / 9] : ratios).map((ratio, row) => <div key={row} className="create-gallery-skeleton-block w-full rounded-2xl bg-surface-muted" style={{ aspectRatio: ratio }} />)}
-        </div>)}
+      <div aria-hidden="true">
+        <PublicationMosaic items={placeholders} layout={layout} renderTile={(item) => (
+          <div key={item.id} className="create-gallery-skeleton-block w-full rounded-lg bg-surface-muted sm:rounded-xl" style={{ aspectRatio: item.aspectRatio }} />
+        )} />
       </div>
     </div>
   );
