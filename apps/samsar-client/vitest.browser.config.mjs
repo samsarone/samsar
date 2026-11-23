@@ -6,6 +6,8 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
   envDir: false,
   plugins: [react(), tailwindcss()],
+  // Keep React on one dependency graph when a browser test loads Home lazily.
+  optimizeDeps: { include: ['react-dom/client'] },
   test: {
     include: ['test/browser/**/*.test.jsx'],
     setupFiles: ['./test/setup.js'],
