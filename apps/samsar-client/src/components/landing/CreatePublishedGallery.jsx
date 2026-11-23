@@ -6,6 +6,7 @@ import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { IS_STANDALONE_DEPLOYMENT } from '../../utils/environment.jsx';
 import { translateText as uiText } from '../../utils/localization.js';
 import { IMAGE_GENERAITON_MODEL_TYPES, VIDEO_GENERATION_MODEL_TYPES, INFERENCE_MODEL_TYPES } from '../../constants/Types.ts';
+import CreatePublishedGallerySkeleton from './CreatePublishedGallerySkeleton.jsx';
 
 const API_SERVER = (import.meta.env.VITE_PROCESSOR_API || 'http://localhost:3002').replace(/\/$/, '');
 const PAGE_SIZE = 12;
@@ -30,13 +31,14 @@ export function resolvePublishedMediaUrl(value, apiBase = API_SERVER, origin = g
 }
 
 function aspectRatio(value) {
-  const normalized = text(value).toLowerCase();
+  const normalized = typeof value === 'number' ? String(value) : text(value).toLowerCase();
+  if (!normalized) return null;
   if (normalized === 'portrait' || normalized === 'vertical') return 9 / 16;
-  if (normalized === 'landscape') return 16 / 9;
+  if (['landscape', 'horizontal', 'wide'].includes(normalized)) return 16 / 9;
   if (normalized === 'square') return 1;
   const parts = normalized.split(/\s*[:x/×]\s*/).map(Number);
   const ratio = parts.length === 2 ? parts[0] / parts[1] : Number(normalized);
-  return Number.isFinite(ratio) && ratio >= 0.2 && ratio <= 5 ? ratio : 16 / 9;
+  return parts.every((part) => Number.isFinite(part) && part > 0) && Number.isFinite(ratio) && ratio >= 0.1 && ratio <= 10 ? ratio : null;
 }
 
 function normalizePublication(item) {
@@ -48,7 +50,11 @@ function normalizePublication(item) {
     videoUrl,
     title: text(item.title),
     posterUrl: resolvePublishedMediaUrl(item.posterUrl || item.splashImage || item.thumbnailUrl || item.thumbnail),
-    aspectRatio: aspectRatio(item.aspectRatio || item.publishedAspectRatio || item.aspect_ratio),
+    // The feed's aspectRatio is the published video's shape, independent of
+    // the splash image. Older feeds can expose an alias or encoded dimensions.
+    aspectRatio: [item.aspectRatio, item.publishedAspectRatio, item.aspect_ratio,
+      `${item.videoWidth ?? item.width}:${item.videoHeight ?? item.height}`,
+    ].map(aspectRatio).find((ratio) => ratio != null) ?? 16 / 9,
     prompt: text(item.originalPrompt || item.original_prompt),
     // The publication snapshot describes the models that made this video.
     models: {
@@ -88,10 +94,10 @@ function PublishedVideoDialog({ video, onClose }) {
     <Dialog open onClose={onClose} className="relative z-[11060]">
       <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" aria-hidden="true" />
       <div className="fixed inset-0 flex items-center justify-center overflow-y-auto p-3 sm:p-6">
-        <DialogPanel className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-line bg-surface text-left text-fg shadow-2xl sm:max-h-[calc(100dvh-3rem)]">
+        <DialogPanel className="create-publication-dialog flex max-h-[calc(100dvh-1.5rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-line bg-surface text-left text-fg shadow-2xl sm:max-h-[calc(100dvh-3rem)]">
           <div className="flex shrink-0 items-center gap-3 px-5 py-3">
             <DialogTitle className="min-w-0 flex-1 truncate text-sm font-medium">{title}</DialogTitle>
-            <button type="button" onClick={onClose} aria-label={uiText('Close dialog')} className="inline-flex size-10 shrink-0 items-center justify-center rounded-full text-fg-secondary transition hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">
+            <button type="button" onClick={onClose} aria-label={uiText('Close dialog')} className="inline-flex size-10 shrink-0 items-center justify-center rounded-full text-fg-secondary transition duration-150 hover:bg-surface-hover active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus motion-reduce:scale-100 motion-reduce:transition-none">
               <MdClose aria-hidden="true" className="size-5" />
             </button>
           </div>
@@ -231,8 +237,8 @@ function PublishedGallery() {
   }, [loadMore, page.error, page.hasMore, page.loading, selectedVideo]);
 
   const closeVideo = useCallback(() => setSelectedVideo(null), []);
-  // Publications are optional inspiration. Empty or unavailable feeds should
-  // leave the composer undisturbed, including while the first request loads.
+  if (page.loading && !page.items.length) return <CreatePublishedGallerySkeleton />;
+  // A finished empty or unavailable optional feed leaves the composer calm.
   if (!page.items.length) return null;
 
   return (
@@ -243,10 +249,10 @@ function PublishedGallery() {
           <p className="mt-1 text-sm text-fg-muted">{uiText('Explore the latest published videos.')}</p>
         </div>
         {slides.length > 0 && <div className="flex shrink-0 items-center gap-2">
-          <button type="button" aria-label={uiText('Previous videos')} aria-controls="create-gallery-carousel" disabled={activeSlide === 0} onClick={() => moveToSlide(activeSlide - 1)} className="inline-flex size-10 items-center justify-center rounded-full border border-line bg-surface text-fg-secondary transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-35 motion-reduce:transition-none">
+          <button type="button" aria-label={uiText('Previous videos')} aria-controls="create-gallery-carousel" disabled={activeSlide === 0} onClick={() => moveToSlide(activeSlide - 1)} className="inline-flex size-10 items-center justify-center rounded-full border border-line bg-surface text-fg-secondary transition duration-150 hover:bg-surface-hover active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-35 motion-reduce:scale-100 motion-reduce:transition-none">
             <MdChevronLeft aria-hidden="true" className="size-6" />
           </button>
-          <button type="button" aria-label={uiText('Next videos')} aria-controls="create-gallery-carousel" disabled={activeSlide >= slides.length - 1} onClick={() => moveToSlide(activeSlide + 1)} className="inline-flex size-10 items-center justify-center rounded-full border border-line bg-surface text-fg-secondary transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-35 motion-reduce:transition-none">
+          <button type="button" aria-label={uiText('Next videos')} aria-controls="create-gallery-carousel" disabled={activeSlide >= slides.length - 1} onClick={() => moveToSlide(activeSlide + 1)} className="inline-flex size-10 items-center justify-center rounded-full border border-line bg-surface text-fg-secondary transition duration-150 hover:bg-surface-hover active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-35 motion-reduce:scale-100 motion-reduce:transition-none">
             <MdChevronRight aria-hidden="true" className="size-6" />
           </button>
         </div>}
@@ -262,9 +268,9 @@ function PublishedGallery() {
           {columns.map((column, columnIndex) => <div key={columnIndex} className="flex min-w-0 flex-col gap-3" data-gallery-column={columnIndex}>
             {column.map((video) => {
               const title = video.title || uiText('Untitled video');
-              return <button key={video.id} type="button" onClick={() => setSelectedVideo(video)} aria-label={uiText('Play {title}', { title })} className="group relative block w-full overflow-hidden rounded-2xl border border-line/40 bg-surface-muted text-left outline-none transition-[box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-canvas motion-reduce:transform-none motion-reduce:transition-none" style={{ aspectRatio: video.aspectRatio }}>
+              return <button key={video.id} type="button" onClick={() => setSelectedVideo(video)} aria-label={uiText('Play {title}', { title })} className="create-publication-card group relative block w-full overflow-hidden rounded-2xl border border-line/40 bg-surface-muted text-left outline-none hover:border-accent/40 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-canvas" style={{ aspectRatio: video.aspectRatio }}>
                 <MdVideocam aria-hidden="true" className="absolute left-1/2 top-1/2 size-7 -translate-x-1/2 -translate-y-1/2 text-fg-muted/40" />
-                {video.posterUrl && <img src={video.posterUrl} alt="" loading="lazy" decoding="async" width={Math.round(video.aspectRatio * 600)} height="600" className="absolute inset-0 size-full object-cover transition-transform duration-300 group-hover:scale-[1.025] motion-reduce:transform-none motion-reduce:transition-none" onError={(event) => { event.currentTarget.hidden = true; }} />}
+                {video.posterUrl && <img src={video.posterUrl} alt="" loading="lazy" decoding="async" width={Math.round(video.aspectRatio * 600)} height="600" className="create-publication-poster absolute inset-0 size-full object-contain group-hover:opacity-95" onError={(event) => { event.currentTarget.hidden = true; }} />}
                 <span aria-hidden="true" className="absolute inset-x-0 bottom-0 flex items-end gap-2 bg-gradient-to-t from-black/80 via-black/25 to-transparent px-3 pb-3 pt-12 text-white">
                   <span className="mb-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-colors group-hover:bg-white/35 motion-reduce:transition-none"><MdPlayArrow className="size-5" /></span>
                   <span className="min-w-0 truncate pb-1 text-xs font-medium">{title}</span>
@@ -277,7 +283,7 @@ function PublishedGallery() {
       </div>
       {slides.length > 1 && <p className="mt-2 text-center text-xs text-fg-muted" aria-live="polite" aria-atomic="true">{uiText('Page {current} of {total}', { current: activeSlide + 1, total: slides.length })}</p>}
       {(page.loading || page.error || page.hasMore) && <div className="flex min-h-16 items-center justify-center" aria-live="polite">
-        {page.loading ? <span role="status" className="text-xs text-fg-muted">{uiText('Loading videos...')}</span> : page.error ? <div className="flex flex-wrap items-center justify-center gap-3 text-xs text-fg-muted">
+        {page.loading ? <CreatePublishedGallerySkeleton compact /> : page.error ? <div className="flex flex-wrap items-center justify-center gap-3 text-xs text-fg-muted">
           <span>{uiText('Unable to load videos.')}</span>
           <button type="button" onClick={() => setRequest((previous) => ({ ...previous, attempt: previous.attempt + 1 }))} className="min-h-10 rounded-full px-4 font-medium text-fg-secondary hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">{uiText('Try again')}</button>
         </div> : page.hasMore ? <button type="button" onClick={loadMore} className="min-h-10 rounded-full px-5 text-xs font-medium text-fg-muted transition hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">{uiText('Load more')}</button> : null}

@@ -64,6 +64,25 @@ it('initially mounts lazy thumbnails with the saved aspect ratio, without mounti
   expect(fetch.mock.calls[0][1]).toMatchObject({ credentials: 'omit', signal: expect.any(AbortSignal) });
 });
 
+it.each([
+  ['a canonical publication ratio', { aspectRatio: '9:16' }, 9 / 16],
+  ['a numeric ratio', { aspectRatio: 0.5625 }, 9 / 16],
+  ['a published ratio after invalid primary metadata', { aspectRatio: 'invalid', publishedAspectRatio: '3:4' }, 3 / 4],
+  ['a snake case ratio', { aspectRatio: null, aspect_ratio: '4/5' }, 4 / 5],
+  ['video dimensions', { aspectRatio: null, videoWidth: 1080, videoHeight: 1920 }, 9 / 16],
+  ['legacy dimensions', { aspectRatio: null, width: 1440, height: 1080 }, 4 / 3],
+  ['a legacy shape label', { aspectRatio: 'horizontal' }, 16 / 9],
+  ['an invalid ratio', { aspectRatio: '-9:-16', width: 0, height: 1080 }, 16 / 9],
+])('uses %s to size both the mosaic tile and player', async (_name, metadata, expected) => {
+  fetch.mockImplementation(() => respond([publication('shape', metadata)]));
+  render(<CreatePublishedGallery />);
+  const card = await screen.findByRole('button', { name: 'Play Video shape' });
+  expect(Number(card.style.aspectRatio)).toBeCloseTo(expected);
+  expect(card.querySelector('img')).toHaveClass('object-contain');
+  fireEvent.click(card);
+  expect(Number(screen.getByLabelText('Video preview').style.aspectRatio)).toBeCloseTo(expected);
+});
+
 it('loads another cursor on intersection, deduplicates items, and stops repeated cursors', async () => {
   fetch.mockImplementationOnce(() => respond([publication('one')], { hasMore: true, nextCursor: 'next-page' }))
     .mockImplementationOnce(() => respond([publication('one'), publication('two')], { hasMore: true, nextCursor: 'next-page' }));
@@ -180,12 +199,27 @@ it('filters hidden publications and unsafe playback URLs while keeping frame-onl
 });
 
 
-it('stays absent while the optional publication feed is pending', () => {
+it('shows an accessible mosaic skeleton while the first publication request is pending', () => {
   fetch.mockReturnValue(new Promise(() => {}));
   const { container } = render(<CreatePublishedGallery />);
   expect(fetch).toHaveBeenCalledOnce();
-  expect(container).toBeEmptyDOMElement();
-  expect(screen.queryByRole('status')).toBeNull();
+  expect(screen.getByRole('status', { name: 'Loading videos...' })).toHaveAttribute('aria-busy', 'true');
+  expect(container.querySelectorAll('.create-gallery-skeleton-block').length).toBeGreaterThan(4);
+  expect(container.querySelectorAll('img, video, button')).toHaveLength(0);
+});
+
+it('keeps existing cards mounted while a subsequent page shows skeleton placeholders', async () => {
+  let finishPage;
+  fetch.mockImplementationOnce(() => respond([publication('one')], { hasMore: true, nextCursor: 'second' }))
+    .mockImplementationOnce(() => new Promise((resolve) => { finishPage = resolve; }));
+  render(<CreatePublishedGallery />);
+  const first = await screen.findByRole('button', { name: 'Play Video one' });
+  fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+  expect(screen.getByRole('status', { name: 'Loading videos...' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Play Video one' })).toBe(first);
+  await act(async () => { finishPage(await respond([publication('two')])); });
+  await screen.findByRole('button', { name: 'Play Video two' });
+  expect(screen.queryByRole('status', { name: 'Loading videos...' })).toBeNull();
 });
 
 it.each([

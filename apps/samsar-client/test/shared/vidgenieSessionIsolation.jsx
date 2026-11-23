@@ -85,6 +85,9 @@ describe('Vidgenie completed session models', () => {
     axios.post.mockResolvedValue({ data: { request_id: 'new-project' } });
     await mount();
     fireEvent.click(screen.getByRole('button', { name: 'Retranslate', exact: true }));
+    expect(screen.getByLabelText('Subtitle language')).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Add translated subtitles' }));
+    expect(screen.getByLabelText('Subtitle language')).toBeEnabled();
     fireEvent.change(screen.getByLabelText('Retranslation language'), { target: { value: 'en' } });
     fireEvent.change(screen.getByLabelText('Subtitle language'), { target: { value: 'th' } });
     fireEvent.change(screen.getByLabelText('Retranslation language'), { target: { value: 'ja' } });
@@ -100,10 +103,14 @@ describe('Vidgenie completed session models', () => {
   });
 
   it('defaults retranslated captions to the new audio language instead of the source captions', async () => {
-    completeSession({ speechLanguage: 'en', subtitleLanguage: 'th' });
+    completeSession({
+      speechLanguage: 'en', subtitleLanguage: 'th',
+      postProcessingPreferences: { translationEnableSubtitles: true },
+    });
     axios.post.mockResolvedValue({ data: { request_id: 'new-project' } });
     await mount();
     fireEvent.click(screen.getByRole('button', { name: 'Retranslate', exact: true }));
+    expect(screen.getByRole('checkbox', { name: 'Add translated subtitles' })).toBeChecked();
     expect(screen.getByLabelText('Subtitle language')).toHaveValue('');
     fireEvent.change(screen.getByLabelText('Retranslation language'), { target: { value: 'ja' } });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retranslate video', exact: true })); });
@@ -113,8 +120,11 @@ describe('Vidgenie completed session models', () => {
   });
 
   it('resets retranslation language selections when opening another completed session', async () => {
-    completeSession({ speechLanguage: 'en', subtitleLanguage: 'en' });
-    harness.nextSession = { ...harness.session, _id: 'new-project', subtitleLanguage: 'ja' };
+    completeSession({
+      speechLanguage: 'en', subtitleLanguage: 'en',
+      postProcessingPreferences: { translationEnableSubtitles: true },
+    });
+    harness.nextSession = { ...harness.session, _id: 'new-project', subtitleLanguage: 'ja', postProcessingPreferences: {} };
     await mount();
     fireEvent.click(screen.getByRole('button', { name: 'Retranslate', exact: true }));
     fireEvent.change(screen.getByLabelText('Retranslation language'), { target: { value: 'ja' } });
@@ -122,6 +132,7 @@ describe('Vidgenie completed session models', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Open new session' })); });
     fireEvent.click(screen.getByRole('button', { name: 'Retranslate', exact: true }));
     expect(screen.getByLabelText('Retranslation language')).toHaveValue('');
+    expect(screen.getByRole('checkbox', { name: 'Add translated subtitles' })).not.toBeChecked();
     expect(screen.getByLabelText('Subtitle language')).toHaveValue('');
   });
 
@@ -387,7 +398,10 @@ describe('Vidgenie CTA session isolation', () => {
   });
 
   it('still opens the generated outro session when the user stays on the current project', async () => {
-    harness.session = { ...harness.session, videoLink: 'https://media.example/old.mp4' };
+    harness.session = {
+      ...harness.session, videoLink: 'https://media.example/old.mp4',
+      expressGenerationInferenceModel: 'claude-fable-5.2', expressGenerationInferenceEffort: 'xhigh',
+    };
     harness.status = { status: 'COMPLETED', videoLink: harness.session.videoLink };
     axios.post.mockResolvedValue({ data: { session_id: 'previous-outro', status: 'PENDING' } });
     await mount();
@@ -397,6 +411,7 @@ describe('Vidgenie CTA session isolation', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Add outro CTA' })); });
     expect(axios.post).toHaveBeenCalledWith(expect.stringMatching(/\/add_outro_image$/), { input: {
       videoSessionId: 'previous', generate_outro_image: true,
+      inference_model: 'claude-fable-5.2', effort: 'xhigh',
       outro_cta_image: { middle_image: { url: 'https://media.example/old-cta.png' }, top_text: 'Existing project CTA' },
     } }, expect.anything());
     expect(screen.getByLabelText('Current route')).toHaveTextContent('/vidgenie/previous-outro');

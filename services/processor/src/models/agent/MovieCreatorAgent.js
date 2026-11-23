@@ -36,6 +36,7 @@ const API_KEY = process.env.OPENAI_API_KEY;
 const openai = new OpenAI({ apiKey: API_KEY || '' });
 const GEMINI_THEME_NARRATIVE_REASONING_EFFORT = 'high';
 const DEFAULT_THEME_NARRATIVE_TIMEOUT_MS = 10 * 60 * 1000;
+const DEFAULT_TRANSLATION_SPEECH_REPAIR_TIMEOUT_MS = 2 * 60 * 1000;
 const DEFAULT_QWEN_THEME_NARRATIVE_TIMEOUT_MS = 20 * 60 * 1000;
 const NARRATIVE_SPEECH_REPAIR_MAX_ATTEMPTS = 3;
 const NARRATIVE_SPEECH_REPAIR_RETRY_SHRINK_RATIO = 0.1;
@@ -62,6 +63,45 @@ function buildExternalRequestAttemptContext(context, attempt) {
     ...context,
     requestKey: `${requestKey}:attempt-${attempt}`,
   };
+}
+
+function safeDiagnosticLabel(value) {
+  return typeof value === 'string' && /^[a-zA-Z0-9_.:/-]{1,160}$/.test(value) ? value : null;
+}
+
+function summarizeSpeechRepairResponse(response) {
+  const choice = response?.choices?.[0];
+  const feedback = response?.google_response?.promptFeedback;
+  return {
+    providerResponseId: safeDiagnosticLabel(response?.id),
+    finishReason: safeDiagnosticLabel(choice?.finish_reason),
+    nativeFinishReason: safeDiagnosticLabel(choice?.native_finish_reason),
+    ...(feedback && typeof feedback === 'object' ? {
+      providerFeedback: {
+        blockReason: safeDiagnosticLabel(feedback.blockReason),
+        safetyRatings: Array.isArray(feedback.safetyRatings)
+          ? feedback.safetyRatings.slice(0, 16).map((rating) => ({
+            category: safeDiagnosticLabel(rating?.category),
+            probability: safeDiagnosticLabel(rating?.probability),
+            ...(typeof rating?.blocked === 'boolean' ? { blocked: rating.blocked } : {}),
+          })) : [],
+      },
+    } : {}),
+  };
+}
+
+async function reportSpeechRepairProgress(options, event) {
+  console.info('[model][MovieCreatorAgent][narrative_speech_repair]', event);
+  if (typeof options.onProgress !== 'function') return;
+  try {
+    await options.onProgress(event);
+  } catch (error) {
+    // Diagnostics must never turn a completed provider response into a retry.
+    console.warn('[model][MovieCreatorAgent][narrative_speech_repair] progress_callback_failed', {
+      sessionId: event.sessionId, requestKey: event.requestKey,
+      errorCode: safeDiagnosticLabel(error?.code),
+    });
+  }
 }
 
 function getSpeechRepairAttemptTarget(maxCharacters, attempt) {
@@ -117,14 +157,16 @@ function buildNarrativeSpeechRepairUserPrompt({
 function parseNarrativeSpeechRepairResponse(response) {
   const rawContent = response?.choices?.[0]?.message?.content;
   if (typeof rawContent !== 'string' || !rawContent.trim()) {
-    throw new Error('Narrative speech repair returned empty audio.');
+    throw Object.assign(new Error('Narrative speech repair returned empty audio.'), {
+      code: 'SPEECH_REPAIR_EMPTY_OUTPUT',
+    });
   }
 
   let replacementAudio = rawContent.trim();
   if (replacementAudio.startsWith('```') || replacementAudio.endsWith('```')) {
-    throw new Error(
+    throw Object.assign(new Error(
       'Narrative speech repair must return plain speech text without Markdown.',
-    );
+    ), { code: 'SPEECH_REPAIR_INVALID_FORMAT' });
   }
 
   let parsedJson;
@@ -138,13 +180,15 @@ function parseNarrativeSpeechRepairResponse(response) {
   if (parsedAsJson && typeof parsedJson === 'string') {
     replacementAudio = parsedJson.trim();
   } else if (parsedAsJson) {
-    throw new Error(
+    throw Object.assign(new Error(
       'Narrative speech repair must return only the speech text, not JSON.',
-    );
+    ), { code: 'SPEECH_REPAIR_INVALID_FORMAT' });
   }
 
   if (!replacementAudio) {
-    throw new Error('Narrative speech repair returned empty audio.');
+    throw Object.assign(new Error('Narrative speech repair returned empty audio.'), {
+      code: 'SPEECH_REPAIR_EMPTY_OUTPUT',
+    });
   }
   return replacementAudio;
 }
@@ -854,8 +898,12 @@ export async function rewriteNarrativeSpeechItemToFitScene({
     ? QWEN_NARRATIVE_SPEECH_REPAIR_REASONING_EFFORT
     : getThemeNarrativeReasoningEffort(modelName, options.reasoningEffort);
   const configuredTimeoutMs = normalizePositiveInteger(
-    options.timeoutMs ?? process.env.OPENAI_NARRATIVE_TIMEOUT_MS,
-    isQwenInferenceModel(modelName)
+    options.timeoutMs ?? (options.translationContext
+      ? process.env.OPENAI_TRANSLATION_SPEECH_REPAIR_TIMEOUT_MS
+      : process.env.OPENAI_NARRATIVE_TIMEOUT_MS),
+    options.translationContext
+      ? DEFAULT_TRANSLATION_SPEECH_REPAIR_TIMEOUT_MS
+      : isQwenInferenceModel(modelName)
       ? DEFAULT_QWEN_THEME_NARRATIVE_TIMEOUT_MS
       : DEFAULT_THEME_NARRATIVE_TIMEOUT_MS,
   );
@@ -934,6 +982,27 @@ export async function rewriteNarrativeSpeechItemToFitScene({
         }),
       },
     ];
+    const attemptContext = buildExternalRequestAttemptContext(options.externalRequestContext, attempt);
+    const attemptStartedAt = Date.now();
+    const attemptProgress = {
+      stage: 'speech_repair', model: modelName,
+      sessionId: options.externalRequestContext?.sessionId || null,
+      requestKey: attemptContext?.requestKey || null,
+      speechIndex: options.externalRequestContext?.speechIndex ?? null,
+      layerIndex: options.externalRequestContext?.layerIndex ?? options.sceneIndex ?? null,
+      speechCount: options.externalRequestContext?.speechCount ?? null,
+      attempt, maxAttempts,
+      durationSeconds: options.translationContext?.durationSeconds ?? scene.duration ?? null,
+      maxCharacters: attemptTargetCharacters,
+      originalCharacters: typeof options.translationContext?.originalText === 'string'
+        ? Array.from(options.translationContext.originalText.trim()).length : existingCharacterCount,
+      translatedCharacters: existingCharacterCount,
+      timeoutMs, reasoningEffort: effectiveReasoningEffort,
+    };
+    let responseDiagnostics = {};
+    await reportSpeechRepairProgress(options, {
+      ...attemptProgress, event: 'speech_repair_attempt_started', status: 'RUNNING', elapsedMs: 0,
+    });
 
     try {
       const response = await createCompletion(openaiClient, {
@@ -948,24 +1017,19 @@ export async function rewriteNarrativeSpeechItemToFitScene({
         externalPolling: true,
         externalPollTimeoutMs: timeoutMs,
         externalPollIntervalMs: process.env.SAMSAR_EXTERNAL_ASSISTANT_POLL_INTERVAL_MS,
-        externalRequestContext: buildExternalRequestAttemptContext(
-          options.externalRequestContext,
-          attempt,
-        ),
+        externalRequestContext: attemptContext,
         externalMaxRetries: 0,
       });
 
       const returnedValue = response?.choices?.[0]?.message?.content ?? null;
-      console.info(
-        '[model][MovieCreatorAgent][narrative_speech_repair] retry_result',
-        {
-          sessionId: options.externalRequestContext?.sessionId || null,
-          retryIndex: attempt,
-          ...(options.translationContext
-            ? { characterCount: typeof returnedValue === 'string' ? Array.from(returnedValue.trim()).length : null }
-            : { value: returnedValue }),
-        },
-      );
+      responseDiagnostics = {
+        ...summarizeSpeechRepairResponse(response),
+        returnedCharacters: typeof returnedValue === 'string' ? Array.from(returnedValue.trim()).length : null,
+      };
+      await reportSpeechRepairProgress(options, {
+        ...attemptProgress, ...responseDiagnostics,
+        event: 'speech_repair_attempt_result', status: 'RUNNING', elapsedMs: Date.now() - attemptStartedAt,
+      });
 
       await notifyInferenceResponse(options, response, {
         stage: 'narrative_speech_repair',
@@ -984,7 +1048,9 @@ export async function rewriteNarrativeSpeechItemToFitScene({
       }
       const replacementAudio = parseNarrativeSpeechRepairResponse(response);
       if (options.translationContext && /[\r\n]|^(?:[-*#]\s|\d+[.)]\s)/u.test(replacementAudio)) {
-        throw new Error('Replacement speech must be one plain line without Markdown or a list.');
+        throw Object.assign(new Error('Replacement speech must be one plain line without Markdown or a list.'), {
+          code: 'SPEECH_REPAIR_INVALID_FORMAT',
+        });
       }
       const replacementCharacterCount = Array.from(replacementAudio).length;
       if (replacementCharacterCount > attemptTargetCharacters) {
@@ -1004,8 +1070,25 @@ export async function rewriteNarrativeSpeechItemToFitScene({
         throw error;
       }
 
+      await reportSpeechRepairProgress(options, {
+        ...attemptProgress, ...responseDiagnostics,
+        event: 'speech_repair_completed', status: 'COMPLETED',
+        finalCharacters: replacementCharacterCount, elapsedMs: Date.now() - attemptStartedAt,
+      });
       return replacementAudio;
     } catch (error) {
+      await reportSpeechRepairProgress(options, {
+        ...attemptProgress, ...responseDiagnostics,
+        event: 'speech_repair_attempt_failed', status: 'FAILED', elapsedMs: Date.now() - attemptStartedAt,
+        errorCode: safeDiagnosticLabel(error?.code),
+        errorName: safeDiagnosticLabel(error?.name),
+        ...(Number.isFinite(Number(error?.status)) ? { errorStatus: Number(error.status) } : {}),
+        willRetry: attempt < maxAttempts && !error?.inferenceUsageObserverFailed &&
+          error?.code !== 'INFERENCE_USAGE_OBSERVER_FAILED' &&
+          error?.providerOutcomeUncertain !== true && error?.retryable !== false &&
+          !createPublicInferenceError(error, { model: modelName }),
+        providerOutcomeUncertain: error?.providerOutcomeUncertain === true,
+      });
       if (error?.inferenceUsageObserverFailed === true ||
         error?.code === 'INFERENCE_USAGE_OBSERVER_FAILED') {
         throw error;
@@ -1013,6 +1096,11 @@ export async function rewriteNarrativeSpeechItemToFitScene({
       const publicError = createPublicInferenceError(error, { model: modelName });
       if (publicError) {
         throw publicError;
+      }
+      // A timeout/abort may leave an accepted request running at the provider.
+      // Do not submit another repair when that request's outcome is unknown.
+      if (error?.providerOutcomeUncertain === true || error?.retryable === false) {
+        throw error;
       }
       lastError = error;
       if (options.translationContext && previousAttempt) {
@@ -1128,7 +1216,8 @@ export async function sendNarrativePromptMessageRequest(
         throw error;
       }
       const publicError = createPublicInferenceError(error, { model: modelName });
-      const isFinalAttempt = attempt >= maxAttempts || Boolean(publicError);
+      const providerCannotRetry = error?.providerOutcomeUncertain === true || error?.retryable === false;
+      const isFinalAttempt = attempt >= maxAttempts || Boolean(publicError) || providerCannotRetry;
       const logPayload = {
         inferenceModel,
         model: modelName,
@@ -1147,6 +1236,9 @@ export async function sendNarrativePromptMessageRequest(
 
       if (publicError) {
         throw publicError;
+      } else if (providerCannotRetry) {
+        // An accepted provider request may still be running after a local abort.
+        throw error;
       } else if (attempt === maxAttempts) {
         // After max attempts, throw the error
         throw new Error(

@@ -1,3 +1,4 @@
+import { runGoogleGeminiRequest } from './GoogleGeminiRequest.js';
 import { collectGeminiStream } from './ProviderStreaming.js';
 import fetch from 'node-fetch';
 
@@ -413,18 +414,6 @@ function extractGeminiOutputText(response) {
     .join('');
 }
 
-function summarizeGeminiError(payload) {
-  if (!payload || typeof payload !== 'object') {
-    return null;
-  }
-
-  return {
-    code: payload.error?.code ?? null,
-    status: payload.error?.status ?? null,
-    message: payload.error?.message ?? null,
-  };
-}
-
 function normalizeGeminiFinishReason(finishReason) {
   const normalized = normalizeString(finishReason).toUpperCase();
   if (!normalized) {
@@ -544,35 +533,16 @@ export async function createGoogleGeminiChatCompletion(chatRequest = {}, depende
     : buildVertexGenerateContentUrl({ projectId, location, model }).replace(
       ':generateContent', chatRequest.onText ? ':streamGenerateContent?alt=sse' : ':generateContent',
     );
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), getGeminiTimeoutMs(chatRequest));
-  let response, streamedPayload;
-  try {
-    const fetchImpl = typeof dependencyOverrides.fetch === 'function'
-      ? dependencyOverrides.fetch
-      : fetch;
-    response = await fetchImpl(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(requestBody),
-      signal: controller.signal,
-    });
-    if (response.ok && chatRequest.onText) streamedPayload = await collectGeminiStream(response.body, chatRequest.onText);
-  } finally {
-    clearTimeout(timeoutId);
-  }
-
-  const responseText = streamedPayload ? null : await response.text();
-  const responsePayload = streamedPayload || (responseText ? JSON.parse(responseText) : {});
-
-  if (!response.ok) {
-    const error = new Error(
-      responsePayload?.error?.message || `Google Gemini inference failed with status ${response.status}`
-    );
-    error.status = response.status;
-    error.error = summarizeGeminiError(responsePayload);
-    throw error;
-  }
+  const responsePayload = await runGoogleGeminiRequest(url, {
+    method: 'POST', headers, body: JSON.stringify(requestBody),
+  }, {
+    fetchImpl: typeof dependencyOverrides.fetch === 'function' ? dependencyOverrides.fetch : fetch,
+    timeoutMs: getGeminiTimeoutMs(chatRequest), model, transport: transport.kind,
+    sessionId: chatRequest.externalRequestContext?.sessionId,
+    requestKey: chatRequest.externalRequestContext?.requestKey,
+    logger: dependencyOverrides.logger,
+    onText: chatRequest.onText, collectStream: collectGeminiStream,
+  });
 
   const outputText = extractGeminiOutputText(responsePayload);
   const candidate = responsePayload?.candidates?.[0] || {};
@@ -596,6 +566,8 @@ export async function createGoogleGeminiChatCompletion(chatRequest = {}, depende
           role: 'assistant',
           content: outputText,
         },
+        native_finish_reason: typeof candidate.finishReason === 'string' &&
+          /^[A-Z0-9_]{1,100}$/.test(candidate.finishReason) ? candidate.finishReason : null,
         finish_reason: normalizeGeminiFinishReason(candidate?.finishReason),
       },
     ],

@@ -774,6 +774,8 @@ export async function sendAssistantMessageRequest(messageList, userInferenceMode
 
   try {
     const createCompletion = options.createChatCompletion || createCompatibleChatCompletion;
+    if (options.externalRequestContext) baseFunctionCallParams.externalRequestContext = options.externalRequestContext;
+    if (options.timeoutMs !== undefined) baseFunctionCallParams.timeout = options.timeoutMs;
     const response = await createCompletion(openai, baseFunctionCallParams);
     return response.choices[0].message;
   } catch (error) {

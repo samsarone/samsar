@@ -93,6 +93,20 @@ function rerollHarness() {
   return { source, clone, events, dependencies };
 }
 
+test('scene reroll uses the source inference model and separately saved effort', async () => {
+  const { source, dependencies } = rerollHarness();
+  source.expressGenerationInferenceModel = 'claude-opus-5.5';
+  source.expressGenerationInferenceEffort = 'xhigh';
+  source.inferenceModel = 'gemini-4-carbon';
+  dependencies.buildMovieResourceListVisualPrompts = async (options) => {
+    assert.equal(options.inferenceModel, 'claude-opus-5.5-xhigh');
+    return { promptList: [{ prompt: 'Regenerated commander prompt' }] };
+  };
+  await rerollVideoSessionLayersAndQueueGeneration(
+    'user', { videoSessionId: source._id, layerIndexes: [1] }, dependencies,
+  );
+});
+
 test('F2P: invalid scene mapping aborts reroll before billing, inference or clone creation', async () => {
   const { source, events, dependencies } = rerollHarness();
   delete source.movieResourceList;

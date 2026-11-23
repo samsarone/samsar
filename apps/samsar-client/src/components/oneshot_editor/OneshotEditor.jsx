@@ -13,6 +13,8 @@ import { useUiLanguage } from '../../hooks/useUiLanguage.js';
 import { translateText as uiText } from '../../utils/localization.js';
 import InferenceModelSelect from '../common/InferenceModelSelect.jsx';
 import { supportsInferenceEffort } from '../../utils/inferenceModelChoices.mjs';
+import { resolveSessionInferenceSettings } from '../../utils/sessionPostProcessingSettings.mjs';
+import { useSessionPostProcessingPreferences } from '../../hooks/useSessionPostProcessingPreferences.js';
 
 import {
   Suspense,
@@ -2511,10 +2513,23 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
   const [isUnpublishing, setIsUnpublishing] = useState(false);
   const [isDownloadingVideo, setIsDownloadingVideo] = useState(false);
   const [postProcessingAction, setPostProcessingAction] = useState('generated_outro');
-  const [postProcessingForm, setPostProcessingForm] = useState(() => createDefaultPostProcessingForm());
+  const [postProcessingFormState, setPostProcessingForm] = useState(() => createDefaultPostProcessingForm());
   const [postProcessingPendingAction, setPostProcessingPendingAction] = useState('');
+  const postProcessingSubmitRef = useRef(false);
   const [postProcessingMessage, setPostProcessingMessage] = useState('');
   const [postProcessingError, setPostProcessingError] = useState('');
+  const {
+    preferences: postProcessingPreferences,
+    updatePreference: updatePostProcessingPreference,
+    flushPreferences: flushPostProcessingPreferences,
+  } = useSessionPostProcessingPreferences({
+    session: sessionDetails, sessionId: id || activeRequestId, apiServer: API_SERVER,
+    onError: (error) => setPostProcessingError(error?.response?.data?.message || error?.message || uiText('Unable to save post-processing preferences.')),
+  });
+  const postProcessingForm = useMemo(
+    () => ({ ...postProcessingFormState, ...postProcessingPreferences }),
+    [postProcessingFormState, postProcessingPreferences],
+  );
   const [isRerollPreviewRefreshing, setIsRerollPreviewRefreshing] = useState(false);
   const [playingRerollLayerId, setPlayingRerollLayerId] = useState(null);
   const [currentRenderGeneratedOutro, setCurrentRenderGeneratedOutro] = useState(false);
@@ -5430,13 +5445,16 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
   }, [closeAlertDialog, handleAdvancedVideoEditAccepted, id, openAlertDialog, sessionDetails]);
 
   const updatePostProcessingFormField = useCallback((field, value) => {
+    if (Object.prototype.hasOwnProperty.call(postProcessingPreferences, field)) {
+      updatePostProcessingPreference(field, value);
+    }
     setPostProcessingForm((current) => ({
       ...current,
       [field]: value,
     }));
     setPostProcessingError('');
     setPostProcessingMessage('');
-  }, []);
+  }, [postProcessingPreferences, updatePostProcessingPreference]);
 
   const selectPostProcessingAction = useCallback((actionKey) => {
     setPostProcessingAction(actionKey);
@@ -5498,16 +5516,23 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
       return;
     }
 
-    if (!id || postProcessingPendingAction) {
+    if (!id || postProcessingPendingAction || postProcessingSubmitRef.current) {
       return;
     }
 
+    postProcessingSubmitRef.current = true;
+    setPostProcessingPendingAction(actionKey);
     try {
+      await flushPostProcessingPreferences();
+      if (sessionRunRef.current !== sessionRun) return;
+      const inferenceSettings = resolveSessionInferenceSettings(sessionDetails, {
+        inferenceModel: selectedInferenceModel?.value || user?.selectedInferenceModel,
+        inferenceEffort: selectedInferenceEffort?.value || inferSavedInferenceEffort(user),
+      });
       const operation = buildExpressPostProcessingRequest({
         actionKey, id, postProcessingForm, currentRenderHasOutro, canGenerateSubtitles,
         postProcessingAudioLanguage, rerollLayerIndexes,
-        inferenceModel: selectedInferenceModel?.value || user?.selectedInferenceModel,
-        inferenceEffort: selectedInferenceEffort?.value || inferSavedInferenceEffort(user),
+        ...inferenceSettings,
       });
       if (!operation) return;
       const { endpoint, payload, successLabel } = operation;
@@ -5564,6 +5589,7 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
       const apiMessage = error?.response?.data?.message || error?.message;
       setPostProcessingError(apiMessage || uiText("Unable to start post-processing."));
     } finally {
+      postProcessingSubmitRef.current = false;
       if (sessionRunRef.current === sessionRun) setPostProcessingPendingAction('');
     }
   }, [getUserAPI,
@@ -5572,6 +5598,8 @@ export default function OneshotEditor({ initialSessionRequestRef } = {}) {
     postProcessingAudioLanguage,
     postProcessingForm,
     postProcessingPendingAction,
+    flushPostProcessingPreferences,
+    sessionDetails,
     selectedInferenceModel,
     selectedInferenceEffort,
     rerollLayerIndexes,

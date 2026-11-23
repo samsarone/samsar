@@ -1,3 +1,4 @@
+import { runGoogleGeminiRequest } from './GoogleGeminiRequest.js';
 import { normalizeReasoningModel, resolveInferenceEffort } from './ReasoningModels.js';
 import { GoogleAuth } from 'google-auth-library';
 import fs from 'node:fs';
@@ -470,7 +471,7 @@ export async function createGoogleGeminiChatCompletion(chatRequest = {}) {
 
   const generationConfig = buildGenerationConfig(request, model);
   const token = transport.kind === 'developer' ? null : await getAccessToken();
-  const response = await fetch(transport.kind === 'developer'
+  const payload = await runGoogleGeminiRequest(transport.kind === 'developer'
     ? buildGoogleGeminiDeveloperUrl({ model })
     : buildVertexGenerateContentUrl({ projectId, location, model }), {
     method: 'POST',
@@ -485,24 +486,13 @@ export async function createGoogleGeminiChatCompletion(chatRequest = {}) {
       contents,
       ...(generationConfig ? { generationConfig } : {}),
     }),
+  }, {
+    fetchImpl: globalThis.fetch,
+    timeoutMs: request.timeout ?? request.timeoutMs, model, transport: transport.kind,
+    sessionId: request.externalRequestContext?.sessionId,
+    requestKey: request.externalRequestContext?.requestKey,
+    logger: request.logger,
   });
-  const responseText = await response.text();
-  let payload = {};
-  if (responseText) {
-    try {
-      payload = JSON.parse(responseText);
-    } catch (error) {
-      if (response.ok) throw error;
-    }
-  }
-  if (!response.ok) {
-    const error = new Error(
-      payload?.error?.message || `Google Gemini inference failed with status ${response.status}`,
-    );
-    error.status = response.status;
-    error.code = payload?.error?.code ?? response.status;
-    throw error;
-  }
   const candidate = payload?.candidates?.[0] || {};
   const message = { role: 'assistant', content: extractGeminiOutputText(payload) };
   if (legacyMessageListInput) {
@@ -524,6 +514,8 @@ export async function createGoogleGeminiChatCompletion(chatRequest = {}) {
       {
         index: Number.isInteger(candidate?.index) ? candidate.index : 0,
         message,
+        native_finish_reason: typeof candidate.finishReason === 'string' &&
+          /^[A-Z0-9_]{1,100}$/.test(candidate.finishReason) ? candidate.finishReason : null,
         finish_reason: normalizeGeminiFinishReason(candidate?.finishReason),
       },
     ],

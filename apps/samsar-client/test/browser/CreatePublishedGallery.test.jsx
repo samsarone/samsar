@@ -79,7 +79,14 @@ for (const theme of ['light', 'dark']) {
       const portrait = page.getByRole('button', { name: 'Play Published video 2', exact: true }).element();
       const bounds = portrait.getBoundingClientRect();
       expect(bounds.width / bounds.height).toBeCloseTo(9 / 16, 2);
-      expect([...view.container.querySelectorAll('img')].every((img) => img.getAttribute('loading') === 'lazy')).toBe(true);
+      for (const [id, ratio] of [[1, 16 / 9], [3, 1], [4, 4 / 3]]) {
+        const card = page.getByRole('button', { name: `Play Published video ${id}`, exact: true }).element();
+        const shape = card.getBoundingClientRect();
+        expect(shape.width / shape.height).toBeCloseTo(ratio, 2);
+        expect(getComputedStyle(card.querySelector('img')).objectFit).toBe('contain');
+      }
+      const carousel = page.getByRole('group', { name: 'Published videos', exact: true }).element();
+      expect([...carousel.querySelectorAll('img')].every((img) => img.getAttribute('loading') === 'lazy')).toBe(true);
       firstCard.element().scrollIntoView({ block: 'center' });
       await waitFor(() => expect(firstCard.element().getBoundingClientRect().top).toBeLessThan(height));
       await page.screenshot({ path: `test-results/create-mosaic-${theme}-${width}.png` });
@@ -135,6 +142,27 @@ it('navigates mosaic pages and loads the next cursor without moving existing car
   await expect.element(page.getByRole('button', { name: 'Previous videos', exact: true })).toBeDisabled();
 });
 
+it('shows a responsive skeleton during a slow feed without blocking the composer', async () => {
+  await page.viewport(375, 812);
+  let finishFeed;
+  window.fetch.mockImplementation((input, options) => {
+    if (!String(input).includes('/publication?')) return nativeFetch.call(window, input, options);
+    feedRequests.push(String(input));
+    return new Promise((resolve) => { finishFeed = resolve; });
+  });
+  mount('light');
+  const loading = page.getByRole('status', { name: 'Loading videos...', exact: true });
+  await expect.element(loading).toBeVisible();
+  await page.getByRole('textbox', { name: 'Describe your video', exact: true }).fill('A city at golden hour');
+  await expect.element(page.getByRole('button', { name: 'Create video', exact: true })).toBeEnabled();
+  await waitFor(() => expect(feedRequests).toHaveLength(1));
+  expect(loading.element().querySelectorAll('video, img')).toHaveLength(0);
+  expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(375);
+  finishFeed(new Response(JSON.stringify({ items: videos(1, 4), hasMore: false }), { headers: { 'Content-Type': 'application/json' } }));
+  await expect.element(page.getByRole('button', { name: 'Play Published video 1', exact: true })).toBeVisible();
+  await expect.element(loading).not.toBeInTheDocument();
+});
+
 
 for (const scenario of ['empty', 'hidden-only', 'missing endpoint', 'network failure', 'malformed']) {
   it(`keeps the composer usable and omits the gallery for an initial ${scenario} feed`, async () => {
@@ -154,7 +182,8 @@ for (const scenario of ['empty', 'hidden-only', 'missing endpoint', 'network fai
     await expect.element(page.getByRole('button', { name: 'Create video', exact: true })).toBeEnabled();
     await expect.element(page.getByRole('heading', { name: 'Made with Samsar', exact: true })).not.toBeInTheDocument();
     expect(view.container.querySelector('[aria-roledescription="carousel"]')).toBeNull();
-    expect(view.container.querySelectorAll('video, img')).toHaveLength(0);
+    expect(view.container.querySelectorAll('video')).toHaveLength(0);
+    expect(view.container.querySelectorAll('img:not(picture[aria-hidden="true"] > img)')).toHaveLength(0);
     expect(view.container.textContent).not.toContain('Loading videos...');
     expect(view.container.textContent).not.toContain('Unable to load videos.');
     expect(view.container.textContent).not.toContain('No published videos yet.');

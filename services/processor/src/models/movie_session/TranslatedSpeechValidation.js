@@ -10,7 +10,22 @@ const count = (text) => Array.from(text.trim()).length;
 function validationError(message, details = {}, cause) {
   return Object.assign(new Error(message, cause ? { cause } : undefined), {
     code: 'TRANSLATED_SPEECH_VALIDATION_FAILED', status: 502, ...details,
+    ...(cause?.providerOutcomeUncertain === true
+      ? { providerOutcomeUncertain: true, retryable: false } : {}),
   });
+}
+
+async function reportValidationProgress(onProgress, event) {
+  console.info('[model][TranslatedSpeechValidation]', event);
+  if (typeof onProgress !== 'function') return;
+  try {
+    await onProgress(event);
+  } catch {
+    // Diagnostic persistence must not enqueue a replacement provider request.
+    console.warn('[model][TranslatedSpeechValidation] progress_callback_failed', {
+      sessionId: event.sessionId, requestKey: event.requestKey,
+    });
+  }
 }
 
 /** Use the final translation timeline, not measured source TTS duration or model buckets. */
@@ -45,7 +60,7 @@ export function getTranslatedSpeechSlots(session) {
 }
 
 export async function validateTranslatedSpeech({
-  session, originalTexts, translatedTexts, targetLanguage, inferenceModel, inferenceEffort, sessionId,
+  session, originalTexts, translatedTexts, targetLanguage, inferenceModel, inferenceEffort, sessionId, onProgress,
 }, { rewriteSpeechItem = rewriteNarrativeSpeechItemToFitScene } = {}) {
   const slots = getTranslatedSpeechSlots(session);
   if (slots.length !== originalTexts.length || slots.length !== translatedTexts.length) {
@@ -62,6 +77,18 @@ export async function validateTranslatedSpeech({
     }
     const budget = getSpeechCharacterBudget(durationSeconds, targetLanguage);
     const maxCharacters = budget.validationMaxCharacters;
+    const startedAt = Date.now();
+    const progress = {
+      stage: 'speech_validation', sessionId, model: inferenceModel,
+      requestKey: `retranslation:speech-repair-${speechIndex}`,
+      speechIndex, layerIndex, speechCount: slots.length,
+      durationSeconds, maxCharacters,
+      originalCharacters: count(originalText), translatedCharacters: count(translatedText),
+    };
+    await reportValidationProgress(onProgress, {
+      ...progress, event: 'speech_validation_started', status: 'RUNNING', elapsedMs: 0,
+      repairRequired: count(translatedText) > maxCharacters,
+    });
     let text = translatedText;
     let attempts = 0;
     if (count(text) > maxCharacters) {
@@ -84,12 +111,20 @@ export async function validateTranslatedSpeech({
               currentCharacters: count(translatedText), maxCharacters,
             },
             externalRequestContext: {
-              sessionId, requestKey: `retranslation:speech-repair-${speechIndex}`,
+              sessionId, requestKey: progress.requestKey,
+              speechIndex, layerIndex, speechCount: slots.length,
             },
             onRepairAttempt: (attempt) => { attempts = attempt; },
+            onProgress,
           },
         });
       } catch (cause) {
+        await reportValidationProgress(onProgress, {
+          ...progress, event: 'speech_validation_failed', status: 'FAILED',
+          attempts, elapsedMs: Date.now() - startedAt,
+          errorCode: 'TRANSLATED_SPEECH_VALIDATION_FAILED',
+          providerOutcomeUncertain: cause?.providerOutcomeUncertain === true,
+        });
         throw validationError(
           `Unable to fit translated speech ${speechIndex} in layer ${layerIndex} ` +
           `within ${maxCharacters} characters (including ${Math.round(budget.overshootRatio * 100)}% tolerance) ` +
@@ -110,6 +145,10 @@ export async function validateTranslatedSpeech({
       promptMaxCharacters: budget.maxCharacters, overshootRatio: budget.overshootRatio,
       originalCharacters: count(originalText), translatedCharacters: count(translatedText),
       finalCharacters: count(text), attempts,
+    });
+    await reportValidationProgress(onProgress, {
+      ...progress, event: 'speech_validation_completed', status: 'COMPLETED',
+      finalCharacters: count(text), attempts, elapsedMs: Date.now() - startedAt,
     });
   }
   return { texts, validation };

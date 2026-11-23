@@ -1,3 +1,4 @@
+import { runGoogleGeminiRequest } from './GoogleGeminiRequest.js';
 import { normalizeReasoningModel, resolveInferenceEffort } from './ReasoningModels.js';
 import { GoogleAuth } from 'google-auth-library';
 import { buildGoogleGeminiDeveloperUrl, resolveGoogleGeminiTransport } from './GoogleGeminiTransport.js';
@@ -291,7 +292,7 @@ function buildGenerationConfig(model = '') {
   };
 }
 
-export async function createGoogleGeminiChatCompletion(messageList, inferenceModel) {
+export async function createGoogleGeminiChatCompletion(messageList, inferenceModel, options = {}) {
   const location = resolveGeminiLocation();
   const transport = resolveGoogleGeminiTransport(resolveGeminiModel(inferenceModel));
   const { model } = transport;
@@ -313,7 +314,7 @@ export async function createGoogleGeminiChatCompletion(messageList, inferenceMod
 
   const token = transport.kind === 'developer' ? null : await getAccessToken();
   const generationConfig = buildGenerationConfig(model);
-  const response = await fetch(transport.kind === 'developer'
+  const payload = await runGoogleGeminiRequest(transport.kind === 'developer'
     ? buildGoogleGeminiDeveloperUrl({ model })
     : buildVertexGenerateContentUrl({ projectId, location, model }), {
     method: 'POST',
@@ -328,27 +329,13 @@ export async function createGoogleGeminiChatCompletion(messageList, inferenceMod
       contents,
       ...(generationConfig ? { generationConfig } : {}),
     }),
+  }, {
+    fetchImpl: options.fetchImpl || globalThis.fetch,
+    timeoutMs: options.timeout ?? options.timeoutMs, model, transport: transport.kind,
+    sessionId: options.externalRequestContext?.sessionId,
+    requestKey: options.externalRequestContext?.requestKey,
+    logger: options.logger,
   });
-
-  const responseText = await response.text();
-  let payload = {};
-  if (responseText) {
-    try {
-      payload = JSON.parse(responseText);
-    } catch (error) {
-      if (response.ok) {
-        throw error;
-      }
-    }
-  }
-  if (!response.ok) {
-    const error = new Error(
-      payload?.error?.message || `Google Gemini inference failed with status ${response.status}`,
-    );
-    error.status = response.status;
-    throw error;
-  }
-
   return {
     model,
     role: 'assistant',

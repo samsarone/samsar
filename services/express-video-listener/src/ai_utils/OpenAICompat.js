@@ -317,7 +317,7 @@ async function createCompatibleChatCompletionForProvider(
     });
   }
   if (isGeminiInferenceModel(model)) {
-    return await createGoogleGeminiChatCompletion(request);
+    return await createGoogleGeminiChatCompletion({ ...request, timeout });
   }
 
   if (!isResponsesOnlyModel(model)) {

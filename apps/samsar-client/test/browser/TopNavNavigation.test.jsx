@@ -1,6 +1,7 @@
 import { render } from '@testing-library/react';
 import { page, userEvent } from 'vitest/browser';
-import { expect, it, vi } from 'vitest';
+import { beforeEach, expect, it, vi } from 'vitest';
+import axios from 'axios';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import TopNav from '../../src/components/common/TopNav.tsx';
 import MobileTopNav from '../../src/components/common/MobileTopNav.tsx';
@@ -9,18 +10,24 @@ import { LocalizationProvider } from '../../src/contexts/LocalizationContext.jsx
 import { ColorModeProvider } from '../../src/contexts/ColorMode.jsx';
 import '../../src/index.css';
 
-vi.mock('../../src/contexts/UserContext.jsx', () => ({ useUser: () => ({ user: { _id: 'user', email: 'user@example.com', generationCredits: 1000 } }) }));
+const mocks = vi.hoisted(() => ({ userState: {} }));
+vi.mock('../../src/contexts/UserContext.jsx', () => ({ useUser: () => mocks.userState }));
 vi.mock('../../src/components/video/toolbars/CanvasControlBar.jsx', () => ({ default: () => null }));
+vi.mock('axios', () => ({ default: { post: vi.fn() } }));
+
+beforeEach(() => {
+  mocks.userState = { user: { _id: 'user', email: 'user@example.com', generationCredits: 1000 }, userFetching: false, userInitiated: true };
+});
 
 function Location() {
   return <output className="block pt-32" aria-label="Current route">{useLocation().pathname}</output>;
 }
 
-function mount(Nav = TopNav) {
+function mount(Nav = TopNav, path = '/image/studio/image-1') {
   localStorage.setItem('videoSessionId', 'video-1');
   localStorage.setItem('imageSessionId', 'image-1');
   render(
-    <MemoryRouter initialEntries={['/image/studio/image-1']}>
+    <MemoryRouter initialEntries={[path]}>
       <ColorModeProvider><LocalizationProvider>
         <NavCanvasControlContext.Provider value={{}}>
           <Nav addNewVidGPTSession={vi.fn()} />
@@ -32,8 +39,8 @@ function mount(Nav = TopNav) {
 }
 
 async function expectDestinations() {
-  await page.getByRole('button', { name: 'New Project', exact: true }).click();
-  for (const name of ['Studio', 'VidGenie', 'Image Editor', 'Audio Studio', 'View Projects']) {
+  await page.getByRole('button', { name: 'View Projects', exact: true }).click();
+  for (const name of ['Create', 'Studio', 'VidGenie', 'Image Editor', 'Audio Studio', 'View Projects']) {
     await expect.element(page.getByRole('menuitem', { name, exact: true })).toBeVisible();
   }
   await expect.element(page.getByRole('dialog')).not.toBeInTheDocument();
@@ -61,11 +68,11 @@ it.each(['light', 'dark'])('navigates across canvases with the same menu in %s m
 it('supports keyboard selection, Escape, and outside-click dismissal', async () => {
   await page.viewport(1280, 800);
   mount();
-  await page.getByRole('button', { name: 'New Project', exact: true }).click();
+  await page.getByRole('button', { name: 'View Projects', exact: true }).click();
   await userEvent.keyboard('{Escape}');
-  await expect.element(page.getByRole('button', { name: 'New Project', exact: true })).toHaveFocus();
+  await expect.element(page.getByRole('button', { name: 'View Projects', exact: true })).toHaveFocus();
   await userEvent.keyboard('{ArrowDown}{Enter}');
-  await expect.element(page.getByLabelText('Current route')).toHaveTextContent('/video');
+  await expect.element(page.getByLabelText('Current route')).toHaveTextContent('/create');
   await expect.element(page.getByRole('dialog')).not.toBeInTheDocument();
   await expectDestinations();
   // The modal menu makes the route output inert; click the outside surface instead.
@@ -90,18 +97,37 @@ it('keeps the full menu and project action usable on narrow screens', async () =
 it.each([
   ['desktop', TopNav, 1280],
   ['mobile', MobileTopNav, 375],
-])('keeps Create visible and opens the shared header on %s', async (_, Nav, width) => {
+  ['small mobile', MobileTopNav, 320],
+])('opens Create from the prominent projects menu on %s', async (_, Nav, width) => {
   await page.viewport(width, 812);
   mount(Nav);
-  const createLink = page.getByRole('link', { name: 'Create', exact: true });
-  await expect.element(createLink).toBeVisible();
-  const bounds = createLink.element().getBoundingClientRect();
+  await expect.element(page.getByRole('link', { name: 'Create', exact: true })).not.toBeInTheDocument();
+  const projectsButton = page.getByRole('button', { name: 'View Projects', exact: true });
+  await expect.element(projectsButton).toBeVisible();
+  const bounds = projectsButton.element().getBoundingClientRect();
   expect(bounds.left).toBeGreaterThanOrEqual(0);
   expect(bounds.right).toBeLessThanOrEqual(width);
   expect(document.querySelector('[data-app-top-nav]').scrollWidth).toBeLessThanOrEqual(width);
-  await createLink.click();
+  await projectsButton.click();
+  await page.getByRole('menuitem', { name: 'Create', exact: true }).click();
   await expect.element(page.getByLabelText('Current route')).toHaveTextContent('/create');
-  await expect.element(createLink).toHaveAttribute('aria-current', 'page');
-  await expect.element(page.getByRole('button', { name: 'New Project', exact: true })).toBeVisible();
+  await expect.element(page.getByRole('button', { name: 'View Projects', exact: true })).toBeVisible();
   await expect.element(page.getByRole('button', { name: 'Samsar Studio', exact: true })).toBeVisible();
+  await projectsButton.click();
+  await expect.element(page.getByRole('menuitem', { name: 'Create', exact: true })).toHaveAttribute('aria-current', 'page');
+});
+
+it.each([
+  ['desktop', TopNav, 1280],
+  ['mobile', MobileTopNav, 375],
+])('keeps guest Create navigation available without session requests on %s', async (_, Nav, width) => {
+  await page.viewport(width, 812);
+  mocks.userState.user = null;
+  mount(Nav, '/');
+  await page.getByRole('button', { name: 'View Projects', exact: true }).click();
+  await expect.element(page.getByRole('menuitem', { name: 'Create', exact: true })).toBeVisible();
+  expect(page.getByRole('menu').element().querySelectorAll('[role="menuitem"]')).toHaveLength(1);
+  await page.getByRole('menuitem', { name: 'Create', exact: true }).click();
+  await expect.element(page.getByLabelText('Current route')).toHaveTextContent('/create');
+  expect(axios.post).not.toHaveBeenCalled();
 });

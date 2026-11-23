@@ -4,6 +4,7 @@ import GeneratedImage from '../../schema/generations/GeneratedImage.js';
 import { buildSecureMediaDeliveryUrl, withMediaDeliveryUrlCache } from '../AWS.js';
 import { resolveDockerLocalPublicAssetBaseUrl } from '../../consts/DockerDeploymentUrls.js';
 import { isContainerRuntime, isStandaloneEdition } from '../../utils/EnvironmentUtils.js';
+import { normalizePostProcessingPreferences } from '../PostProcessingPreferences.js';
 
 const DEFAULT_STATIC_ASSET_BASE_URL = 'https://static.samsar.one';
 const USER_RESOURCES_PREFIX = 'user_resources/';
@@ -80,6 +81,8 @@ export const VIDEO_STATUS_SESSION_PROJECTION = [
   'branchRenderCompletedAt',
   ...VIDEO_STATUS_BRANCH_PROJECTION,
   'expressGenerationStatus',
+  'postProcessingProgress',
+  'postProcessingPreferences',
   'expressGenerationCreditCharges',
   'generationError',
   'expressGenerationError',
@@ -366,6 +369,33 @@ function normalizeString(value) {
 function normalizeNonEmptyString(value) {
   const normalized = normalizeString(value);
   return normalized || null;
+}
+
+// Progress is stored as Mixed so workers can add internal diagnostics. Keep the
+// public status contract scalar and explicit; never forward arbitrary payloads.
+function normalizePostProcessingProgress(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) ||
+      value.operation !== 'translate_video' ||
+      !['IN_PROGRESS', 'COMPLETED', 'FAILED'].includes(value.status)) return null;
+
+  const progress = { operation: value.operation, status: value.status };
+  for (const field of ['phase', 'event', 'sessionId', 'originalSessionId', 'model', 'requestKey', 'errorCode']) {
+    const text = normalizeString(value[field]);
+    if (text && text.length <= 256 && /^[a-zA-Z0-9_.:-]+$/.test(text)) progress[field] = text;
+  }
+  for (const field of ['startedAt', 'updatedAt']) {
+    const raw = value[field];
+    if (!(raw instanceof Date) && (typeof raw !== 'string' || raw.length > 40)) continue;
+    const date = new Date(raw);
+    if (Number.isFinite(date.getTime())) progress[field] = date.toISOString();
+  }
+  for (const field of ['elapsedMs', 'speechIndex', 'layerIndex', 'speechCount', 'attempt', 'maxAttempts',
+    'maxCharacters', 'originalCharacters', 'translatedCharacters', 'returnedCharacters',
+    'finalCharacters', 'completedSpeechCount']) {
+    const count = value[field];
+    if (typeof count === 'number' && Number.isFinite(count) && count >= 0) progress[field] = count;
+  }
+  return progress;
 }
 
 function isTerminalGenerationFailureStatus(value) {
@@ -2395,7 +2425,13 @@ export function buildNormalizedVideoSessionPreview(
     local: sessionData.videoLink,
     remote: sessionData.remoteURL,
   }), req);
-  const currentStage = resolveCurrentStage(stageStatusMap);
+  const postProcessingProgress = normalizePostProcessingProgress(sessionData.postProcessingProgress);
+  const preparationActive = postProcessingProgress?.status === 'IN_PROGRESS' &&
+    !sessionData.expressGenerationFailed && !sessionData.expressGenerationCancelled &&
+    !['COMPLETED', 'FAILED', 'CANCELLED', 'CANCELED'].includes(normalizeString(statusPayload.status).toUpperCase());
+  const currentStage = preparationActive && postProcessingProgress.phase
+    ? postProcessingProgress.phase
+    : resolveCurrentStage(stageStatusMap);
   const branching = suppliedBranching || buildNormalizedBranchingStatus(
     sessionData,
     req,
@@ -2456,6 +2492,10 @@ export function buildNormalizedVideoSessionPreview(
     provider: normalizeNonEmptyString(statusPayload.provider || sessionData.provider),
     expressGenerationFailed: normalizeBoolean(sessionData.expressGenerationFailed),
     expressGenerationCancelled: normalizeBoolean(sessionData.expressGenerationCancelled),
+    postProcessingProgress,
+    ...(sessionData.postProcessingPreferences
+      ? { postProcessingPreferences: normalizePostProcessingPreferences(sessionData.postProcessingPreferences) }
+      : {}),
     generationError,
     expressGenerationError: generationError,
     error: generationError,
@@ -2623,6 +2663,7 @@ async function buildVideoStatusResponseFromSnapshot({
     };
     const totalCreditsCharged = Number(expressGenerationCreditCharges?.totalCharged) || 0;
 
+    const postProcessingProgress = normalizePostProcessingProgress(sessionSnapshot?.postProcessingProgress);
     const payload = {
       session_id: sessionId.toString(),
       request_id: (requestId || sessionId).toString(),
@@ -2641,6 +2682,10 @@ async function buildVideoStatusResponseFromSnapshot({
       ...(branchResults.length > 0 ? { branch_results: branchResults } : {}),
       ...(branching ? { branching } : {}),
       expressGenerationStatus: sessionSnapshot?.expressGenerationStatus,
+      ...(postProcessingProgress ? { postProcessingProgress } : {}),
+      ...(sessionSnapshot?.postProcessingPreferences
+        ? { postProcessingPreferences: normalizePostProcessingPreferences(sessionSnapshot.postProcessingPreferences) }
+        : {}),
       ...(hasExplicitGenerationFailureState ? { expressGenerationFailed } : {}),
       ...(hasExplicitGenerationCancellationState ? { expressGenerationCancelled } : {}),
       expressGenerationPaused,

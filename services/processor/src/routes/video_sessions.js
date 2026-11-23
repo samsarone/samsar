@@ -77,6 +77,7 @@ import { verifyUserAuth, verifyUserAuthAndGetUser } from '../models/Auth.js';
 import { createRealtimeTranscriptionSession } from '../models/Realtime.js';
 import { copyVideoSession } from '../models/api/VideoSessionCloneAPI.js';
 import { createNewBlankQuickSession } from '../models/QuickSession.js';
+import { updatePostProcessingPreferences } from '../models/PostProcessingPreferences.js';
 import {
   acceptAvatarVoiceoverVideoForSession,
   getAvatarVoiceoverStatus,
@@ -1199,6 +1200,21 @@ router.post('/update_defaults', async function (req, res) {
     route: '/video_sessions/update_defaults',
   });
   res.json(sessionData);
+});
+
+router.post('/post_processing_preferences', async function (req, res) {
+  try {
+    const userId = verifyUserAuth(req.headers);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized.' });
+    const preferences = await updatePostProcessingPreferences(userId, req.body);
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.json(preferences);
+  } catch (error) {
+    const status = error?.status || (error?.name === 'CastError' ? 400 : 500);
+    return res.status(status).json({
+      error: status >= 500 ? 'Unable to save post-processing preferences.' : error.message,
+    });
+  }
 });
 
 router.post('/add_layers_via_prompt_list', async function (req, res) {

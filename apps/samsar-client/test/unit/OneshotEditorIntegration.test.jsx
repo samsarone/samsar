@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, parsePath, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
@@ -311,9 +311,11 @@ describe('VidGenie generation lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retranslate', exact: true }));
     fireEvent.change(screen.getByLabelText('Retranslation language'), { target: { value: 'ja' } });
     expect(screen.getByLabelText('Subtitle language')).toHaveValue('');
-    fireEvent.change(screen.getByLabelText('Subtitle language'), { target: { value: subtitleLanguage } });
-    if (!enableSubtitles) {
+    expect(screen.getByRole('checkbox', { name: 'Add translated subtitles' })).not.toBeChecked();
+    if (enableSubtitles) {
       fireEvent.click(screen.getByRole('checkbox', { name: 'Add translated subtitles' }));
+      fireEvent.change(screen.getByLabelText('Subtitle language'), { target: { value: subtitleLanguage } });
+    } else {
       expect(screen.getByLabelText('Subtitle language')).toBeDisabled();
     }
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retranslate video' })); });
@@ -345,6 +347,78 @@ describe('VidGenie generation lifecycle', () => {
     expect(call).toBeDefined();
     expect(call[1].input.inference_model).toBe(expectedModel);
     expect(call[1].input.effort).toBe(effort ?? undefined);
+  });
+
+  it('retranslation uses the source Claude XHigh settings even when account and browser defaults are Gemini', async () => {
+    harness.user.selectedInferenceModel = 'gemini-4-carbon';
+    harness.user.selectedInferenceEffort = 'high';
+    localStorage.setItem('vidgeniePreferencesV1', JSON.stringify({ inferenceModel: 'gemini-4-neon' }));
+    harness.session = {
+      ...harness.session, isExpressGeneration: true, videoLink: 'https://media.example/final.mp4',
+      expressGenerationInferenceModel: 'claude-opus-5.5-xhigh', expressGenerationInferenceEffort: 'xhigh',
+    };
+    harness.status = { status: 'COMPLETED', videoLink: harness.session.videoLink };
+    await mountEditor();
+    fireEvent.click(screen.getByRole('button', { name: 'Retranslate', exact: true }));
+    fireEvent.change(screen.getByLabelText('Retranslation language'), { target: { value: 'th' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retranslate video' })); });
+    const call = axios.post.mock.calls.find(([url]) => url.endsWith('/retranslate_video'));
+    expect(call[1].input).toMatchObject({
+      inference_model: 'claude-opus-5.5', effort: 'xhigh', language: 'th',
+      enable_subtitles: false, translate_outro: false, translate_footer: false,
+    });
+    expect(call[1].input.subtitle_language).toBeUndefined();
+  });
+
+  it('saves optional retranslation choices on the session, restores them after reopening, and keeps another session unchecked', async () => {
+    harness.session = { ...harness.session, isExpressGeneration: true, videoLink: 'https://media.example/final.mp4' };
+    harness.status = { status: 'COMPLETED', videoLink: harness.session.videoLink };
+    axios.post.mockImplementation(async (url, body) => {
+      if (url.endsWith('/post_processing_preferences')) {
+        harness.session = { ...harness.session, postProcessingPreferences: {
+          ...harness.session.postProcessingPreferences, ...body.preferences,
+        } };
+        return { data: { sessionId: body.sessionId, postProcessingPreferences: harness.session.postProcessingPreferences } };
+      }
+      return { data: { request_id: 'request-1' } };
+    });
+    const first = await mountEditor();
+    fireEvent.click(screen.getByRole('button', { name: 'Retranslate', exact: true }));
+    for (const label of ['Add translated subtitles', 'Translate outro', 'Translate footer']) {
+      expect(screen.getByRole('checkbox', { name: label })).not.toBeChecked();
+    }
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Translate outro' }));
+    await waitFor(() => expect(axios.post).toHaveBeenCalledWith(
+      expect.stringContaining('/video_sessions/post_processing_preferences'),
+      { sessionId: 'project-1', preferences: { translationTranslateOutro: true } },
+      expect.anything(),
+    ));
+    first.unmount();
+    const reopened = await mountEditor();
+    fireEvent.click(screen.getByRole('button', { name: 'Retranslate', exact: true }));
+    expect(screen.getByRole('checkbox', { name: 'Translate outro' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Add translated subtitles' })).not.toBeChecked();
+    reopened.unmount();
+    harness.session = { ...harness.session, _id: 'project-2', postProcessingPreferences: undefined };
+    await mountEditor({ path: '/vidgenie/project-2' });
+    fireEvent.click(screen.getByRole('button', { name: 'Retranslate', exact: true }));
+    expect(screen.getByRole('checkbox', { name: 'Translate outro' })).not.toBeChecked();
+  });
+
+  it('does not submit a retranslation or duplicate clicks while preference saving fails', async () => {
+    harness.session = { ...harness.session, isExpressGeneration: true, videoLink: 'https://media.example/final.mp4' };
+    harness.status = { status: 'COMPLETED', videoLink: harness.session.videoLink };
+    axios.post.mockRejectedValue(new Error('Unable to save session choices'));
+    await mountEditor();
+    fireEvent.click(screen.getByRole('button', { name: 'Retranslate', exact: true }));
+    fireEvent.change(screen.getByLabelText('Retranslation language'), { target: { value: 'th' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Translate outro' }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Retranslate video' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Retranslate video' }));
+    });
+    expect(axios.post.mock.calls.some(([url]) => url.endsWith('/retranslate_video'))).toBe(false);
+    expect(await screen.findByText('Unable to save session choices')).toBeVisible();
   });
 
   it('shows completed results and keeps the original request collapsed until expanded', async () => {

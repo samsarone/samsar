@@ -11,6 +11,93 @@ import AudioGeneration from '../../schema/AudioGeneration.js';
 import { rewriteNarrativeSpeechItemToFitScene } from '../agent/MovieCreatorAgent.js';
 import { __testOnly__ as mediaStorage } from '../AWS.js';
 import { publishClonedAiVideoMedia } from './ClonedAiVideoMedia.js';
+import { createTranslationProgressReporter } from './TranslationPreparationProgress.js';
+
+test('translation persists preparation before inference and hands off only once after completion', async (t) => {
+  mockSession(t);
+  const progress = [];
+  const queued = t.mock.method(AudioGeneration.prototype, 'save', async () => {});
+  const activate = t.mock.method(VideoSession, 'updateOne', async (filter) => {
+    assert.deepEqual(filter.expressGenerationCancelled, { $ne: true });
+    return { matchedCount: 1 };
+  });
+  const report = createTranslationProgressReporter({
+    sessionId: 'translated-session', originalSessionId: 'source-session', model: 'gemini-4-carbon',
+    write: async (_filter, update) => { progress.push(update.$set); },
+    logger: { info() {}, warn() {} },
+  });
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  let started;
+  const firstRequest = new Promise((resolve) => { started = resolve; });
+  let calls = 0;
+  const running = __testOnly__.processTranslateVideoSessionJob({
+    userId: 'owner', oldSessionId: 'source-session', newSessionId: 'translated-session',
+    normalizedLanguageCode: 'th', inferenceModel: 'gemini-4-carbon', enableSubtitles: false,
+  }, {
+    onProgress: report,
+    translateTextContent: async (texts, _language, _model, options) => {
+      assert.equal(options.preserveError, true);
+      assert.equal(options.externalRequestContext.sessionId, 'translated-session');
+      if (++calls === 1) { started(); await gate; }
+      return texts.map(() => 'สวัสดี');
+    },
+    copyTranslateSessionAssets: async () => {}, publishClonedAiVideoMedia: async () => {},
+  });
+  await firstRequest;
+  assert.equal(progress.at(-1).postProcessingProgress.phase, 'translating_speech');
+  assert.equal(progress.at(-1)['expressGenerationStatus.status'], 'PROCESSING');
+  assert.equal(activate.mock.callCount(), 0);
+  assert.equal(queued.mock.callCount(), 0);
+  release();
+  await running;
+  assert.equal(activate.mock.callCount(), 1);
+  assert.equal(queued.mock.callCount(), 1);
+  assert.equal(progress.at(-1).postProcessingProgress.status, 'COMPLETED');
+  assert.equal(progress.at(-1).postProcessingProgress.phase, 'ready');
+  assert.equal(JSON.stringify(progress).includes('สวัสดี'), false);
+});
+
+test('translation never queues speech after cancellation wins the activation guard', async (t) => {
+  mockSession(t);
+  t.mock.method(VideoSession, 'updateOne', async () => ({ matchedCount: 0 }));
+  const queued = t.mock.method(AudioGeneration.prototype, 'save', async () => {});
+  await __testOnly__.processTranslateVideoSessionJob({
+    userId: 'owner', oldSessionId: 'source-session', newSessionId: 'translated-session',
+    normalizedLanguageCode: 'th', inferenceModel: 'gemini-4-carbon', enableSubtitles: false,
+  }, {
+    translateTextContent: async (texts) => texts,
+    copyTranslateSessionAssets: async () => {}, publishClonedAiVideoMedia: async () => {},
+  });
+  assert.equal(queued.mock.callCount(), 0);
+});
+
+test('individual translation fallback stops on uncertain provider outcome instead of submitting the next line', async () => {
+  const timeout = Object.assign(new Error('Timed out'), { providerOutcomeUncertain: true, retryable: false });
+  let calls = 0;
+  await assert.rejects(__testOnly__.translateSpeechTextList(['first', 'second'], 'Thai', async () => {
+    if (++calls === 1) return [];
+    throw timeout;
+  }), (error) => error === timeout);
+  assert.equal(calls, 2);
+});
+
+test('uncertain speaker translation failure stops preparation without activation or more requests', async (t) => {
+  mockSession(t);
+  const activation = t.mock.method(VideoSession, 'updateOne', async () => {});
+  const queued = t.mock.method(AudioGeneration.prototype, 'save', async () => {});
+  const timeout = Object.assign(new Error('Timed out'), { code: 'ETIMEDOUT', providerOutcomeUncertain: true, retryable: false });
+  let calls = 0;
+  await assert.rejects(__testOnly__.processTranslateVideoSessionJob({
+    userId: 'owner', oldSessionId: 'source-session', newSessionId: 'translated-session',
+    normalizedLanguageCode: 'th', inferenceModel: 'gemini-4-carbon', enableSubtitles: false,
+  }, {
+    translateTextContent: async () => { if (++calls === 1) return ['สวัสดี']; throw timeout; },
+  }), (error) => error === timeout);
+  assert.equal(calls, 2);
+  assert.equal(activation.mock.callCount(), 0);
+  assert.equal(queued.mock.callCount(), 0);
+});
 
 function mockSession(t, preferences = {}) {
   const source = {
@@ -43,11 +130,41 @@ function mockSession(t, preferences = {}) {
   return source;
 }
 
-test('translation uses current user model and effort rather than the source session model', async (t) => {
-  mockSession(t, { selectedInferenceModel: 'claude-fable-5.2', selectedInferenceEffort: 'xhigh' });
+test('translation inherits the source session model and effort before account defaults', async (t) => {
+  const source = mockSession(t, { selectedInferenceModel: 'gemini-4-carbon', selectedInferenceEffort: null });
+  source.expressGenerationInferenceModel = 'claude-fable-5.2';
+  source.expressGenerationInferenceEffort = 'xhigh';
   const preview = await getTranslateVideoBillingPreview('owner', { session_id: 'source-session', language: 'FR' });
   assert.equal(preview.inferenceModel, 'claude-fable-5.2-xhigh');
   assert.equal(preview.inferenceEffort, 'xhigh');
+  assert.equal(preview.enableSubtitles, false);
+  assert.equal(preview.translateOutro, false);
+  assert.equal(preview.translateFooter, false);
+});
+
+test('translation retains account defaults only for legacy sessions without inference settings', async (t) => {
+  const source = mockSession(t, { selectedInferenceModel: 'claude-fable-5.2', selectedInferenceEffort: 'xhigh' });
+  delete source.inferenceModel;
+  const preview = await getTranslateVideoBillingPreview('owner', { session_id: 'source-session', language: 'FR' });
+  assert.equal(preview.inferenceModel, 'claude-fable-5.2-xhigh');
+  assert.equal(preview.inferenceEffort, 'xhigh');
+});
+
+test('translation cannot replace the recorded source model and effort with stale client settings', async (t) => {
+  const source = mockSession(t, { selectedInferenceModel: 'gemini-4-carbon' });
+  source.expressGenerationInferenceModel = 'claude-opus-5.5';
+  source.expressGenerationInferenceEffort = 'xhigh';
+  for (const overrides of [
+    { inference_model: 'gemini-4-carbon' },
+    { inference_model: 'gpt-6.2-astra', effort: 'high' },
+    { inference_model: 'claude-fable-5.2', effort: 'xhigh' },
+  ]) {
+    const preview = await getTranslateVideoBillingPreview('owner', {
+      session_id: 'source-session', language: 'FR', ...overrides,
+    });
+    assert.equal(preview.inferenceModel, 'claude-opus-5.5-xhigh');
+    assert.equal(preview.inferenceEffort, 'xhigh');
+  }
 });
 
 test('translation accepts independent subtitle languages and defaults subtitles to the translated audio language', async (t) => {
@@ -190,8 +307,9 @@ test('retranslation queues no speech when translated subtitle alignment does not
   assert.equal(update.mock.callCount(), 0);
 });
 
-test('translation request selection overrides saved settings for every supported model family', async (t) => {
-  mockSession(t, { selectedInferenceModel: 'gpt-6.2-astra', selectedInferenceEffort: 'high' });
+test('legacy translation requests can select inference settings when the source has none', async (t) => {
+  const source = mockSession(t, { selectedInferenceModel: 'gpt-6.2-astra', selectedInferenceEffort: 'high' });
+  delete source.inferenceModel;
   for (const model of ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
     for (const effort of ['high', 'xhigh']) {
       const preview = await getTranslateVideoBillingPreview('owner', {
@@ -252,9 +370,13 @@ test('translation without subtitles does not require OpenAI credentials, but sub
 });
 
 test('translation job keeps selected inference settings for speech, speakers, overlays and the cloned session', async (t) => {
-  const source = mockSession(t, { selectedInferenceModel: 'claude-fable-5.2', selectedInferenceEffort: 'xhigh' });
+  const source = mockSession(t, { selectedInferenceModel: 'gemini-4-carbon' });
+  source.expressGenerationInferenceModel = 'claude-fable-5.2';
+  source.expressGenerationInferenceEffort = 'xhigh';
   const original = structuredClone(source);
-  const preview = await getTranslateVideoBillingPreview('owner', { session_id: 'source-session', language: 'FR' });
+  const preview = await getTranslateVideoBillingPreview('owner', {
+    session_id: 'source-session', language: 'FR', translate_outro: true, translate_footer: true,
+  });
   const requests = [];
   const queued = [];
   let saved;

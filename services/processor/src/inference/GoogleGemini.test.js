@@ -98,6 +98,7 @@ test('native Google Gemini reads mounted image media before building inline prov
     inlineData: { mimeType: 'image/png', data: 'QUJD' },
   });
   assert.equal(response.choices[0].message.content, 'seen');
+  assert.equal(response.choices[0].native_finish_reason, 'STOP');
 });
 
 test('versioned Carbon request keeps native sampling and conversation limits', async () => {

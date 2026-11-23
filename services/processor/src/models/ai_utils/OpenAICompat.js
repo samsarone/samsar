@@ -235,7 +235,7 @@ async function createCompatibleChatCompletionForProvider(
   }
 
   if (isGeminiInferenceModel(model)) {
-    return await createGoogleGeminiChatCompletion(request, dependencyOverrides);
+    return await createGoogleGeminiChatCompletion({ ...request, timeout }, dependencyOverrides);
   }
 
   if (!isResponsesOnlyModel(model)) {

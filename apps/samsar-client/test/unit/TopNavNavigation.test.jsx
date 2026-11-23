@@ -45,9 +45,11 @@ beforeEach(() => {
 
 describe.each([['desktop', TopNav], ['mobile', MobileTopNav]])('%s navigation', (_, Nav) => {
   it.each(['/video/video-1', '/image/studio/image-1', '/audio/studio', '/vidgenie/video-1', '/account', '/generations'])(
-    'opens the simple Create page directly from %s', (path) => {
+    'opens the simple Create page from the projects menu on %s', async (path) => {
       renderNav(Nav, path);
-      fireEvent.click(screen.getByRole('link', { name: 'Create' }));
+      expect(screen.queryByRole('link', { name: 'Create' })).not.toBeInTheDocument();
+      fireEvent.click(await screen.findByRole('button', { name: 'View Projects' }));
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Create' }));
       expect(screen.getByLabelText('Current route')).toHaveTextContent('/create');
       expect(mocks.openAlertDialog).not.toHaveBeenCalled();
       expect(createStudioSession).not.toHaveBeenCalled();
@@ -58,28 +60,44 @@ describe.each([['desktop', TopNav], ['mobile', MobileTopNav]])('%s navigation', 
   it('uses the shared project navigation on Create', async () => {
     mocks.userState.user.email = 'creator@example.com';
     renderNav(Nav, '/create');
-    expect(screen.getByRole('link', { name: 'Create' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('button', { name: 'Samsar Studio' })).toBeInTheDocument();
     expect(screen.getByText('creator@example.com')).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: 'New Project' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'View Projects' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /New Studio project|New image project|Audio actions/ })).not.toBeInTheDocument();
     expect(screen.queryByTestId('session-controls')).not.toBeInTheDocument();
     if (Nav === TopNav) expect(screen.getByRole('button', { name: /Open billing/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'View Projects' }));
+    expect(await screen.findByRole('menuitem', { name: 'Create' })).toHaveAttribute('aria-current', 'page');
   });
 
-  it('does not offer the Create page to external users', () => {
+  it('does not offer the Create page to external users', async () => {
     mocks.userState.user.isExternalUser = true;
     renderNav(Nav, '/external/studio');
     expect(screen.queryByRole('link', { name: 'Create' })).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'View Projects' }));
+    expect(screen.queryByRole('menuitem', { name: 'Create' })).not.toBeInTheDocument();
+  });
+
+  it('keeps Create discoverable for guests without offering session actions', async () => {
+    mocks.userState.user = null;
+    renderNav(Nav, '/');
+    fireEvent.click(await screen.findByRole('button', { name: 'View Projects' }));
+    const menu = await screen.findByRole('menu', { name: 'View Projects' });
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent.trim())).toEqual(['Create']);
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Create' }));
+    expect(screen.getByLabelText('Current route')).toHaveTextContent('/create');
+    expect(createStudioSession).not.toHaveBeenCalled();
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(mocks.openAlertDialog).not.toHaveBeenCalled();
   });
 
   it.each(['/video/video-1', '/image/studio/image-1', '/audio/studio', '/vidgenie/video-1', '/account', '/generations'])(
     'shows the same destinations from %s without opening project setup', async (path) => {
       renderNav(Nav, path);
-      fireEvent.click(await screen.findByRole('button', { name: 'New Project' }));
-      const menu = await screen.findByRole('menu', { name: 'New Project' });
+      fireEvent.click(await screen.findByRole('button', { name: 'View Projects' }));
+      const menu = await screen.findByRole('menu', { name: 'View Projects' });
       expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent.trim())).toEqual([
-        'Studio', 'VidGenie', 'Image Editor', 'Audio Studio', 'View Projects',
+        'Create', 'Studio', 'VidGenie', 'Image Editor', 'Audio Studio', 'View Projects',
       ]);
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
       expect(mocks.openAlertDialog).not.toHaveBeenCalled();
@@ -92,7 +110,7 @@ describe.each([['desktop', TopNav], ['mobile', MobileTopNav]])('%s navigation', 
     ['Audio Studio', '/audio/studio'],
   ])('opens %s directly from another canvas', async (label, target) => {
     renderNav(Nav, '/vidgenie/video-1');
-    fireEvent.click(await screen.findByRole('button', { name: 'New Project' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'View Projects' }));
     fireEvent.click(await screen.findByRole('menuitem', { name: label, exact: true }));
     expect(screen.getByLabelText('Current route')).toHaveTextContent(target);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -107,7 +125,7 @@ describe.each([['desktop', TopNav], ['mobile', MobileTopNav]])('%s navigation', 
   ])('opens a default %s canvas on the first visit', async (label, target) => {
     localStorage.clear();
     renderNav(Nav, '/audio/studio');
-    fireEvent.click(await screen.findByRole('button', { name: 'New Project' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'View Projects' }));
     fireEvent.click(await screen.findByRole('menuitem', { name: label, exact: true }));
     await waitFor(() => expect(screen.getByLabelText('Current route')).toHaveTextContent(target));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -120,7 +138,7 @@ describe.each([['desktop', TopNav], ['mobile', MobileTopNav]])('%s navigation', 
     ['/video/video-1', '/my_sessions'],
   ])('keeps View Projects reachable from %s', async (path, target) => {
     renderNav(Nav, path);
-    fireEvent.click(await screen.findByRole('button', { name: 'New Project' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'View Projects' }));
     fireEvent.click(await screen.findByRole('menuitem', { name: 'View Projects' }));
     expect(screen.getByLabelText('Current route')).toHaveTextContent(target);
   });

@@ -8,11 +8,13 @@ import { getRerollCandidateLayers, getRerollLocalCreditEstimate, normalizeReroll
 import { useUser } from '../../../contexts/UserContext.jsx';
 import { useDeploymentModelAvailability } from '../../../hooks/useDeploymentModelAvailability.js';
 import { useUiLanguage } from '../../../hooks/useUiLanguage.js';
+import { useSessionPostProcessingPreferences } from '../../../hooks/useSessionPostProcessingPreferences.js';
 import { translateText as uiText } from '../../../utils/localization.js';
 import { getHeaders } from '../../../utils/web.jsx';
 import { resolveSessionAudioLanguage, resolveSubtitleRegenerationDefault } from '../../../utils/subtitleRegenerationLanguage.mjs';
 import { getVideoPostProcessingRequestUrls, isMissingVideoPostProcessingRoute } from '../../../utils/videoPostProcessingApi.mjs';
 import { inferSavedInferenceEffort } from '../../common/InferenceEffortSelect.jsx';
+import { resolveSessionInferenceSettings } from '../../../utils/sessionPostProcessingSettings.mjs';
 
 const API_SERVER = import.meta.env.VITE_PROCESSOR_API;
 
@@ -22,12 +24,14 @@ export default function ExpressPostProcessingDialog({ session, onClose, onReques
   const { isStandaloneDeployment, hasSubtitleGenerationCredentials } = useDeploymentModelAvailability();
   const canGenerateSubtitles = !isStandaloneDeployment || hasSubtitleGenerationCredentials;
   const [action, setAction] = useState('generated_outro');
-  const [form, setForm] = useState(() => ({ ...createDefaultPostProcessingForm(), subtitleLanguage: resolveSubtitleRegenerationDefault(session) || '' }));
+  const [form, setForm] = useState(() => ({ ...createDefaultPostProcessingForm(session), subtitleLanguage: resolveSubtitleRegenerationDefault(session) || '' }));
   const [pending, setPending] = useState('');
   const [error, setError] = useState('');
   const [playing, setPlaying] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const { preferences, updatePreference, flushPreferences, error: preferenceError } = useSessionPostProcessingPreferences({ session, apiServer: API_SERVER });
+  const postProcessingForm = { ...form, ...preferences };
   const mounted = useRef(false);
   const busy = useRef(false);
   useEffect(() => {
@@ -39,7 +43,11 @@ export default function ExpressPostProcessingDialog({ session, onClose, onReques
   const indexes = normalizeRerollLayerIndexes(form.rerollLayerIndexes);
   const audioLanguage = resolveSessionAudioLanguage(session);
   const updateField = (field, value) => {
-    setForm(current => ({ ...current, [field]: value }));
+    if (Object.prototype.hasOwnProperty.call(preferences, field)) {
+      updatePreference(field, value);
+    } else {
+      setForm(current => ({ ...current, [field]: value }));
+    }
     setError('');
   };
   const submit = async (actionKey) => {
@@ -47,16 +55,22 @@ export default function ExpressPostProcessingDialog({ session, onClose, onReques
     const headers = getHeaders();
     if (!user || !headers) { onClose(); showLoginDialog?.(); return; }
     try {
+      const inferenceSettings = resolveSessionInferenceSettings(session, {
+        inferenceModel: user.selectedInferenceModel,
+        inferenceEffort: inferSavedInferenceEffort(user),
+      });
       const operation = buildExpressPostProcessingRequest({
-        actionKey, id, postProcessingForm: form, currentRenderHasOutro: sessionHasOutroImage(session),
+        actionKey, id, postProcessingForm, currentRenderHasOutro: sessionHasOutroImage(session),
         canGenerateSubtitles, postProcessingAudioLanguage: audioLanguage, rerollLayerIndexes: indexes,
-        inferenceModel: user.selectedInferenceModel, inferenceEffort: inferSavedInferenceEffort(user),
+        ...inferenceSettings,
       });
       if (!operation) return;
       busy.current = true;
       setPending(actionKey);
       setError('');
       setPlaying(null);
+      await flushPreferences();
+      if (!mounted.current) return;
       const { endpoint, payload } = operation;
       const { primaryUrl, legacyUrl } = getVideoPostProcessingRequestUrls(API_SERVER, endpoint);
       let response;
@@ -122,12 +136,12 @@ export default function ExpressPostProcessingDialog({ session, onClose, onReques
           </div>
           <ExpressPostProcessingPanel
             currentRenderHasOutro={sessionHasOutroImage(session)} postProcessingAction={action}
-            postProcessingForm={form} postProcessingPendingAction={pending || (uploading ? 'upload_image' : '')}
+            postProcessingForm={postProcessingForm} postProcessingPendingAction={pending || (uploading ? 'upload_image' : '')}
             postProcessingAudioLanguage={audioLanguage} canGenerateSubtitles={canGenerateSubtitles}
             rerollCandidateLayers={candidateLayers} rerollLayerIndexes={indexes}
             rerollLocalCreditEstimate={getRerollLocalCreditEstimate({ layerIndexes: indexes, candidateLayers })}
             isRerollPreviewRefreshing={false} playingRerollLayerId={playing}
-            postProcessingError={error} postProcessingMessage=""
+            postProcessingError={error || preferenceError?.message} postProcessingMessage=""
             selectPostProcessingAction={value => { setAction(value); setError(''); setPlaying(null); }}
             updatePostProcessingFormField={updateField} submitPostProcessingOperation={submit}
             setOutroCtaImageUploadError={setUploadError} uploadingOutroCtaImage={uploading}

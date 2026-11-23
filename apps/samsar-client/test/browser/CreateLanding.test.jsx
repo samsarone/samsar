@@ -84,8 +84,12 @@ for (const theme of ['light', 'dark']) {
       await expect.element(prompt).toBeVisible();
       await expect.element(submit).toBeVisible();
       await expect.element(submit).toBeDisabled();
-      await expect.element(page.getByRole('link', { name: 'Create', exact: true })).toHaveAttribute('aria-current', 'page');
-      await expect.element(page.getByRole('button', { name: 'New Project', exact: true })).toBeVisible();
+      await expect.element(page.getByRole('link', { name: 'Create', exact: true })).not.toBeInTheDocument();
+      const projects = page.getByRole('button', { name: 'View Projects', exact: true });
+      await expect.element(projects).toBeVisible();
+      await projects.click();
+      await expect.element(page.getByRole('menuitem', { name: 'Create', exact: true })).toHaveAttribute('aria-current', 'page');
+      await userEvent.keyboard('{Escape}');
       expect(view.container.querySelectorAll('textarea')).toHaveLength(1);
       expect(view.container.querySelectorAll('select')).toHaveLength(2);
       expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width);
@@ -101,6 +105,9 @@ for (const theme of ['light', 'dark']) {
       expect(submitBounds.right).toBeLessThanOrEqual(width);
       expect(axios.post).not.toHaveBeenCalled();
       expect(axios.get).not.toHaveBeenCalled();
+      const artwork = view.container.querySelector('.create-splash-artwork img');
+      await expect.poll(() => artwork.naturalWidth).toBeGreaterThan(0);
+      expect(artwork.currentSrc.includes('-portrait-')).toBe(width <= 640);
       await page.screenshot({ path: `test-results/create-landing-${theme}-${width}.png` });
       const help = page.getByRole('button', { name: 'About Create defaults', exact: true });
       await help.click();
@@ -147,4 +154,22 @@ it('submits the defaults from the visible form and opens the video progress rout
   );
   expect(localStorage.getItem('videoSessionId')).toBe('created-video');
   expect(sessionStorage.getItem('samsarCreatePrompt')).toBeNull();
+});
+
+it('keeps the draft and saved options intact through the loading skeleton', async () => {
+  await page.viewport(375, 812);
+  sessionStorage.setItem('samsarCreatePrompt', 'An idea saved before signing in');
+  scenario.user.userFetching = true;
+  const view = mount('dark');
+  const loading = page.getByRole('status', { name: 'Loading...', exact: true });
+  await expect.element(loading).toBeVisible();
+  expect(loading.element().querySelectorAll('button, input, select, textarea, a')).toHaveLength(0);
+  expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(375);
+  await page.screenshot({ path: 'test-results/create-landing-loading-mobile.png' });
+  scenario.user.userFetching = false;
+  // Mounting the same page after authentication must recover the stored draft.
+  view.unmount();
+  mount('dark');
+  await expect.element(page.getByRole('textbox', { name: 'Describe your video', exact: true })).toHaveValue('An idea saved before signing in');
+  expect(axios.post).not.toHaveBeenCalled();
 });

@@ -10,6 +10,7 @@ import { getDBConnectionString } from '../DBString.js';
 import { admitPostProcessing } from './PostProcessingBilling.js';
 import { stripInheritedBilling } from '../../billing/PostProcessingBilling.js';
 import { upsertGlobalSessionMapping } from '../GlobalSession.js';
+import { createTranslationProgressReporter, markTranslationPreparationFailed } from './TranslationPreparationProgress.js';
 import VideoSession from '../../schema/VideoSession.js';
 import { captureSessionSceneReferences } from '../video/SceneIdentity.js';
 import { captureMovieResourceTimeline, synchronizeMovieResourceTimeline, resolveMovieResourceScene,
@@ -764,7 +765,8 @@ async function translateSpeechTextList(speechTextList, translationLanguageName, 
         try {
           const single = await translateText([line], normalizedLanguageName);
           batchTranslations.push(Array.isArray(single) && single[0] ? single[0] : line);
-        } catch {
+        } catch (error) {
+          if (error?.providerOutcomeUncertain === true || error?.retryable === false) throw error;
           batchTranslations.push(line);
         }
       }
@@ -1661,8 +1663,23 @@ async function processTranslateVideoSessionJob({
   copyTranslateSessionAssets: copyAssets = copyTranslateSessionAssets,
   publishClonedAiVideoMedia: publishCopiedMedia = publishClonedAiVideoMedia,
   rewriteSpeechItem,
+  onProgress,
 } = {}) {
   await getDBConnectionString();
+  let latestProgress;
+  let phase = 'loading_source';
+  const reportProgress = async (event = {}) => {
+    phase = event.phase || event.stage || phase;
+    if (typeof onProgress !== 'function') return;
+    try {
+      latestProgress = await onProgress({ ...event, phase });
+    } catch (error) {
+      console.warn('[api][video][retranslation] progress_callback_failed', {
+        sessionId: newSessionId, phase, errorCode: error?.code || 'PROGRESS_CALLBACK_FAILED',
+      });
+    }
+  };
+  await reportProgress({ phase, event: 'preparation_started', status: 'IN_PROGRESS' });
 
   const originalSessionDoc = await VideoSession.findOne({ _id: oldSessionId, userId: userId.toString() });
 
@@ -1684,19 +1701,29 @@ async function processTranslateVideoSessionJob({
   const originalSpeechTextList = originalSpeechLayers.map(getSpeechTextFromAudioLayer);
   const originalSpeakerNameList = originalSpeechLayers.map(getSpeakerNameFromAudioLayer);
   const translationLanguageName = getLanguageStringFromLanguageCode(normalizedLanguageCode) || normalizedLanguageCode;
+  let translationRequestIndex = 0;
   const translateText = (texts, language) => translateTextImpl(
-    texts, language, inferenceModel, { reasoningEffort: inferenceEffort },
+    texts, language, inferenceModel, {
+      reasoningEffort: inferenceEffort, preserveError: true,
+      externalRequestContext: {
+        sessionId: newSessionId,
+        requestKey: `retranslation:${phase}:text-${++translationRequestIndex}`,
+      },
+    },
   );
+  await reportProgress({ phase: 'translating_speech', event: 'speech_translation_started', speechCount: originalSpeechLayers.length });
   const translatedSpeechTextList = await translateSpeechTextList(originalSpeechTextList, translationLanguageName, translateText);
   let translatedSpeakerNameList = originalSpeakerNameList;
+  await reportProgress({ phase: 'translating_speakers', event: 'speaker_translation_started' });
   try {
     translatedSpeakerNameList = await translateSpeechTextList(originalSpeakerNameList, translationLanguageName, translateText);
   } catch (error) {
+    if (error?.providerOutcomeUncertain === true || error?.retryable === false) throw error;
     console.error('[api][video][translate_video] failed to translate speaker names; using originals', {
       newSessionId,
       originalSessionId: oldSessionId,
       language: normalizedLanguageCode,
-      error: error?.message || error,
+      errorCode: error?.code || 'SPEAKER_TRANSLATION_FAILED',
     });
   }
 
@@ -1713,11 +1740,13 @@ async function processTranslateVideoSessionJob({
   delete clonedSession.__v;
   delete clonedSession.createdAt;
   delete clonedSession.updatedAt;
+  delete clonedSession.postProcessingProgress;
   stripInheritedBilling(clonedSession);
 
   regenerateLayerAndAudioLayerIds(clonedSession);
   resetTimelineDurationsFromMovieResourceList(clonedSession);
 
+  await reportProgress({ phase: 'speech_validation', event: 'speech_validation_started' });
   const validatedSpeech = await validateTranslatedSpeech({
     session: clonedSession,
     originalTexts: originalSpeechTextList,
@@ -1726,6 +1755,7 @@ async function processTranslateVideoSessionJob({
     inferenceModel,
     inferenceEffort,
     sessionId: newSessionId,
+    onProgress: (event) => reportProgress({ ...event, status: 'IN_PROGRESS' }),
   }, { rewriteSpeechItem });
   clonedSession.audioLayers.filter(isSpeechAudioLayer).forEach((audioLayer, index) => {
     audioLayer.generationMeta = {
@@ -1734,6 +1764,7 @@ async function processTranslateVideoSessionJob({
     };
   });
 
+  await reportProgress({ phase: 'copying_assets', event: 'asset_copy_started' });
   await copyAssets({ originalSessionData, oldSessionId, newSessionId });
   rewriteV2SessionAssetReferences(clonedSession, oldSessionId, newSessionId);
 
@@ -1746,6 +1777,7 @@ async function processTranslateVideoSessionJob({
   stripTextItemsFromActiveItemLists(clonedSession);
 
   if (translateOutro === true) {
+    await reportProgress({ phase: 'translating_outro', event: 'outro_translation_started' });
     await localizeOutroImageMetadataForSession({
       clonedSession,
       normalizedLanguageCode,
@@ -1753,6 +1785,7 @@ async function processTranslateVideoSessionJob({
     });
   }
   if (translateFooter === true) {
+    await reportProgress({ phase: 'translating_footer', event: 'footer_translation_started' });
     await localizeFooterMetadataForSession({
       clonedSession,
       normalizedLanguageCode,
@@ -1768,6 +1801,7 @@ async function processTranslateVideoSessionJob({
     subtitleLanguageExplicit,
   });
   if (enableSubtitles && clonedSession.subtitleTranslationRequired) {
+    await reportProgress({ phase: 'translating_subtitles', event: 'subtitle_translation_started' });
     await backfillTranslatedSubtitleMetadataForRerun(clonedSession.audioLayers, {
       sessionSpeechLanguage: clonedSession.sessionLanguage,
       sessionSubtitleLanguage: clonedSession.subtitleLanguage,
@@ -1782,6 +1816,7 @@ async function processTranslateVideoSessionJob({
 
   // Clear obsolete source lip-sync outputs first, then publish only clips the
   // translated session will reuse. Workers cannot see this state until ready.
+  await reportProgress({ phase: 'publishing_media', event: 'media_publication_started' });
   await publishCopiedMedia({
     clonedSession,
     newSessionId,
@@ -1790,17 +1825,16 @@ async function processTranslateVideoSessionJob({
     publishFile: uploadFileToMediaBucket,
   });
 
-  try {
-  } catch (error) {
-    console.error('[api][video][translate_video] failed to stringify new session state', {
-      newSessionId,
-      originalSessionId: oldSessionId,
-      language: normalizedLanguageCode,
-      error: error?.message || error,
-    });
+  await reportProgress({ phase: 'queueing_speech', event: 'speech_queue_started' });
+  if (latestProgress?.operation === 'translate_video') clonedSession.postProcessingProgress = latestProgress;
+  const activated = await VideoSession.updateOne(
+    { _id: newSessionId, expressGenerationCancelled: { $ne: true } },
+    { $set: clonedSession },
+  );
+  if (activated?.matchedCount === 0) {
+    console.info('[api][video][retranslation] preparation_cancelled', { sessionId: newSessionId });
+    return;
   }
-
-  await VideoSession.updateOne({ _id: newSessionId }, { $set: clonedSession });
 
   const speechGenerationRequests = (clonedSession.audioLayers || [])
     .filter(isSpeechAudioLayer)
@@ -1837,6 +1871,7 @@ async function processTranslateVideoSessionJob({
     });
 
   await Promise.all(speechGenerationRequests);
+  await reportProgress({ phase: 'ready', event: 'preparation_completed', status: 'COMPLETED' });
 }
 
 export const __testOnly__ = {
@@ -1935,6 +1970,9 @@ export async function translateVideoSessionAndQueueGeneration(userId, payload = 
     },
   });
 
+  const reportProgress = createTranslationProgressReporter({
+    sessionId: newSessionId, originalSessionId: oldSessionId, model: inferenceModel,
+  });
   void processTranslateVideoSessionJob({
     userId,
     oldSessionId,
@@ -1948,29 +1986,21 @@ export async function translateVideoSessionAndQueueGeneration(userId, payload = 
     webhookUrl,
     inferenceModel,
     inferenceEffort,
-  }).catch(async (error) => {
-    const message = error?.message || 'Failed to translate video session.';
+  }, { onProgress: reportProgress }).catch(async (error) => {
     console.error('[api][video][translate_video] async job failed', {
       newSessionId,
       originalSessionId: oldSessionId,
       language: normalizedLanguageCode,
-      error,
+      errorCode: error?.code || 'TRANSLATION_PREPARATION_FAILED',
+      causeCode: error?.cause?.code || null,
+      providerOutcomeUncertain: error?.providerOutcomeUncertain === true || error?.cause?.providerOutcomeUncertain === true,
     });
     try {
-      await VideoSession.updateOne(
-        { _id: newSessionId },
-        {
-          $set: {
-            expressGenerationFailed: true,
-            expressGenerationPending: false,
-            expressGenerationError: message,
-          },
-        },
-      );
+      await markTranslationPreparationFailed({ sessionId: newSessionId, error, progress: reportProgress.snapshot() });
     } catch (updateError) {
       console.error('[api][video][translate_video] failed to mark session as FAILED', {
         newSessionId,
-        error: updateError,
+        errorCode: updateError?.code || 'FAILURE_STATE_WRITE_FAILED',
       });
     }
   });
@@ -1991,13 +2021,13 @@ export async function getTranslateVideoBillingPreview(userId, payload = {}) {
     payload,
     ['translate_outro', 'translateOutro'],
     'translate_outro',
-    true,
+    false,
   );
   const translateFooter = getOptionalBooleanPayloadValue(
     payload,
     ['translate_footer', 'translateFooter'],
     'translate_footer',
-    true,
+    false,
   );
 
   if (!userId) {
@@ -2065,14 +2095,24 @@ export async function getTranslateVideoBillingPreview(userId, payload = {}) {
     throw error;
   }
 
-  const inferenceUser = await User.findById(userId)
-    .select('selectedInferenceModel selectedInferenceEffort')
-    .lean();
-  const inferenceSettings = resolveEffectiveInferenceSettings(
-    payload,
-    inferenceUser?.selectedInferenceModel,
-    inferenceUser?.selectedInferenceEffort,
+  const sourceInferenceModel = getFirstNonEmptyString(
+    originalSessionData.expressGenerationInferenceModel, originalSessionData.inferenceModel,
   );
+  const sourceInferenceEffort = getFirstNonEmptyString(
+    originalSessionData.expressGenerationInferenceEffort, originalSessionData.inferenceEffort,
+  );
+  const inferenceUser = sourceInferenceModel ? null : await User.findById(userId)
+    .select('selectedInferenceModel selectedInferenceEffort').lean();
+  const requestedInferenceSettings = resolveEffectiveInferenceSettings(
+    payload,
+    sourceInferenceModel || inferenceUser?.selectedInferenceModel,
+    sourceInferenceModel ? sourceInferenceEffort : inferenceUser?.selectedInferenceEffort,
+  );
+  // Post-processing belongs to the existing session. A cached client or changed
+  // account selection must not replace the model and effort that created it.
+  const inferenceSettings = sourceInferenceModel
+    ? resolveEffectiveInferenceSettings({}, sourceInferenceModel, sourceInferenceEffort)
+    : requestedInferenceSettings;
   const creditsToCharge = TRANSLATE_VIDEO_CREDITS_PER_SECOND * billableSeconds;
 
   return {
@@ -2468,14 +2508,17 @@ async function processAddSubtitlesSessionJob({
   });
 
   if (subtitleLanguage !== undefined && subtitleLanguage !== null) {
-    const inferenceModelUser = await User.findById(clonedSession.userId || userId)
-      .select('selectedInferenceModel')
-      .lean();
-    const rerunInferenceModel = normalizeInferenceModel(
-      clonedSession.expressGenerationInferenceModel ||
-      clonedSession.inferenceModel ||
-      inferenceModelUser?.selectedInferenceModel,
+    const sourceInferenceModel = getFirstNonEmptyString(
+      clonedSession.expressGenerationInferenceModel, clonedSession.inferenceModel,
     );
+    const inferenceModelUser = sourceInferenceModel ? null : await User.findById(clonedSession.userId || userId)
+      .select('selectedInferenceModel selectedInferenceEffort').lean();
+    const rerunInferenceModel = resolveEffectiveInferenceSettings({},
+      sourceInferenceModel || inferenceModelUser?.selectedInferenceModel,
+      sourceInferenceModel
+        ? getFirstNonEmptyString(clonedSession.expressGenerationInferenceEffort, clonedSession.inferenceEffort)
+        : inferenceModelUser?.selectedInferenceEffort,
+    ).inferenceModel;
     await prepareSubtitleLanguageMetadataForAddition({
       clonedSession,
       subtitleLanguage,

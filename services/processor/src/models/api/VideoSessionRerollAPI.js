@@ -11,6 +11,7 @@ import { addImageGeneratorRequest } from '../Images.js';
 import { copyVideoSession } from './VideoSessionCloneAPI.js';
 import { buildMovieResourceListVisualPrompts } from '../movie_session/TranscriptMovieGenerator.js';
 import { prepareImageRequestBilling } from './ImageRequestBilling.js';
+import { resolveEffectiveInferenceSettings } from './RequestModelOverrides.js';
 import { getExpressVideoStageCreditsPerSecond } from '../../consts/pricing/ExpressVideoPricingDistribution.js';
 import { assignSourceSceneFields, resolveLayerSourceSceneReference } from '../video/SceneIdentity.js';
 
@@ -279,14 +280,19 @@ async function regenerateRerollVisualPrompts(sessionData, sceneIndexes, dependen
 
   const visualPromptBuilder = dependencies.buildMovieResourceListVisualPrompts ||
     buildMovieResourceListVisualPrompts;
+  const sourceInferenceModel = firstNonEmptyString(
+    sessionData.expressGenerationInferenceModel, sessionData.inferenceModel,
+  );
+  const sourceInferenceEffort = firstNonEmptyString(
+    sessionData.expressGenerationInferenceEffort, sessionData.inferenceEffort,
+  );
   const result = await visualPromptBuilder({
     movieResourceList: getRerollVisualMovieResourceList(sessionData),
     themeJson: resolveRerollVisualTheme(sessionData),
     aspectRatio: normalizeString(sessionData.aspectRatio) || '16:9',
-    inferenceModel: firstNonEmptyString(
-      sessionData.expressGenerationInferenceModel,
-      sessionData.inferenceModel,
-    ) || undefined,
+    inferenceModel: sourceInferenceModel
+      ? resolveEffectiveInferenceSettings({}, sourceInferenceModel, sourceInferenceEffort).inferenceModel
+      : undefined,
     videoTone: normalizeString(sessionData.videoTone) || 'cinematic',
     requestKeyPrefix: `reroll:${sessionData._id?.toString?.() || sessionData._id || 'session'}:visual`,
     sceneIndexes: requestedSceneIndexes,
@@ -339,6 +345,8 @@ async function prepareRerollVisualPlans(sessionData, targets, dependencies = {})
         aspectRatio: sessionData.aspectRatio,
         expressGenerationInferenceModel: sessionData.expressGenerationInferenceModel,
         inferenceModel: sessionData.inferenceModel,
+        expressGenerationInferenceEffort: sessionData.expressGenerationInferenceEffort,
+        inferenceEffort: sessionData.inferenceEffort,
         videoTone: sessionData.videoTone,
         // Mongoose can omit an empty snapshot theme. That still means an empty
         // source theme, not the theme of another video in a joined session.

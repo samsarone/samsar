@@ -10,7 +10,7 @@ import { NavCanvasControlProvider } from '../../src/contexts/NavCanvasControlCon
 const mock = vi.hoisted(() => ({ accepted: vi.fn(), close: vi.fn(), login: vi.fn(), standalone: false, subtitles: true, header: null, frame: null, editor: null }));
 vi.mock('axios', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 vi.mock('../../src/utils/web.jsx', () => ({ getHeaders: () => ({ headers: { Authorization: 'test' } }) }));
-vi.mock('../../src/contexts/UserContext.jsx', () => ({ useUser: () => ({ user: { _id: 'owner', selectedInferenceModel: 'claude-fable-5.1', selectedInferenceEffort: 'xhigh' }, getUserAPI: vi.fn() }) }));
+vi.mock('../../src/contexts/UserContext.jsx', () => ({ useUser: () => ({ user: { _id: 'owner', selectedInferenceModel: 'gemini-4-carbon', selectedInferenceEffort: 'high' }, getUserAPI: vi.fn() }) }));
 vi.mock('../../src/hooks/useDeploymentModelAvailability.js', () => ({ useDeploymentModelAvailability: () => ({ isStandaloneDeployment: mock.standalone, hasSubtitleGenerationCredentials: mock.subtitles }) }));
 vi.mock('../../src/components/common/TopNav.tsx', () => ({ default: props => { mock.header = props; return <CanvasControlBar {...props} isExpressGeneration />; } }));
 vi.mock('../../src/components/video/toolbars/frame_toolbar/index.jsx', () => ({ default: props => { mock.frame = props; return null; } }));
@@ -21,6 +21,7 @@ vi.mock('../../src/components/video/workers/imagePreloaderWorkerSingleton.jsx', 
 vi.mock('react-toastify', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() }, ToastContainer: () => null }));
 
 const session = (extra = {}) => ({ _id: 'original', isExpressGeneration: true, framesPerSecond: 24,
+  expressGenerationInferenceModel: 'claude-fable-5.1', expressGenerationInferenceEffort: 'xhigh',
   remoteURL: 'https://media.example/original.mp4', audioLayers: [], aspectRatio: '16:9', totalDuration: 4,
   layers: [{ _id: 'scene-1', duration: 4, imageSession: { activeItemList: [] } }], ...extra });
 beforeEach(() => {
@@ -37,7 +38,7 @@ const click = name => fireEvent.click(screen.getByRole('button', { name, exact: 
 const change = (name, value) => fireEvent.change(screen.getByLabelText(name), { target: { value } });
 
 it.each([
-  ['Retranslate', 'Retranslate video', 'retranslate_video', () => change('Retranslation language', 'ja'), { language: 'ja', subtitle_language: 'ja', inference_model: 'claude-fable-5.2', effort: 'xhigh', translate_outro: true, translate_footer: true, enable_subtitles: true }],
+  ['Retranslate', 'Retranslate video', 'retranslate_video', () => change('Retranslation language', 'ja'), { language: 'ja', inference_model: 'claude-fable-5.2', effort: 'xhigh', translate_outro: false, translate_footer: false, enable_subtitles: false }],
   ['Subtitles', 'Generate / regenerate subtitles', 'add_subtitles', () => {}, {}],
   ['Subtitles', 'Remove subtitles', 'remove_subtitles', () => {}, {}],
   ['Avatar', 'Regenerate narrator avatar', 'regenerate_avatar', () => {}, {}],
@@ -49,7 +50,63 @@ it.each([
 ])('submits the shared %s operation and accepts the returned session', async (tab, submit, endpoint, fill, expected) => {
   mountDialog(); click(tab); fill(); click(submit);
   await waitFor(() => expect(mock.accepted).toHaveBeenCalledWith({ sessionId: 'new-session', requestId: 'new-request', status: 'PENDING', pollMode: 'status' }));
-  expect(axios.post).toHaveBeenCalledWith(expect.stringContaining(`/v2/${endpoint}`), { input: expect.objectContaining({ videoSessionId: 'original', ...expected }) }, expect.anything());
+  expect(axios.post).toHaveBeenCalledWith(expect.stringContaining(`/v2/${endpoint}`), { input: expect.objectContaining({
+    videoSessionId: 'original', inference_model: 'claude-fable-5.2', effort: 'xhigh', ...expected,
+  }) }, expect.anything());
+});
+
+it('retranslates with the source session model and effort instead of the account defaults', async () => {
+  mountDialog({ expressGenerationInferenceModel: 'claude-opus-5.5', expressGenerationInferenceEffort: 'xhigh' });
+  click('Retranslate'); change('Retranslation language', 'ja'); click('Retranslate video');
+  await waitFor(() => expect(mock.accepted).toHaveBeenCalled());
+  expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/v2/retranslate_video'), {
+    input: expect.objectContaining({ inference_model: 'claude-opus-5.5', effort: 'xhigh' }),
+  }, expect.anything());
+});
+
+it('starts legacy sessions with all optional retranslation checkboxes unchecked', () => {
+  mountDialog(); click('Retranslate');
+  expect(screen.getByLabelText('Add translated subtitles')).not.toBeChecked();
+  expect(screen.getByLabelText('Translate outro')).not.toBeChecked();
+  expect(screen.getByLabelText('Translate footer')).not.toBeChecked();
+});
+
+it('restores saved session checkbox preferences', () => {
+  mountDialog({ postProcessingPreferences: {
+    translationEnableSubtitles: true, translationTranslateOutro: true, translationTranslateFooter: false,
+  } });
+  click('Retranslate');
+  expect(screen.getByLabelText('Add translated subtitles')).toBeChecked();
+  expect(screen.getByLabelText('Translate outro')).toBeChecked();
+  expect(screen.getByLabelText('Translate footer')).not.toBeChecked();
+});
+
+it('saves checkbox changes to the source session before submitting retranslation', async () => {
+  mountDialog(); click('Retranslate'); change('Retranslation language', 'ja');
+  fireEvent.click(screen.getByLabelText('Translate footer'));
+  click('Retranslate video');
+  await waitFor(() => expect(mock.accepted).toHaveBeenCalled());
+  const preferenceCallIndex = axios.post.mock.calls.findIndex(([url]) => url.endsWith('/video_sessions/post_processing_preferences'));
+  const generationCallIndex = axios.post.mock.calls.findIndex(([url]) => url.endsWith('/v2/retranslate_video'));
+  expect(preferenceCallIndex).toBeGreaterThanOrEqual(0);
+  expect(generationCallIndex).toBeGreaterThan(preferenceCallIndex);
+  expect(axios.post.mock.calls[preferenceCallIndex][1]).toEqual({
+    sessionId: 'original', preferences: { translationTranslateFooter: true },
+  });
+  expect(axios.post.mock.calls[generationCallIndex][1].input).toMatchObject({
+    translate_footer: true, translate_outro: false, enable_subtitles: false,
+    inference_model: 'claude-fable-5.2', effort: 'xhigh',
+  });
+});
+
+it('keeps the dialog open and skips retranslation when checkbox preferences cannot save', async () => {
+  axios.post.mockRejectedValue({ response: { data: { message: 'Preference save failed' } } });
+  mountDialog(); click('Retranslate'); change('Retranslation language', 'ja');
+  fireEvent.click(screen.getByLabelText('Translate footer'));
+  click('Retranslate video');
+  expect(await screen.findByText('Preference save failed')).toBeVisible();
+  expect(axios.post.mock.calls.some(([url]) => url.endsWith('/v2/retranslate_video'))).toBe(false);
+  expect(mock.accepted).not.toHaveBeenCalled();
 });
 
 it('updates an existing image outro with the same image and text contract as Vidgenie', async () => {
@@ -57,7 +114,10 @@ it('updates an existing image outro with the same image and text contract as Vid
   change('Outro CTA type', 'image'); change('CTA image URL', 'https://example.com/logo.png'); change('Outro top text', 'Hello');
   click('Update outro CTA');
   await waitFor(() => expect(mock.accepted).toHaveBeenCalled());
-  expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/v2/update_outro_image'), { input: { videoSessionId: 'original', generate_outro_image: true, outro_cta_image: { middle_image: { url: 'https://example.com/logo.png' }, top_text: 'Hello' } } }, expect.anything());
+  expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/v2/update_outro_image'), { input: {
+    videoSessionId: 'original', inference_model: 'claude-fable-5.2', effort: 'xhigh',
+    generate_outro_image: true, outro_cta_image: { middle_image: { url: 'https://example.com/logo.png' }, top_text: 'Hello' },
+  } }, expect.anything());
 });
 
 it('validates input, shows API errors, and permits retry without duplicate submissions', async () => {
@@ -71,7 +131,7 @@ it('validates input, shows API errors, and permits retry without duplicate submi
   let resolve;
   axios.post.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
   click('Add outro CTA'); click('Add outro CTA');
-  expect(axios.post).toHaveBeenCalledTimes(2);
+  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(2));
   expect(screen.getByRole('button', { name: 'Close dialog' })).toBeDisabled();
   await act(async () => resolve({ data: { request_id: 'retry-session' } }));
   expect(mock.accepted).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'retry-session' }));
@@ -136,7 +196,9 @@ it('keeps the form available when the API omits the new request id', async () =>
 it('does not navigate when a response arrives after the dialog unmounts', async () => {
   let resolve;
   axios.post.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
-  const { unmount } = mountDialog(); click('Clone'); click('Clone render'); unmount();
+  const { unmount } = mountDialog(); click('Clone'); click('Clone render');
+  await waitFor(() => expect(axios.post).toHaveBeenCalledTimes(1));
+  unmount();
   await act(async () => resolve({ data: { session_id: 'late-session' } }));
   expect(mock.accepted).not.toHaveBeenCalled();
 });
