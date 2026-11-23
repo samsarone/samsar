@@ -10,6 +10,26 @@ import {
   runInferenceAdapterFallback,
 } from './OpenAICompat.js';
 
+test('native Gemini dispatch forwards its deadline and aborts a stalled body without retrying', async () => {
+  let dispatches = 0;
+  let signal;
+  await assert.rejects(createCompatibleChatCompletion({}, {
+    model: 'gemini-4-carbon', projectId: 'deadline-test-project',
+    messages: [{ role: 'user', content: 'private speech' }],
+    timeout: 15, maxRetries: 0, bypassSamsarExternalInference: true,
+  }, {
+    getAccessToken: async () => 'test-token',
+    logger: { info() {}, warn() {}, error() {} },
+    fetch: async (_url, request) => {
+      dispatches++;
+      signal = request.signal;
+      return { ok: true, status: 200, text: () => new Promise(() => {}) };
+    },
+  }), error => error.code === 'ETIMEDOUT' && error.providerOutcomeUncertain === true);
+  assert.equal(dispatches, 1);
+  assert.equal(signal.aborted, true);
+});
+
 for (const model of ['gpt-6.2-astra', 'gpt-6-astra', 'gpt-5.6-sol']) {
   for (const effort of ['high', 'xhigh']) {
     for (const vision of [false, true]) {

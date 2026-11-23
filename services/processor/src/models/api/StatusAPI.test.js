@@ -637,6 +637,93 @@ test('status projections exclude branch frame lists while detailed status includ
   assert.equal(baseFields.includes('layers.imageSession.generationError'), true);
   assert.equal(detailedFields.includes('layers.aiVideoGenerationError'), true);
   assert.equal(detailedFields.includes('layers.imageSession.generationError'), true);
+  assert.equal(baseFields.includes('postProcessingProgress'), true);
+  assert.equal(detailedFields.includes('postProcessingProgress'), true);
+  assert.equal(baseFields.includes('postProcessingPreferences'), true);
+  assert.equal(detailedFields.includes('postProcessingPreferences'), true);
+});
+
+test('compact and detailed status expose only saved post-processing checkbox preferences', async () => {
+  const fixture = {
+    _id: 'session-preferences',
+    postProcessingPreferences: {
+      translationEnableSubtitles: true, translationTranslateOutro: false,
+      translationTranslateFooter: 'true', prompt: 'PRIVATE', inferenceModel: 'PRIVATE',
+    },
+  };
+  const status = await buildVideoStatusResponse({ sessionId: fixture._id, sessionSnapshot: fixture });
+  const preview = buildNormalizedVideoSessionPreview(fixture, status);
+  const expected = { translationEnableSubtitles: true, translationTranslateOutro: false, translationTranslateFooter: false };
+  assert.deepEqual(status.postProcessingPreferences, expected);
+  assert.deepEqual(preview.postProcessingPreferences, expected);
+  assert.equal(JSON.stringify({ status, preview }).includes('PRIVATE'), false);
+});
+
+test('translation preparation status exposes only safe diagnostics in compact and detailed status', async () => {
+  const fixture = {
+    _id: 'translated-session',
+    expressGenerationPending: false,
+    expressGenerationFailed: false,
+    expressGenerationCancelled: false,
+    expressGenerationStatus: { status: 'PROCESSING', prompt_generation: 'PENDING', video_generation: 'INIT' },
+    postProcessingProgress: {
+      operation: 'translate_video', status: 'IN_PROGRESS', phase: 'speech_validation', event: 'repair_started',
+      sessionId: 'translated-session', originalSessionId: 'source-session', model: 'gemini-4-carbon',
+      requestKey: 'retranslation:speech-repair-2:attempt-1',
+      startedAt: new Date('2026-11-23T06:40:00Z'), updatedAt: '2026-11-23T06:42:00.000Z', elapsedMs: 120000,
+      speechIndex: 2, layerIndex: 3, speechCount: 8, attempt: 1, maxAttempts: 3,
+      maxCharacters: 28, originalCharacters: 51, translatedCharacters: 60,
+      returnedCharacters: 0, finalCharacters: 0, completedSpeechCount: 2, errorCode: 'GEMINI_TIMEOUT',
+      prompt: 'PRIVATE SPEECH', messages: [{ content: 'PRIVATE SPEECH' }],
+      response: 'PRIVATE RESPONSE', apiKey: 'PRIVATE KEY', headers: { authorization: 'PRIVATE KEY' },
+    },
+  };
+  const before = structuredClone(fixture);
+  const compact = await buildVideoStatusResponse({ sessionId: fixture._id, sessionSnapshot: fixture });
+  const detailed = buildNormalizedVideoSessionPreview(fixture, compact);
+  const expected = { ...fixture.postProcessingProgress,
+    startedAt: '2026-11-23T06:40:00.000Z', updatedAt: '2026-11-23T06:42:00.000Z' };
+  for (const field of ['prompt', 'messages', 'response', 'apiKey', 'headers']) delete expected[field];
+  assert.equal(compact.status, 'PROCESSING');
+  assert.deepEqual(compact.postProcessingProgress, expected);
+  assert.deepEqual(detailed.postProcessingProgress, expected);
+  assert.equal(detailed.currentStage, 'speech_validation');
+  assert.deepEqual(detailed.stages, fixture.expressGenerationStatus);
+  assert.equal(JSON.stringify({ compact, detailed }).includes('PRIVATE'), false);
+  assert.deepEqual(fixture, before);
+  assert.equal(VideoSession.schema.path('postProcessingProgress').instance, 'Mixed');
+});
+
+test('translation progress rejects malformed fields and does not replace terminal or render stages', async () => {
+  const stages = { prompt_generation: 'COMPLETED', image_generation: 'COMPLETED', speech_generation: 'INIT' };
+  const fixture = {
+    _id: 'translated-session', expressGenerationStatus: stages,
+    postProcessingProgress: {
+      operation: 'translate_video', status: 'IN_PROGRESS', phase: 'speech_validation',
+      requestKey: { prompt: 'PRIVATE' }, startedAt: 'PRIVATE', updatedAt: new Date('invalid'),
+      translatedCharacters: -1, maxCharacters: Infinity, attempt: '3', model: 'PRIVATE\nAPI KEY',
+    },
+  };
+  const compact = await buildVideoStatusResponse({ sessionId: fixture._id, sessionSnapshot: fixture });
+  assert.deepEqual(compact.postProcessingProgress, {
+    operation: 'translate_video', status: 'IN_PROGRESS', phase: 'speech_validation',
+  });
+  for (const status of ['COMPLETED', 'FAILED', 'CANCELLED']) {
+    assert.equal(buildNormalizedVideoSessionPreview(fixture, { status }).currentStage, 'speech_generation');
+  }
+  for (const status of ['COMPLETED', 'FAILED']) {
+    const preview = buildNormalizedVideoSessionPreview({
+      ...fixture, postProcessingProgress: { ...fixture.postProcessingProgress, status },
+    });
+    assert.equal(preview.currentStage, 'speech_generation');
+  }
+  for (const progress of [null, [], { operation: 'translate_video', status: 'UNKNOWN' },
+    { operation: 'unexpected', status: 'IN_PROGRESS' }]) {
+    const invalid = { ...fixture, postProcessingProgress: progress };
+    const status = await buildVideoStatusResponse({ sessionId: fixture._id, sessionSnapshot: invalid });
+    assert.equal(status.postProcessingProgress, undefined);
+    assert.equal(buildNormalizedVideoSessionPreview(invalid).postProcessingProgress, undefined);
+  }
 });
 
 test('compact status keeps a failed layer non-terminal while the session is still active', async () => {

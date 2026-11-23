@@ -9059,6 +9059,11 @@
     "th": "บันทึกคำแนะนำไม่ได้",
     "ja": "ヒントを保存できません。"
   },
+  "Unable to save post-processing preferences.": {
+    "en": "Unable to save post-processing preferences.",
+    "th": "ไม่สามารถบันทึกการตั้งค่าหลังการประมวลผลได้",
+    "ja": "後処理の設定を保存できませんでした。"
+  },
   "Unable to save recorded facecam.": {
     "en": "Unable to save recorded facecam.",
     "th": "บันทึกไฟล์กล้องหน้าไม่ได้",

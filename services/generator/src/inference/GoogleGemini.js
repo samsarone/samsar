@@ -1,3 +1,4 @@
+import { runGoogleGeminiRequest } from './GoogleGeminiRequest.js';
 import { readFile } from 'node:fs/promises';
 
 import { getGoogleAccessToken, getGoogleCloudConfig } from './GoogleADC.js';
@@ -218,7 +219,7 @@ function buildGenerationConfig(model = '') {
   };
 }
 
-export async function createGoogleGeminiChatCompletion(messages, inferenceModel) {
+export async function createGoogleGeminiChatCompletion(messages, inferenceModel, options = {}) {
   const transport = resolveGoogleGeminiTransport(resolveGeminiModel(inferenceModel));
   const { model } = transport;
   const location = resolveGeminiLocation();
@@ -239,7 +240,7 @@ export async function createGoogleGeminiChatCompletion(messages, inferenceModel)
 
   const token = transport.kind === 'developer' ? null : await getGoogleAccessToken(config);
   const generationConfig = buildGenerationConfig(model);
-  const response = await fetch(transport.kind === 'developer'
+  const payload = await runGoogleGeminiRequest(transport.kind === 'developer'
     ? buildGoogleGeminiDeveloperUrl({ model })
     : buildVertexGenerateContentUrl({ projectId, location, model }), {
     method: 'POST',
@@ -254,14 +255,13 @@ export async function createGoogleGeminiChatCompletion(messages, inferenceModel)
       contents,
       ...(generationConfig ? { generationConfig } : {}),
     }),
+  }, {
+    fetchImpl: options.fetchImpl || globalThis.fetch,
+    timeoutMs: options.timeout ?? options.timeoutMs, model, transport: transport.kind,
+    sessionId: options.externalRequestContext?.sessionId,
+    requestKey: options.externalRequestContext?.requestKey,
+    logger: options.logger,
   });
-
-  const responseText = await response.text();
-  const payload = responseText ? JSON.parse(responseText) : {};
-  if (!response.ok) {
-    throw new Error(payload?.error?.message || `Google Gemini inference failed with status ${response.status}`);
-  }
-
   return {
     model,
     ...(transport.kind === 'developer' ? { samsarBilling: { adapter: 'google', region: 'global', api: 'developer' } } : {}),

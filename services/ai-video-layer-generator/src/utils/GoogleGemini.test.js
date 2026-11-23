@@ -4,6 +4,34 @@ import { GoogleAuth } from 'google-auth-library';
 
 import { createGoogleGeminiChatCompletion } from './GoogleGemini.js';
 
+test('native Gemini bounds a stalled response body and dispatches only once', async (t) => {
+  const settings = { SAMSAR_DEPLOYMENT_EDITION: 'production', CURRENT_ENV: 'production',
+    GOOGLE_GEMINI_API_KEY: 'test-native-key' };
+  const previous = Object.fromEntries(Object.keys(settings).map(key => [key, process.env[key]]));
+  Object.assign(process.env, settings);
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  let dispatches = 0;
+  let signal;
+  await assert.rejects(createGoogleGeminiChatCompletion(
+    [{ role: 'user', content: 'private speech' }], 'gemini-4-carbon', {
+      timeout: 15, logger: { info() {}, warn() {}, error() {} },
+      fetchImpl: async (_url, request) => {
+        dispatches++;
+        signal = request.signal;
+        return { ok: true, status: 200, text: () => new Promise(() => {}) };
+      },
+    },
+  ), error => error.code === 'ETIMEDOUT' && error.providerOutcomeUncertain === true);
+  assert.equal(dispatches, 1);
+  assert.equal(signal.aborted, true);
+});
+
+
 test('versioned Carbon environment model trims trailing model turns', async (t) => {
   const previousProject = process.env.GOOGLE_CLOUD_PROJECT;
   const previousModel = process.env.GOOGLE_GEMINI_4_CARBON_MODEL;

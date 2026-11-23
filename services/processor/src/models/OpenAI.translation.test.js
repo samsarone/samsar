@@ -4,6 +4,24 @@ import { translateTextContent } from './OpenAI.js';
 import { createCompatibleChatCompletion } from './ai_utils/OpenAICompat.js';
 import { toAnthropicMessages } from '../inference/AnthropicChatAdapter.js';
 
+test('translation carries request diagnostics and preserves timeout identity without resubmission', async () => {
+  const timeout = Object.assign(new Error('Timed out'), {
+    code: 'ETIMEDOUT', providerOutcomeUncertain: true, retryable: false,
+  });
+  const externalRequestContext = { sessionId: 'translated', requestKey: 'retranslation:translating_speech:text-1' };
+  let calls = 0;
+  await assert.rejects(translateTextContent(['Private speech'], 'Thai', 'gemini-4-carbon', {
+    preserveError: true, timeoutMs: 25, externalRequestContext,
+    createChatCompletion: async (_client, request) => {
+      calls += 1;
+      assert.deepEqual(request.externalRequestContext, externalRequestContext);
+      assert.equal(request.timeout, 25);
+      throw timeout;
+    },
+  }), (error) => error === timeout);
+  assert.equal(calls, 1);
+});
+
 for (const model of ['gpt-6.2-astra', 'gpt-6.1-sol', 'claude-opus-5.5', 'claude-fable-5.2']) {
   for (const reasoningEffort of ['high', 'xhigh']) {
     test(`translation forwards ${model} and ${reasoningEffort} to its adapter`, async () => {

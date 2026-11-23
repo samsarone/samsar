@@ -7,7 +7,8 @@ const OUTRO_CTA_TYPE_QR = 'qr';
 const OUTRO_CTA_TYPE_IMAGE = 'image';
 const hasTextValue = value => typeof value === 'string' && value.trim().length > 0;
 const isPlainObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const normalizeInferenceModelKey = value => normalizeDeploymentInferenceModelValue(value) || 'gpt-6.2-astra';
+const normalizeInferenceModelKey = value => normalizeDeploymentInferenceModelValue(value) ||
+  (hasTextValue(value) ? value.trim() : 'gpt-6.2-astra');
 const normalizeInferenceEffort = value => value === 'xhigh' ? 'xhigh' : 'high';
 function isHttpUrl(value) {
   if (typeof value !== 'string' || !value.trim()) {
@@ -33,15 +34,21 @@ const DEFAULT_POST_PROCESSING_FORM = Object.freeze({
   footerCtaUrl: '',
   translationLanguage: '',
   translationSubtitleLanguage: '',
-  translationEnableSubtitles: true,
-  translationTranslateOutro: true,
-  translationTranslateFooter: true,
+  translationEnableSubtitles: false,
+  translationTranslateOutro: false,
+  translationTranslateFooter: false,
   subtitleLanguage: '',
   rerollLayerIndexes: [],
 });
 
-export function createDefaultPostProcessingForm() {
-  return { ...DEFAULT_POST_PROCESSING_FORM, rerollLayerIndexes: [] };
+export function createDefaultPostProcessingForm(session) {
+  const preferences = session?.session?.postProcessingPreferences || session?.postProcessingPreferences || {};
+  return {
+    ...DEFAULT_POST_PROCESSING_FORM, rerollLayerIndexes: [],
+    translationEnableSubtitles: preferences.translationEnableSubtitles === true,
+    translationTranslateOutro: preferences.translationTranslateOutro === true,
+    translationTranslateFooter: preferences.translationTranslateFooter === true,
+  };
 }
 export function sessionHasOutroImage(session) {
   if (!session || typeof session !== 'object') {
@@ -71,7 +78,13 @@ export function buildExpressPostProcessingRequest({ actionKey, id, postProcessin
 }) {
   const hasExistingOutro = currentRenderHasOutro;
   let endpoint = '';
-  let payload = { videoSessionId: id };
+  let payload = {
+    videoSessionId: id,
+    inference_model: normalizeInferenceModelKey(inferenceModel),
+    ...(supportsInferenceEffort(inferenceModel)
+      ? { effort: normalizeInferenceEffort(inferenceEffort) }
+      : {}),
+  };
   let successLabel = uiText("Post-processing");
   if (actionKey === 'retranslate') {
     const languageCode = resolveLanguageCode(postProcessingForm.translationLanguage, '');
@@ -90,12 +103,8 @@ export function buildExpressPostProcessingRequest({ actionKey, id, postProcessin
             audioLanguage: languageCode,
           })
         : {}),
-      translate_outro: postProcessingForm.translationTranslateOutro !== false,
-      translate_footer: postProcessingForm.translationTranslateFooter !== false,
-      inference_model: normalizeInferenceModelKey(inferenceModel),
-      ...(supportsInferenceEffort(inferenceModel)
-        ? { effort: normalizeInferenceEffort(inferenceEffort) }
-        : {}),
+      translate_outro: postProcessingForm.translationTranslateOutro === true,
+      translate_footer: postProcessingForm.translationTranslateFooter === true,
     };
     endpoint = 'retranslate_video';
     successLabel = uiText('Retranslation');

@@ -1,3 +1,4 @@
+import { runGoogleGeminiRequest } from './GoogleGeminiRequest.js';
 import fetch from 'node-fetch';
 
 import { getGoogleAccessToken, getGoogleCloudConfig } from './GoogleADC.js';
@@ -265,8 +266,7 @@ export async function createGoogleGeminiChatCompletion(messages, inferenceModel,
 
   const token = transport.kind === 'developer' ? null : await getGoogleAccessToken(config);
   const generationConfig = buildGenerationConfig(model);
-  const fetchImpl = options.fetchImpl || fetch;
-  const response = await fetchImpl(transport.kind === 'developer'
+  const payload = await runGoogleGeminiRequest(transport.kind === 'developer'
     ? buildGoogleGeminiDeveloperUrl({ model })
     : buildVertexGenerateContentUrl({ projectId, location, model }), {
     method: 'POST',
@@ -281,13 +281,13 @@ export async function createGoogleGeminiChatCompletion(messages, inferenceModel,
       contents,
       ...(generationConfig ? { generationConfig } : {}),
     }),
+  }, {
+    fetchImpl: options.fetchImpl || fetch,
+    timeoutMs: options.timeout ?? options.timeoutMs, model, transport: transport.kind,
+    sessionId: options.externalRequestContext?.sessionId,
+    requestKey: options.externalRequestContext?.requestKey,
+    logger: options.logger,
   });
-
-  const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(payload?.error?.message || `Google Gemini inference failed with status ${response.status}`);
-  }
-
   return {
     model,
     ...(transport.kind === 'developer' ? { samsarBilling: { adapter: 'google', region: 'global', api: 'developer' } } : {}),

@@ -93,3 +93,70 @@ test('repair failures and invalid repair results cannot bypass the final text bo
     }, { rewriteSpeechItem: repair }), { code: 'TRANSLATED_SPEECH_VALIDATION_FAILED' });
   }
 });
+
+test('validation forwards per-speech identity and awaits progress before starting the next item', async (t) => {
+  const logs = [];
+  const progress = [];
+  t.mock.method(console, 'info', (...args) => logs.push(args));
+  const session = fixture();
+  session.layers.push({ _id: 'second', duration: 10, durationOffset: 10 });
+  session.audioLayers.push({ connectedLayerId: 'second', generationType: 'speech', startTime: 10, duration: 10 });
+  let releaseProgress;
+  let repairs = 0;
+  const job = validateTranslatedSpeech({
+    session, originalTexts: ['Private source one.', 'Private source two.'],
+    translatedTexts: ['x'.repeat(58), 'Bonjour.'], targetLanguage: 'French',
+    inferenceModel: 'gemini-4-carbon', sessionId: 'translated-1',
+    onProgress: async (event) => {
+      progress.push(event);
+      if (event.event === 'speech_validation_completed' && event.speechIndex === 0) {
+        await new Promise((resolve) => { releaseProgress = resolve; });
+      }
+    },
+  }, { rewriteSpeechItem: async ({ options }) => {
+    repairs += 1;
+    assert.deepEqual(options.externalRequestContext, { sessionId: 'translated-1',
+      requestKey: 'retranslation:speech-repair-0', speechIndex: 0, layerIndex: 0, speechCount: 2 });
+    options.onRepairAttempt(1);
+    await options.onProgress({ stage: 'speech_repair', event: 'speech_repair_attempt_started',
+      speechIndex: 0, layerIndex: 0, attempt: 1 });
+    return 'Repaired speech.';
+  } });
+  await new Promise(setImmediate);
+  assert.equal(repairs, 1);
+  assert.equal(progress.some((event) => event.speechIndex === 1), false);
+  releaseProgress();
+  const result = await job;
+  assert.deepEqual(result.texts, ['Repaired speech.', 'Bonjour.']);
+  assert.deepEqual(progress.map((event) => event.event), [
+    'speech_validation_started', 'speech_repair_attempt_started', 'speech_validation_completed',
+    'speech_validation_started', 'speech_validation_completed',
+  ]);
+  assert.equal(progress[0].maxCharacters, 57);
+  assert.equal(progress[0].translatedCharacters, 58);
+  assert.equal(progress.at(-1).finalCharacters, 8);
+  const diagnostics = JSON.stringify({ logs, progress });
+  for (const text of ['Private source one.', 'Private source two.', 'x'.repeat(58), 'Repaired speech.', 'Bonjour.']) {
+    assert.equal(diagnostics.includes(text), false);
+  }
+});
+
+test('progress persistence failure cannot cause an extra repair and uncertain outcomes retain their marker', async (t) => {
+  t.mock.method(console, 'info', () => {});
+  t.mock.method(console, 'warn', () => {});
+  let calls = 0;
+  const cause = Object.assign(new Error('Private provider details'), {
+    code: 'ETIMEDOUT', providerOutcomeUncertain: true, retryable: false,
+  });
+  await assert.rejects(validateTranslatedSpeech({
+    session: fixture(), originalTexts: ['Hello.'], translatedTexts: ['x'.repeat(58)],
+    targetLanguage: 'French', onProgress: async () => { throw new Error('Private persistence details'); },
+  }, { rewriteSpeechItem: async () => { calls += 1; throw cause; } }), (error) => {
+    assert.equal(error.code, 'TRANSLATED_SPEECH_VALIDATION_FAILED');
+    assert.equal(error.providerOutcomeUncertain, true);
+    assert.equal(error.retryable, false);
+    assert.equal(error.cause, cause);
+    return true;
+  });
+  assert.equal(calls, 1);
+});
