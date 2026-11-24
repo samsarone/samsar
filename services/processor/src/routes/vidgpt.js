@@ -81,7 +81,7 @@ router.post('/create_blank', async function (req, res) {
     return;
   }
 
-  const sessionId = await createNewBlankQuickSession(userId);
+  const sessionId = await createNewBlankQuickSession(userId, { projectEditor: 'vidgenie' });
 
   res.status(200).send({ sessionId: sessionId });
 });

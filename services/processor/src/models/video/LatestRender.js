@@ -12,13 +12,13 @@ function normalizeStatus(value) {
   return typeof value === 'string' ? value.trim().toUpperCase() : '';
 }
 
-function renderStatus(session) {
+export function renderStatus(session) {
   const finalStage = normalizeStatus(session.expressGenerationStatus?.video_generation);
   const overall = normalizeStatus(session.expressGenerationStatus?.status);
   const builder = normalizeStatus(session.expressGenerationBuilder?.status);
   const step = session.expressStepGeneration || {};
   if (session.expressGenerationCancelled) return 'cancelled';
-  if (session.expressGenerationFailed || session.hasError) return 'failed';
+  if (session.expressGenerationFailed || session.hasError || session.generationError || session.expressGenerationError) return 'failed';
 
   // Studio clears both the previous output and explicit failure flags on resubmission,
   // but historical pipeline stages can retain the previous run's terminal state.
@@ -28,14 +28,17 @@ function renderStatus(session) {
   if ((!active || session.expressGenerationFailed !== false) && legacyStages.some(s => failedStatuses.includes(s))) return 'failed';
   if (session.expressGenerationPaused || overall === 'PAUSED') return 'paused';
   if (session.postProcessingPreparationPending || overall === 'QUEUED') return 'pending';
-  if (session.branches?.length) {
-    const stages = session.branches.flatMap(path => [normalizeStatus(path.frame), normalizeStatus(path.video)]);
+  const branches = session.branches ?? session.branchRenderPaths?.map(path => ({
+    frame: path.frameGenerationStatus, video: path.videoGenerationStatus, hasOutput: Boolean(path.videoLink || path.remoteURL),
+  }));
+  if (branches?.length) {
+    const stages = branches.flatMap(path => [normalizeStatus(path.frame), normalizeStatus(path.video)]);
     if (stages.some(s => cancelledStatuses.includes(s))) return 'cancelled';
     if (stages.some(s => failedStatuses.includes(s))) return 'failed';
-    return session.branches.every(path => completedStatuses.includes(normalizeStatus(path.video)) && path.hasOutput)
+    return branches.every(path => completedStatuses.includes(normalizeStatus(path.video)) && path.hasOutput)
       ? 'completed' : 'pending';
   }
-  if (session.hasOutput && !session.videoGenerationPending) return 'completed';
+  if ((session.hasOutput || session.videoLink || session.remoteURL || session.publishedVideoURL) && !session.videoGenerationPending) return 'completed';
   if ((step.nextStep || step.next_step) && (step.waitingForProcessNext || step.waiting_for_process_next ||
     step.canProcessNext || step.can_process_next || step.requiresUserAction || step.requires_user_action)) return 'paused';
   if (session.videoGenerationPending) return 'pending';

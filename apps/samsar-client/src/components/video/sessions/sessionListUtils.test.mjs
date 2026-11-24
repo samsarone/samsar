@@ -35,6 +35,18 @@ test('one-layer express projects remain visible while their scenes are expanding
   assert.deepEqual(normalizeSessionListData([record]), [record]);
 });
 
+test('a listed video project stays visible before it has scenes; legacy blank rows and non-project records stay excluded', () => {
+  const blank = buildSession({ layerCount: 0, isExpressGeneration: false });
+  const draft = { ...blank, isListedProject: true };
+  assert.equal(isSessionListRecord(draft), true);
+  assert.equal(isSessionListRecord({ ...draft, layerCount: 1 }), true);
+  assert.equal(isSessionListRecord({ ...draft, isExpressGeneration: true, renderStatus: 'pending' }), true);
+  for (const record of [
+    blank, { ...draft, isListedProject: 'true' }, { ...draft, sessionType: 'image' },
+    { ...draft, recordType: 'layer' }, { ...draft, id: null },
+  ]) assert.equal(isSessionListRecord(record), false);
+});
+
 test('ordinary one-layer and explicit layer records are still excluded', () => {
   const oneLayerStudioSession = buildSession({
     layerCount: 1,
