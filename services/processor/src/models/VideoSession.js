@@ -1,6 +1,7 @@
 import { getVideoTimeline } from '../utils/VideoTimeline.js';
 import { frameCountToSeconds, secondsToFrameCount, getLayerFrameRange } from '../utils/FrameClock.js';
 import { captureSessionSceneReferences, resolveLayerSourceSceneReference } from './video/SceneIdentity.js';
+import { renderStatus } from './video/LatestRender.js';
 import { getPendingRerollPreview } from './api/StatusAPI.js';
 import { captureMovieResourceTimeline, synchronizeMovieResourceTimeline } from '../utils/MovieResourceTimeline.js';
 import { getDBConnectionString } from "./DBString.js";
@@ -5145,13 +5146,14 @@ async function ensureUnlockedFrameGenerations(sessionId, layerIds = []) {
   }
 }
 
-export async function createVideoSession(userId, payload) {
+export async function createVideoSession(userId, payload, { projectEditor } = {}) {
   await getDBConnectionString();
 
   const promptList = payload.prompts;
   const basicTextTheme = payload.basicTextTheme;
   const durationPerScene = payload.durationPerScene;
   const sessionMetadata = getSessionMetadataFromPayload(payload);
+  if (projectEditor) sessionMetadata.projectEditor = projectEditor;
 
   let aspectRatio = payload.aspectRatio;
   if (!aspectRatio) {
@@ -9016,6 +9018,7 @@ export async function getOrCreateSession(userId) {
   const framesPerSecond = await getUserFramesPerSecond(userId);
   const newVideoSession = new VideoSession({
     userId,
+    projectEditor: 'studio',
     promptList: [],
     layers: initLayerList,
     basicTextTheme: '',
@@ -9105,18 +9108,32 @@ export async function getUserSessionList(
 
     // Build our filter query
     const normalizedUserId = toUserIdString(userId);
+    const fullVideoRoutes = ['text_to_video', 'image_to_video', 'image_list_to_video'];
     const query = {
       $and: [
         {
           $or: [
             { userId },
-            { editableShareImportedUserIds: normalizedUserId },
+            { editableShareEnabled: true, editableShareImportedUserIds: normalizedUserId },
           ],
         },
-        // View Projects is for composed projects, not transient one-layer
-        // requests created by external or per-scene generation flows. Keep
-        // this rule in the database query so pagination totals stay aligned.
-        { 'layers.1': { $exists: true } },
+        // Retain composed legacy projects. New editor drafts and full-video
+        // jobs have durable identity before any scenes have been prepared.
+        { $or: [
+          { 'layers.1': { $exists: true } },
+          {
+            isGuestSession: { $ne: true }, isExternalUserRequest: { $ne: true }, isExternalVideoGeneration: { $ne: true },
+            externalRequestUserId: { $in: [null, ''] }, externalRequestId: { $in: [null, ''] },
+            $or: [
+              { projectEditor: { $in: ['studio', 'vidgenie'] } },
+              { renderRequestedAt: { $type: 'date' } },
+              { expressGenerationCreated: { $type: 'date' } },
+              { quickSessionCreatedAt: { $type: 'date' } },
+              { 'expressGenerationBuilder.routeType': { $in: fullVideoRoutes } },
+              { 'expressStepGeneration.routeType': { $in: fullVideoRoutes } },
+            ],
+          },
+        ] },
         // Only explicit video projects belong on View Projects. Legacy
         // records with a missing/null sessionType can represent image/scene
         // documents and must never be promoted to project tiles.
@@ -9190,16 +9207,14 @@ export async function getUserSessionList(
 
     // Fetch the sessions
     const sessionList = await VideoSession.find(query)
-      .sort({ createdAt: -1 })
+      .sort({ createdAt: -1, _id: -1 })
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .lean();
 
     // Transform data as needed
     const sessionData = sessionList
-      .map((session, idx) => {
-        if (!session.layers || session.layers.length === 0) {
-          return null;
-        }
+      .map((session) => {
         const sessionId = session._id.toString();
         const sessionOwnerId = toUserIdString(session.userId);
         const isSessionOwnerForViewer = Boolean(sessionOwnerId && normalizedUserId && sessionOwnerId === normalizedUserId);
@@ -9219,12 +9234,21 @@ export async function getUserSessionList(
           [session.videoLink, session.remoteURL, session.publishedVideoURL]
             .some((value) => typeof value === 'string' && value.trim())
         );
+        const hasRender = Boolean(isCompleted || session.renderRequestedAt || session.expressGenerationCreated ||
+          session.quickSessionCreatedAt || fullVideoRoutes.includes(session.expressGenerationBuilder?.routeType) ||
+          fullVideoRoutes.includes(session.expressStepGeneration?.routeType) || session.videoGenerationPending ||
+          (session.isExpressGeneration && session.expressGenerationPending));
 
         return {
           recordType: 'session',
+          isListedProject: true,
+          projectEditor: session.projectEditor || null,
+          renderStatus: hasRender ? renderStatus(session) : null,
           sessionType: 'video',
-          layerCount: session.layers.length,
-          name: sessionName || `Session ${idx}`,
+          layerCount: Array.isArray(session.layers) ? session.layers.length : 0,
+          name: sessionName || (isSessionOwnerForViewer && hasRender
+            ? normalizeSessionText(getFirstNonEmptyString(session.inputPrompt, session.expressInputPrompt).replace(/\s+/g, ' '), 80)
+            : null),
           sessionName,
           sessionDescription,
           id: session._id,
@@ -9233,6 +9257,7 @@ export async function getUserSessionList(
           thumbnailUrls: thumbnailPayload.thumbnailUrls,
           previewImageUrl: thumbnailPayload.thumbnailUrl,
           isExpressGeneration: Boolean(session.isExpressGeneration),
+          isStepVideoGeneration: Boolean(session.isStepVideoGeneration),
           expressGenerationType: session.expressGenerationType || null,
           aspectRatio: getFirstNonEmptyString(session.aspectRatio, session.aspect_ratio) || '1:1',
           isPublished: Boolean(session.ispublishedVideo),
@@ -9242,8 +9267,7 @@ export async function getUserSessionList(
           isSessionOwner: isSessionOwnerForViewer,
           isImportedSession: isImportedSessionForViewer,
         };
-      })
-      .filter(Boolean);
+      });
 
     return {
       data: sessionData,

@@ -123,7 +123,7 @@ router.post('/create_video_session', async function (req, res) {
   }
 
   try {
-    const sessionData = await createVideoSession(userId, payload);
+    const sessionData = await createVideoSession(userId, payload, { projectEditor: 'studio' });
     res.json(sessionData);
   } catch (e) {
     res.status(400).send("Error creating video session");
@@ -141,12 +141,12 @@ router.post('/create_signup_project', async function (req, res) {
 
   try {
     if (editor === 'vidgenie') {
-      const sessionId = await createNewBlankQuickSession(userId);
+      const sessionId = await createNewBlankQuickSession(userId, { projectEditor: 'vidgenie' });
       res.status(201).json({ sessionId, editor });
       return;
     }
 
-    const session = await createVideoSession(userId, { prompts: [] });
+    const session = await createVideoSession(userId, { prompts: [] }, { projectEditor: 'studio' });
     res.status(201).json({
       sessionId: session._id.toString(),
       editor,

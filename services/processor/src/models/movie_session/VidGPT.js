@@ -610,7 +610,7 @@ export async function createVidGPTSessionWithBody(userId, payload) {
   } = payload;
 
 
-  const newSessionId = await createNewBlankQuickSession(userId);
+  const newSessionId = await createNewBlankQuickSession(userId, { projectEditor: 'vidgenie' });
 
   const userData = await User.findById(userId);
   const agentVideoModel = userData.agentVideoModel || 'RUNWAYML';

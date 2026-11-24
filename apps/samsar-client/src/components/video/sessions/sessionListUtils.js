@@ -113,7 +113,7 @@ export const isSessionListRecord = (record = {}) => (
     getIdentifierString(getRecordIdentifier(record)) &&
     isExplicitVideoSessionRecord(record) &&
     !isLayerListRecord(record) &&
-    hasDisplayableProjectLayers(record) &&
+    (record.isListedProject === true || hasDisplayableProjectLayers(record)) &&
     hasSessionMetadata(record)
   )
 );

@@ -361,6 +361,7 @@ const videoSessionSchema = new Schema({
   sessionName: String,
   sessionDescription: { type: String, default: null },
   sessionType: { type: String, default: 'video' },
+  projectEditor: { type: String, enum: ['studio', 'vidgenie'] },
 
   sessionMessages: [Object],
   assistantStream: { type: Object, default: null },

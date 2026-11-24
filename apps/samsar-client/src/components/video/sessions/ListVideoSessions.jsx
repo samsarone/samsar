@@ -5,7 +5,7 @@ import { translateText as uiText } from '../../../utils/localization.js';
 import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { getHeaders } from '../../../utils/web';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { FaTimes } from 'react-icons/fa';
 import OverflowContainer from '../../common/OverflowContainer.tsx';
 import ShowNewUserIntroDisplay from './ShowNewUserIntroDisplay';
@@ -31,6 +31,17 @@ import { createBlankVidgenieSession } from '../../../utils/vidgenieRouting.js';
 import SingleSelect from '../../common/SingleSelect'; // adjust path as needed
 
 const PROCESSOR_API = import.meta.env.VITE_PROCESSOR_API;
+
+function getProjectLink(session) {
+  const id = encodeURIComponent(getSessionIdentifier(session));
+  if (!session.isImportedSession && ['pending', 'paused'].includes(session.renderStatus)) {
+    return { to: `/vidgenie/${id}?view=preview`, label: uiText('Live preview') };
+  }
+  if (!session.isImportedSession && session.projectEditor === 'vidgenie' && !session.renderStatus) {
+    return { to: `/vidgenie/${id}`, label: uiText('Open in VidGenie') };
+  }
+  return { to: `/video/${id}`, label: uiText('Tap to open in Studio') };
+}
 
 // Options for the filters
 const renderTypeOptions = [
@@ -288,11 +299,10 @@ export default function ListVideoSessions() {
   useEffect(() => {
     localStorage.setItem('currentSessionsPage', page.toString());
 
-    const headers = getHeaders();
-    const requestId = listRequestIdRef.current + 1;
-    listRequestIdRef.current = requestId;
     let isCancelled = false;
     let retryTimer = null;
+    let returnTimer = null;
+    let authorization = getHeaders()?.headers?.Authorization;
     const queryParams = new URLSearchParams({
       page: page.toString(),
       limit: limit.toString(),
@@ -305,6 +315,14 @@ export default function ListVideoSessions() {
     setListError('');
 
     const requestSessions = (attempt = 0) => {
+      const requestId = ++listRequestIdRef.current;
+      const headers = getHeaders();
+      if (headers?.headers?.Authorization !== authorization) {
+        authorization = headers?.headers?.Authorization;
+        setSessionList([]);
+        setTotalSessions(0);
+        setIsLoading(true);
+      }
       axios
         .get(`${PROCESSOR_API}/video_sessions/list?${queryParams.toString()}`, headers)
         .then(function (response) {
@@ -335,6 +353,7 @@ export default function ListVideoSessions() {
           setFailedPreviewSources(new Set());
           setTotalSessions(total);
           setTotalPages(normalizedTotalPages);
+          setListError('');
           setIsLoading(false);
 
           // If no sessions, show your intro display
@@ -362,14 +381,39 @@ export default function ListVideoSessions() {
           }
 
           setIsLoading(false);
+          if ([401, 403].includes(error?.response?.status)) {
+            setSessionList([]);
+            setTotalSessions(0);
+          }
           setListError(getProjectListErrorMessage(error));
         });
     };
 
     requestSessions();
+    const refreshOnReturn = () => {
+      if (document.hidden || returnTimer !== null) return;
+      // A project handoff can coincide with both visibilitychange and focus.
+      returnTimer = window.setTimeout(() => {
+        returnTimer = null;
+        window.clearTimeout(retryTimer);
+        requestSessions();
+      }, 50);
+    };
+    const refreshOnProjectChange = (event) => {
+      if (event.storageArea === window.localStorage && event.key === 'videoSessionId' && event.newValue) {
+        refreshOnReturn();
+      }
+    };
+    window.addEventListener('focus', refreshOnReturn);
+    window.addEventListener('storage', refreshOnProjectChange);
+    document.addEventListener('visibilitychange', refreshOnReturn);
 
     return () => {
       isCancelled = true;
+      window.removeEventListener('focus', refreshOnReturn);
+      window.removeEventListener('storage', refreshOnProjectChange);
+      document.removeEventListener('visibilitychange', refreshOnReturn);
+      window.clearTimeout(returnTimer);
       if (retryTimer !== null) {
         window.clearTimeout(retryTimer);
       }
@@ -418,7 +462,7 @@ export default function ListVideoSessions() {
   };
 
   // Navigation
-  const gotoPage = (event, session) => {
+  const rememberSelectedProject = (session) => {
     const newSessionId = getSessionIdentifier(session);
     if (!newSessionId) return;
     rememberSessionLoadingLayout(session);
@@ -428,13 +472,6 @@ export default function ListVideoSessions() {
     } catch {
       // A full/blocked browser store must not prevent opening the selected URL.
     }
-
-    if (event?.metaKey || event?.ctrlKey) {
-      window.open(`/video/${newSessionId}`, '_blank', 'noopener,noreferrer');
-      return;
-    }
-
-    navigate(`/video/${newSessionId}`);
   };
 
   const handleSessionDeleted = (deletedSessionId) => {
@@ -673,6 +710,7 @@ export default function ListVideoSessions() {
           {sessionList.map((session, index) => {
             if (!session) return null;
             const sessionKey = getSessionKey(session, index);
+            const projectLink = getProjectLink(session);
             const sessionName = normalizeSessionText(session.sessionName);
             const sessionDescription = normalizeSessionText(session.sessionDescription);
             const sessionDisplayName =
@@ -696,7 +734,6 @@ export default function ListVideoSessions() {
               <div
                 key={sessionKey}
                 className={`group relative min-w-0 cursor-pointer overflow-hidden rounded-lg ${cardSurface} transition-transform duration-200 hover:-translate-y-1`}
-                onClick={(event) => gotoPage(event, session)}
               >
                 {!isImportedSession && (
                   <button
@@ -715,9 +752,9 @@ export default function ListVideoSessions() {
                 )}
                 <div className="flex min-h-[54px] items-start justify-between gap-2 px-4 py-3 pr-11">
                   <div className="min-w-0 flex-1 text-left">
-                    <div className="text-sm font-semibold leading-5">
+                    <Link to={projectLink.to} onClick={() => rememberSelectedProject(session)} className="block text-sm font-semibold leading-5 after:absolute after:inset-0 after:z-[2] focus-visible:outline-none focus-visible:after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-focus">
                       {sessionDisplayName}
-                    </div>
+                    </Link>
                     {sessionDisplayDescription && (
                       <div
                         className="mt-1 text-xs font-normal leading-4 text-slate-500"
@@ -794,7 +831,7 @@ export default function ListVideoSessions() {
                     </div>
                   )}
                 </div>
-                <div className="px-4 py-3 text-xs text-slate-500">{uiText("Tap to open in Studio")}</div>
+                <div className="px-4 py-3 text-xs text-slate-500">{projectLink.label}</div>
               </div>
             );
           })}
